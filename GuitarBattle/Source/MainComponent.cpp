@@ -3,108 +3,173 @@
 #include <vector>
 
 //==============================================================================
-// Constructor
+// UI palette
 //
-// Создаём интерфейс, настраиваем BPM, аудиоустройство и запускаем
-// background thread для определения pitch.
+// Основная идея:
+// - почти белый холодный фон;
+// - белые карточки;
+// - тёмно-синий текст;
+// - синий как основной accent;
+// - зелёный только для HIT;
+// - красный зарезервирован под MISS.
+//
+// Цвета собраны здесь, чтобы их было легко менять позже.
 //==============================================================================
+
+namespace UiColors
+{
+    // Background of the whole application.
+    const juce::Colour background =
+        juce::Colour::fromString("FFF3F5F7");
+
+    // Main white cards.
+    const juce::Colour card =
+        juce::Colour::fromString("FFFFFFFF");
+
+    // Very light border around cards.
+    const juce::Colour border =
+        juce::Colour::fromString("FFE2E8F0");
+
+    // Main dark text.
+    const juce::Colour text =
+        juce::Colour::fromString("FF1E293B");
+
+    // Secondary text.
+    const juce::Colour secondaryText =
+        juce::Colour::fromString("FF64748B");
+
+    // Main application blue.
+    const juce::Colour blue =
+        juce::Colour::fromString("FF2563EB");
+
+    // Darker blue for active UI elements.
+    const juce::Colour blueDark =
+        juce::Colour::fromString("FF1D4ED8");
+
+    // Light blue used for selected / active areas.
+    const juce::Colour blueLight =
+        juce::Colour::fromString("FFEFF6FF");
+
+    // Successful hit.
+    const juce::Colour green =
+        juce::Colour::fromString("FF16A34A");
+
+    // Miss state reserved for later gameplay logic.
+    const juce::Colour red =
+        juce::Colour::fromString("FFDC2626");
+}
+
+//==============================================================================
+// Constructor
+//==============================================================================
+
 MainComponent::MainComponent()
 {
-    setSize(700, 500);
+    //--------------------------------------------------------------------------
+    // Main window size
 
-    //==========================================================================
-    // Pitch display
+    setSize(900, 650);
+
+    //--------------------------------------------------------------------------
+    // Pitch
+    //
+    // Большой центральный элемент интерфейса.
+    // Сначала показываем "---", пока нота не определена.
 
     pitchLabel.setText(
-        "Pitch: -- Hz",
+        "Pitch: ---",
         juce::dontSendNotification);
 
-    pitchLabel.setFont(32.0f);
+    pitchLabel.setFont(
+        juce::Font(
+            42.0f,
+            juce::Font::bold));
+
+    pitchLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::text);
+
     pitchLabel.setJustificationType(
         juce::Justification::centred);
 
     addAndMakeVisible(pitchLabel);
 
-    //==========================================================================
-    // Beat display
+    //--------------------------------------------------------------------------
+    // Beat
+    //
+    // Только маленькая цифра.
+    // Никакого "Beat:" и никакого визуального акцента
+    // на первую долю.
 
     beatLabel.setText(
-        "Beat: 0",
+        "0",
         juce::dontSendNotification);
 
-    beatLabel.setFont(24.0f);
+    beatLabel.setFont(
+        juce::Font(
+            16.0f,
+            juce::Font::bold));
+
+    beatLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::secondaryText);
+
     beatLabel.setJustificationType(
         juce::Justification::centred);
 
     addAndMakeVisible(beatLabel);
 
-    //==========================================================================
-    // Beat inside bar
+    //--------------------------------------------------------------------------
+    // Bar beat
+    //
+    // Также только цифра.
 
     barBeatLabel.setText(
-        "Bar beat: 0",
+        "0",
         juce::dontSendNotification);
 
-    barBeatLabel.setFont(24.0f);
+    barBeatLabel.setFont(
+        juce::Font(
+            16.0f,
+            juce::Font::bold));
+
+    barBeatLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::secondaryText);
+
     barBeatLabel.setJustificationType(
         juce::Justification::centred);
 
     addAndMakeVisible(barBeatLabel);
 
-    //==========================================================================
-    // BPM display
+    //--------------------------------------------------------------------------
+    // BPM
+    //
+    // Вместо обычного горизонтального slider используем
+    // компактный числовой control.
+    //
+    // Он поддерживает:
+    // - ручной ввод;
+    // - mouse wheel;
+    // - increment/decrement buttons.
 
     bpmLabel.setText(
-        "BPM: " + juce::String(bpm.load()),
+        "BPM",
         juce::dontSendNotification);
 
-    bpmLabel.setFont(24.0f);
+    bpmLabel.setFont(
+        juce::Font(
+            13.0f,
+            juce::Font::bold));
+
+    bpmLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::secondaryText);
+
     bpmLabel.setJustificationType(
         juce::Justification::centred);
 
     addAndMakeVisible(bpmLabel);
-
-    //==========================================================================
-    // Score
-
-    scoreLabel.setText(
-        "Score: 0",
-        juce::dontSendNotification);
-
-    scoreLabel.setFont(24.0f);
-    scoreLabel.setJustificationType(
-        juce::Justification::centred);
-
-    addAndMakeVisible(scoreLabel);
-
-    //==========================================================================
-    // Hit feedback
-
-    hitLabel.setText(
-        "Ready",
-        juce::dontSendNotification);
-
-    hitLabel.setFont(28.0f);
-    hitLabel.setJustificationType(
-        juce::Justification::centred);
-
-    addAndMakeVisible(hitLabel);
-
-    //==========================================================================
-    // Target note
-
-    targetNoteLabel.setText(
-        "Target: E2",
-        juce::dontSendNotification);
-
-    targetNoteLabel.setFont(28.0f);
-    targetNoteLabel.setJustificationType(
-        juce::Justification::centred);
-
-    addAndMakeVisible(targetNoteLabel);
-
-    //==========================================================================
-    // BPM slider
 
     bpmSlider.setRange(
         40.0,
@@ -114,14 +179,33 @@ MainComponent::MainComponent()
     bpmSlider.setValue(
         bpm.load());
 
+    // Number field with small increment/decrement buttons.
+    // Mouse wheel is also supported by JUCE Slider.
     bpmSlider.setSliderStyle(
-        juce::Slider::LinearHorizontal);
+        juce::Slider::IncDecButtons);
 
+    // Editable text box.
     bpmSlider.setTextBoxStyle(
-        juce::Slider::TextBoxRight,
+        juce::Slider::TextBoxLeft,
         false,
-        80,
-        30);
+        70,
+        38);
+
+    bpmSlider.setColour(
+        juce::Slider::textBoxTextColourId,
+        UiColors::text);
+
+    bpmSlider.setColour(
+        juce::Slider::textBoxBackgroundColourId,
+        UiColors::card);
+
+    bpmSlider.setColour(
+        juce::Slider::textBoxOutlineColourId,
+        UiColors::border);
+
+    bpmSlider.setColour(
+        juce::Slider::thumbColourId,
+        UiColors::blue);
 
     addAndMakeVisible(bpmSlider);
 
@@ -148,31 +232,120 @@ MainComponent::MainComponent()
                         sampleRate * 60.0 / newBpm),
                     std::memory_order_relaxed);
             }
-
-            bpmLabel.setText(
-                "BPM: "
-                + juce::String(
-                    static_cast<int>(newBpm)),
-                juce::dontSendNotification);
         };
 
-    //==========================================================================
+    //--------------------------------------------------------------------------
+    // Score
+    //
+    // Score находится отдельно от status block.
+
+    scoreLabel.setText(
+        "0",
+        juce::dontSendNotification);
+
+    scoreLabel.setFont(
+        juce::Font(
+            30.0f,
+            juce::Font::bold));
+
+    scoreLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::text);
+
+    scoreLabel.setJustificationType(
+        juce::Justification::centred);
+
+    addAndMakeVisible(scoreLabel);
+
+    //--------------------------------------------------------------------------
+    // Hit / Ready / Miss status
+
+    hitLabel.setText(
+        "READY",
+        juce::dontSendNotification);
+
+    hitLabel.setFont(
+        juce::Font(
+            24.0f,
+            juce::Font::bold));
+
+    hitLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::blue);
+
+    hitLabel.setJustificationType(
+        juce::Justification::centred);
+
+    addAndMakeVisible(hitLabel);
+
+    //--------------------------------------------------------------------------
+    // Target note
+
+    targetNoteLabel.setText(
+        "E2",
+        juce::dontSendNotification);
+
+    targetNoteLabel.setFont(
+        juce::Font(
+            34.0f,
+            juce::Font::bold));
+
+    targetNoteLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::blueDark);
+
+    targetNoteLabel.setJustificationType(
+        juce::Justification::centred);
+
+    addAndMakeVisible(targetNoteLabel);
+
+    //--------------------------------------------------------------------------
     // Application properties
 
     juce::PropertiesFile::Options options;
 
-    options.applicationName = "GuitarBattle";
-    options.filenameSuffix = ".settings";
-    options.osxLibrarySubFolder = "Application Support";
-    options.folderName = "GuitarBattle";
-    options.commonToAllUsers = false;
+    options.applicationName =
+        "GuitarBattle";
 
-    appProperties.setStorageParameters(options);
+    options.filenameSuffix =
+        ".settings";
 
-    //==========================================================================
+    options.osxLibrarySubFolder =
+        "Application Support";
+
+    options.folderName =
+        "GuitarBattle";
+
+    options.commonToAllUsers =
+        false;
+
+    appProperties.setStorageParameters(
+        options);
+
+    //--------------------------------------------------------------------------
     // Audio settings button
 
-    addAndMakeVisible(audioSettingsButton);
+    audioSettingsButton.setButtonText(
+        "Audio Settings");
+
+    audioSettingsButton.setColour(
+        juce::TextButton::buttonColourId,
+        UiColors::card);
+
+    audioSettingsButton.setColour(
+        juce::TextButton::textColourOffId,
+        UiColors::secondaryText);
+
+    audioSettingsButton.setColour(
+        juce::TextButton::buttonOnColourId,
+        UiColors::blueLight);
+
+    audioSettingsButton.setColour(
+        juce::TextButton::textColourOnId,
+        UiColors::blueDark);
+
+    addAndMakeVisible(
+        audioSettingsButton);
 
     audioSettingsButton.onClick = [this]
         {
@@ -194,7 +367,7 @@ MainComponent::MainComponent()
                 "Audio Settings";
 
             options.dialogBackgroundColour =
-                juce::Colours::darkgrey;
+                UiColors::background;
 
             options.escapeKeyTriggersCloseButton =
                 true;
@@ -208,19 +381,20 @@ MainComponent::MainComponent()
             options.launchAsync();
         };
 
-    //==========================================================================
-    // Restore previously saved audio device settings
+    //--------------------------------------------------------------------------
+    // Restore saved audio device settings
 
     auto savedState =
         appProperties.getUserSettings()
-        ->getXmlValue("AudioDeviceState");
+        ->getXmlValue(
+            "AudioDeviceState");
 
     setAudioChannels(
         2,
         2,
         savedState.get());
 
-    //==========================================================================
+    //--------------------------------------------------------------------------
     // Start background pitch detection
 
     pitchThread.startThread();
@@ -228,17 +402,13 @@ MainComponent::MainComponent()
 
 //==============================================================================
 // Destructor
-//
-// Останавливаем pitch thread, сохраняем настройки аудиоустройства
-// и отключаем audio device.
 //==============================================================================
+
 MainComponent::~MainComponent()
 {
     pitchThread.stopThread(1000);
 
-    //==========================================================================
-    // Save audio device state
-
+    // Save audio device state.
     if (auto* settings =
         appProperties.getUserSettings())
     {
@@ -247,47 +417,42 @@ MainComponent::~MainComponent()
             deviceManager.createStateXml().get());
     }
 
-    //==========================================================================
-    // Shutdown audio
-
     shutdownAudio();
 }
 
 //==============================================================================
 // Audio initialization
-//
-// Здесь загружаются WAV-файлы метронома и создаются analysis buffers.
 //==============================================================================
+
 void MainComponent::prepareToPlay(
     int samplesPerBlockExpected,
     double sampleRate)
 {
-    juce::ignoreUnused(samplesPerBlockExpected);
+    juce::ignoreUnused(
+        samplesPerBlockExpected);
 
-    //==========================================================================
-    // WAV format support
+    //--------------------------------------------------------------------------
+    // WAV support
 
     audioFormatManager.registerBasicFormats();
 
-    //==========================================================================
-    // Load accent metronome sound
-    //
-    // Сейчас используется прямой путь к WAV-файлу.
+    //--------------------------------------------------------------------------
+    // Accent metronome
 
     metronomeAccentReader.reset(
         audioFormatManager.createReaderFor(
             juce::File(
                 "D:\\GuitarBattle\\GuitarBattle\\Source\\Sounds\\wooden-metronome-click.wav")));
 
-    //==========================================================================
-    // Load normal metronome sound
+    //--------------------------------------------------------------------------
+    // Normal metronome
 
     metronomeNormalReader.reset(
         audioFormatManager.createReaderFor(
             juce::File(
                 "D:\\GuitarBattle\\GuitarBattle\\Source\\Sounds\\light-clicking-perc.wav")));
 
-    //==========================================================================
+    //--------------------------------------------------------------------------
     // Copy accent WAV into memory
 
     if (metronomeAccentReader != nullptr)
@@ -308,7 +473,7 @@ void MainComponent::prepareToPlay(
             true);
     }
 
-    //==========================================================================
+    //--------------------------------------------------------------------------
     // Copy normal WAV into memory
 
     if (metronomeNormalReader != nullptr)
@@ -329,11 +494,8 @@ void MainComponent::prepareToPlay(
             true);
     }
 
-    //==========================================================================
-    // Pitch capture buffer
-    //
-    // 2048 samples are collected before sending them
-    // to the background analysis thread.
+    //--------------------------------------------------------------------------
+    // Pitch buffers
 
     pitchBuffer.setSize(
         1,
@@ -341,17 +503,11 @@ void MainComponent::prepareToPlay(
 
     pitchBuffer.clear();
 
-    //==========================================================================
-    // First analysis buffer
-
     pitchAnalysisBuffer.setSize(
         1,
         2048);
 
     pitchAnalysisBuffer.clear();
-
-    //==========================================================================
-    // Second analysis buffer
 
     pitchAnalysisBuffer2.setSize(
         1,
@@ -359,16 +515,13 @@ void MainComponent::prepareToPlay(
 
     pitchAnalysisBuffer2.clear();
 
-    //==========================================================================
-    // Reset pitch buffer state
-
     pitchBufferPosition = 0;
 
     pitchBufferReady.store(false);
     pitchBufferReady2.store(false);
 
-    //==========================================================================
-    // Calculate beat duration from BPM
+    //--------------------------------------------------------------------------
+    // Beat duration
 
     beatLengthSamples.store(
         static_cast<uint64_t>(
@@ -378,7 +531,7 @@ void MainComponent::prepareToPlay(
                 std::memory_order_relaxed)),
         std::memory_order_relaxed);
 
-    //==========================================================================
+    //--------------------------------------------------------------------------
     // Reset beat counters
 
     beatCounter.store(
@@ -389,8 +542,8 @@ void MainComponent::prepareToPlay(
         0,
         std::memory_order_relaxed);
 
-    //==========================================================================
-    // Schedule first beat
+    //--------------------------------------------------------------------------
+    // First scheduled beat
 
     nextBeatSample.store(
         static_cast<uint64_t>(
@@ -405,29 +558,33 @@ void MainComponent::prepareToPlay(
 // Audio callback
 //
 // ВАЖНО:
-// Здесь нельзя выполнять тяжёлые операции вроде pitch detection.
+// Здесь не выполняется pitch detection.
+//
 // Callback только:
-// - считает audio samples;
+// - считает samples;
 // - запускает beats;
-// - проигрывает уже загруженный WAV;
-// - копирует входную гитару в analysis buffer.
+// - копирует guitar input;
+// - проигрывает уже загруженный metronome WAV.
+//
+// Pitch detection выполняется в PitchThread.
 //==============================================================================
+
 void MainComponent::getNextAudioBlock(
     const juce::AudioSourceChannelInfo& bufferToFill)
 {
     if (bufferToFill.buffer == nullptr)
         return;
 
-    //==========================================================================
-    // Update global audio sample counter
+    //--------------------------------------------------------------------------
+    // Update global sample counter
 
     audioSampleCounter.fetch_add(
         static_cast<uint64_t>(
             bufferToFill.numSamples),
         std::memory_order_relaxed);
 
-    //==========================================================================
-    // Initialize beat scheduler if necessary
+    //--------------------------------------------------------------------------
+    // Initialize beat scheduler
 
     if (nextBeatSample.load(
         std::memory_order_relaxed) == 0)
@@ -448,7 +605,7 @@ void MainComponent::getNextAudioBlock(
         nextBeatSample.load(
             std::memory_order_relaxed);
 
-    //==========================================================================
+    //--------------------------------------------------------------------------
     // Beat scheduler
 
     if (currentSample >= beatSample)
@@ -479,37 +636,37 @@ void MainComponent::getNextAudioBlock(
             ? 4
             : currentBeatInBar;
 
-        // First beat of every bar gets the accent sound.
+        //--------------------------------------------------------------------------
+        // Accent is still used for the audio.
+        //
+        // Визуального акцента первой доли больше нет.
+
         metronomeAccent.store(
             barBeatNumber == 1,
             std::memory_order_relaxed);
 
-        // Every beat triggers the metronome.
         metronomeTrigger.store(
             true,
             std::memory_order_relaxed);
 
-        // Update beat information in the GUI thread.
+        //--------------------------------------------------------------------------
+        // Update small beat counters in GUI.
+
         juce::MessageManager::callAsync(
             [this, beatNumber, barBeatNumber]
             {
                 beatLabel.setText(
-                    "Beat: "
-                    + juce::String(beatNumber),
+                    juce::String(beatNumber),
                     juce::dontSendNotification);
 
                 barBeatLabel.setText(
-                    "Bar beat: "
-                    + juce::String(barBeatNumber),
+                    juce::String(barBeatNumber),
                     juce::dontSendNotification);
-
-                barBeatLabel.setFont(
-                    barBeatNumber == 1
-                    ? 32.0f
-                    : 24.0f);
             });
 
-        // Schedule next beat.
+        //--------------------------------------------------------------------------
+        // Schedule next beat
+
         nextBeatSample.store(
             beatSample
             + beatLengthSamples.load(
@@ -517,15 +674,29 @@ void MainComponent::getNextAudioBlock(
             std::memory_order_relaxed);
     }
 
-    //==========================================================================
+    //--------------------------------------------------------------------------
     // Input samples
     //
-    // Guitar is connected to input channel 1,
-    // which corresponds to index 0.
+    // Guitar input is read from channel 0.
+    //
+    // ВАЖНО:
+    // Сначала сохраняем оригинальный guitar signal,
+    // и только потом работаем с output.
+    //
+    // Это сохраняет защиту от попадания метронома
+    // в pitch detection.
 
     auto* samples =
         bufferToFill.buffer->getReadPointer(0);
 
+    //--------------------------------------------------------------------------
+    // Mono guitar -> stereo output
+    //
+    // Один guitar signal отправляется одновременно
+    // в Left и Right.
+    //
+    // Pitch detection по-прежнему использует только
+    // оригинальный channel 0.
 
     if (bufferToFill.buffer->getNumChannels() >= 2)
     {
@@ -539,23 +710,16 @@ void MainComponent::getNextAudioBlock(
                 1,
                 bufferToFill.startSample);
 
-        for (int i = 0; i < bufferToFill.numSamples; ++i)
+        for (int i = 0;
+            i < bufferToFill.numSamples;
+            ++i)
+        {
             right[i] = left[i];
+        }
     }
 
-    juce::AudioBuffer<float> inputBuffer(
-        bufferToFill.buffer->getArrayOfWritePointers(),
-        1,
-        bufferToFill.startSample,
-        bufferToFill.numSamples);
-
-
-
-    //==========================================================================
-// Copy guitar input into pitch analysis buffer
-//
-// Когда набирается 2048 samples, блок передаётся одному из
-// двух analysis buffers.
+    //--------------------------------------------------------------------------
+    // Copy guitar input into pitch analysis buffer
 
     for (int i = 0;
         i < bufferToFill.numSamples;
@@ -570,8 +734,8 @@ void MainComponent::getNextAudioBlock(
 
         if (pitchBufferPosition >= 2048)
         {
-            //==============================================================
-            // First analysis buffer available
+            //----------------------------------------------------------------------
+            // First analysis buffer
 
             if (!pitchBufferReady.load())
             {
@@ -598,8 +762,8 @@ void MainComponent::getNextAudioBlock(
                 pitchBufferReady.store(true);
             }
 
-            //==============================================================
-            // Second analysis buffer available
+            //----------------------------------------------------------------------
+            // Second analysis buffer
 
             else if (!pitchBufferReady2.load())
             {
@@ -626,16 +790,11 @@ void MainComponent::getNextAudioBlock(
                 pitchBufferReady2.store(true);
             }
 
-            // Start collecting the next block.
             pitchBufferPosition = 0;
         }
     }
 
-    // Никакой pitch detection здесь не выполняется.
-
-
-
-    //==========================================================================
+    //--------------------------------------------------------------------------
     // Start metronome playback when a beat occurs
 
     if (metronomeTrigger.exchange(
@@ -657,10 +816,13 @@ void MainComponent::getNextAudioBlock(
             buffer.getNumSamples();
     }
 
-    //==========================================================================
-    // Play current metronome WAV
+    //--------------------------------------------------------------------------
+    // Play metronome WAV
     //
-    // Accent beat is louder than normal beats.
+    // Mono metronome is duplicated to all output channels.
+    //
+    // Playback position is advanced only once per sample,
+    // not once per channel.
 
     if (metronomeSamplesRemaining > 0)
     {
@@ -679,10 +841,13 @@ void MainComponent::getNextAudioBlock(
             ? 0.30f
             : 0.18f;
 
-        for (int i = 0; i < samplesToCopy; ++i)
+        for (int i = 0;
+            i < samplesToCopy;
+            ++i)
         {
             const float metronomeSample =
-                volume * buffer.getSample(
+                volume
+                * buffer.getSample(
                     0,
                     metronomePlaybackPosition);
 
@@ -702,26 +867,27 @@ void MainComponent::getNextAudioBlock(
             --metronomeSamplesRemaining;
         }
     }
-
-
 }
 
 //==============================================================================
 // RMS detection
-//
-// Возвращает среднеквадратичную амплитуду блока.
-// Используется для определения наличия сигнала и onset.
 //==============================================================================
+
 double MainComponent::detectRms(
     const float* samples,
     int numSamples)
 {
-    if (samples == nullptr || numSamples <= 0)
+    if (samples == nullptr
+        || numSamples <= 0)
+    {
         return 0.0;
+    }
 
     double sum = 0.0;
 
-    for (int i = 0; i < numSamples; ++i)
+    for (int i = 0;
+        i < numSamples;
+        ++i)
     {
         const double x =
             static_cast<double>(samples[i]);
@@ -735,15 +901,8 @@ double MainComponent::detectRms(
 
 //==============================================================================
 // Pitch detection
-//
-// Используется алгоритм YIN-подобного типа:
-// - удаление DC offset;
-// - RMS threshold;
-// - difference function;
-// - CMNDF;
-// - поиск наиболее подходящего периода;
-// - перевод периода в частоту.
 //==============================================================================
+
 double MainComponent::detectPitch(
     const float* samples,
     int numSamples,
@@ -756,23 +915,29 @@ double MainComponent::detectPitch(
         return 0.0;
     }
 
-    //==========================================================================
-    // Calculate mean / DC offset
+    //--------------------------------------------------------------------------
+    // Mean / DC offset
 
     double mean = 0.0;
 
-    for (int i = 0; i < numSamples; ++i)
+    for (int i = 0;
+        i < numSamples;
+        ++i)
+    {
         mean += samples[i];
+    }
 
     mean /=
         static_cast<double>(numSamples);
 
-    //==========================================================================
-    // Calculate RMS after removing DC offset
+    //--------------------------------------------------------------------------
+    // RMS
 
     double rms = 0.0;
 
-    for (int i = 0; i < numSamples; ++i)
+    for (int i = 0;
+        i < numSamples;
+        ++i)
     {
         const double x =
             static_cast<double>(samples[i])
@@ -781,15 +946,15 @@ double MainComponent::detectPitch(
         rms += x * x;
     }
 
-    rms = std::sqrt(
-        rms / static_cast<double>(numSamples));
+    rms =
+        std::sqrt(
+            rms / static_cast<double>(numSamples));
 
-    // Ignore very quiet blocks.
     if (rms < 0.005)
         return 0.0;
 
-    //==========================================================================
-    // Pitch search range: 60 Hz - 500 Hz
+    //--------------------------------------------------------------------------
+    // Search range: 60 Hz - 500 Hz
 
     const int minLag =
         static_cast<int>(
@@ -805,8 +970,8 @@ double MainComponent::detectPitch(
         return 0.0;
     }
 
-    //==========================================================================
-    // Difference function and CMNDF
+    //--------------------------------------------------------------------------
+    // Difference function
 
     std::vector<double> difference(
         maxLag + 1,
@@ -843,8 +1008,8 @@ double MainComponent::detectPitch(
         difference[lag] = sum;
     }
 
-    //==========================================================================
-    // Cumulative mean normalized difference function
+    //--------------------------------------------------------------------------
+    // CMNDF
 
     double runningSum = 0.0;
 
@@ -863,8 +1028,8 @@ double MainComponent::detectPitch(
         }
     }
 
-    //==========================================================================
-    // Find first strong CMNDF minimum
+    //--------------------------------------------------------------------------
+    // Find first strong minimum
 
     int bestLag = 0;
 
@@ -887,9 +1052,8 @@ double MainComponent::detectPitch(
         }
     }
 
-    //==========================================================================
-    // If no strong minimum was found,
-    // use the absolute minimum.
+    //--------------------------------------------------------------------------
+    // Fallback: absolute minimum
 
     if (bestLag == 0)
     {
@@ -910,16 +1074,17 @@ double MainComponent::detectPitch(
     if (bestLag == 0)
         return 0.0;
 
-    // Period -> frequency.
+    //--------------------------------------------------------------------------
+    // Period -> frequency
+
     return sampleRate
         / static_cast<double>(bestLag);
 }
 
 //==============================================================================
 // Convert frequency to musical note
-//
-// Uses MIDI note numbering and converts it into note name + octave.
 //==============================================================================
+
 juce::String MainComponent::pitchToNote(
     double frequency)
 {
@@ -929,7 +1094,8 @@ juce::String MainComponent::pitchToNote(
     const double midi =
         69.0
         + 12.0
-        * std::log2(frequency / 440.0);
+        * std::log2(
+            frequency / 440.0);
 
     const int midiNote =
         static_cast<int>(
@@ -965,90 +1131,197 @@ juce::String MainComponent::pitchToNote(
 //==============================================================================
 // Release audio resources
 //==============================================================================
+
 void MainComponent::releaseResources()
 {
 }
 
 //==============================================================================
-// Main background
+// Main UI painting
+//
+// Здесь рисуются:
+// - фон;
+// - карточка верхней панели;
+// - карточка Pitch;
+// - карточка Target;
+// - карточка Status;
+// - карточка Score.
+//
+// Сам текст рисуют Label-компоненты.
 //==============================================================================
+
 void MainComponent::paint(
     juce::Graphics& g)
 {
+    //--------------------------------------------------------------------------
+    // Background
+
     g.fillAll(
-        getLookAndFeel().findColour(
-            juce::ResizableWindow::backgroundColourId));
+        UiColors::background);
 
-    g.setColour(
-        juce::Colours::white);
+    //--------------------------------------------------------------------------
+    // Helper for drawing modern rounded cards.
 
-    g.setFont(24.0f);
+    auto drawCard =
+        [&g](juce::Rectangle<float> area)
+        {
+            // Very soft shadow.
+            g.setColour(
+                juce::Colour(0x12000000));
 
-    g.drawText(
-        "Guitar Battle - Audio Setup",
-        20,
-        80,
-        getWidth() - 40,
-        40,
-        juce::Justification::centred);
+            g.fillRoundedRectangle(
+                area.translated(0.0f, 3.0f),
+                16.0f);
+
+            // White card.
+            g.setColour(
+                UiColors::card);
+
+            g.fillRoundedRectangle(
+                area,
+                16.0f);
+
+            // Thin border.
+            g.setColour(
+                UiColors::border);
+
+            g.drawRoundedRectangle(
+                area,
+                16.0f,
+                1.0f);
+        };
+
+    //--------------------------------------------------------------------------
+    // Top bar card
+
+    drawCard(
+        juce::Rectangle<float>(
+            24.0f,
+            24.0f,
+            static_cast<float>(getWidth() - 48),
+            72.0f));
+
+    //--------------------------------------------------------------------------
+    // Pitch card
+
+    drawCard(
+        juce::Rectangle<float>(
+            24.0f,
+            120.0f,
+            static_cast<float>(getWidth() - 48),
+            150.0f));
+
+    //--------------------------------------------------------------------------
+    // Target card
+
+    drawCard(
+        juce::Rectangle<float>(
+            24.0f,
+            294.0f,
+            static_cast<float>(getWidth() - 48),
+            100.0f));
+
+    //--------------------------------------------------------------------------
+    // Status card
+
+    drawCard(
+        juce::Rectangle<float>(
+            24.0f,
+            418.0f,
+            static_cast<float>(getWidth() - 48),
+            90.0f));
+
+    //--------------------------------------------------------------------------
+    // Score card
+
+    drawCard(
+        juce::Rectangle<float>(
+            24.0f,
+            532.0f,
+            static_cast<float>(getWidth() - 48),
+            90.0f));
 }
 
 //==============================================================================
 // UI layout
 //==============================================================================
+
 void MainComponent::resized()
 {
-    audioSettingsButton.setBounds(
-        20,
-        20,
-        150,
-        40);
+    const int width =
+        getWidth();
 
-    pitchLabel.setBounds(
-        20,
-        100,
-        getWidth() - 40,
-        60);
+    //--------------------------------------------------------------------------
+    // Top information bar
+    //
+    // Beat / Bar beat are deliberately small.
+    // Audio Settings is placed on the right.
 
     beatLabel.setBounds(
-        20,
-        170,
-        getWidth() - 40,
-        40);
+        34,
+        38,
+        55,
+        32);
 
     barBeatLabel.setBounds(
-        20,
-        220,
-        getWidth() - 40,
-        40);
+        92,
+        38,
+        55,
+        32);
 
     bpmLabel.setBounds(
-        20,
-        270,
-        getWidth() - 40,
-        40);
+        170,
+        31,
+        55,
+        24);
 
     bpmSlider.setBounds(
-        100,
-        320,
-        getWidth() - 200,
-        40);
+        225,
+        32,
+        120,
+        42);
 
-    scoreLabel.setBounds(
-        20,
-        370,
-        getWidth() - 40,
-        40);
+    audioSettingsButton.setBounds(
+        width - 154,
+        40,
+        120,
+        32);
+
+    //--------------------------------------------------------------------------
+    // Pitch
+    //
+    // Large central value.
+
+    pitchLabel.setBounds(
+        40,
+        155,
+        width - 80,
+        80);
+
+    //--------------------------------------------------------------------------
+    // Target
 
     targetNoteLabel.setBounds(
-        20,
-        420,
-        getWidth() - 40,
-        50);
+        40,
+        314,
+        width - 80,
+        60);
+
+    //--------------------------------------------------------------------------
+    // Status
 
     hitLabel.setBounds(
-        20,
-        470,
-        getWidth() - 40,
-        40);
+        40,
+        432,
+        width - 80,
+        62);
+
+    //--------------------------------------------------------------------------
+    // Score
+
+    scoreLabel.setBounds(
+        40,
+        546,
+        width - 80,
+        60);
 }
