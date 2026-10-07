@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "ScoringSystem.h"
 
 //==============================================================================
 // Main application component.
@@ -13,6 +14,10 @@
 // - метроном;
 // - BPM и beat scheduler;
 // - игровую цель и score.
+//
+// ВАЖНО:
+// Аудиологика отделена от визуального оформления.
+// Изменения UI не должны влиять на audio callback и pitch detection.
 //==============================================================================
 class MainComponent : public juce::AudioAppComponent
 {
@@ -41,7 +46,17 @@ public:
 private:
 
     //==========================================================================
-    // Main UI
+    // UI
+    //
+    // Все элементы интерфейса находятся здесь.
+    // Карточки сам компонент рисует в paint().
+    //
+    // Label используются только для текста.
+    // Фон и скруглённые блоки рисуются отдельно.
+
+       //==========================================================================
+
+    // UI
 
     juce::Label pitchLabel;
     juce::Label beatLabel;
@@ -51,8 +66,20 @@ private:
     juce::Label hitLabel;
     juce::Label targetNoteLabel;
 
-    juce::Slider bpmSlider;
+    // Speed buttons
+    juce::TextButton speed50Button{ "50" };
+    juce::TextButton speed100Button{ "100" };
+    juce::TextButton speed120Button{ "120" };
+
+    // Audio settings
     juce::TextButton audioSettingsButton{ "Audio Settings" };
+
+    // Difficulty buttons
+    juce::TextButton easyButton{ "EASY" };
+    juce::TextButton normalButton{ "NORMAL" };
+    juce::TextButton hardButton{ "HARD" };
+
+
 
     //==========================================================================
     // Pitch input buffer
@@ -68,9 +95,6 @@ private:
 
     //==========================================================================
     // Double buffer для анализа pitch
-    //
-    // Используются два буфера, чтобы audio callback и PitchThread
-    // не обращались одновременно к одному и тому же блоку данных.
 
     juce::AudioBuffer<float> pitchAnalysisBuffer;
     std::atomic<bool> pitchBufferReady{ false };
@@ -78,7 +102,6 @@ private:
     juce::AudioBuffer<float> pitchAnalysisBuffer2;
     std::atomic<bool> pitchBufferReady2{ false };
 
-    // Sample position начала каждого analysis block.
     std::atomic<uint64_t> pitchAnalysisStartSample{ 0 };
     std::atomic<uint64_t> pitchAnalysisStartSample2{ 0 };
 
@@ -100,6 +123,12 @@ private:
     //==========================================================================
     // Game state
 
+    Difficulty difficulty = Difficulty::Normal;
+
+    double speedPercent = 100.0;
+    double baseBpm = 120.0;
+    
+    
     std::atomic<int> score{ 0 };
     std::atomic<bool> targetHit{ false };
     std::atomic<uint64_t> lastHitSample{ 0 };
@@ -119,9 +148,6 @@ private:
 
     //==========================================================================
     // Beat scheduler
-    //
-    // Все значения хранятся в audio samples, поэтому scheduler
-    // не зависит от GUI timer.
 
     std::atomic<uint64_t> beatLengthSamples{ 0 };
     std::atomic<uint64_t> nextBeatSample{ 0 };
@@ -130,10 +156,6 @@ private:
 
     //==========================================================================
     // Metronome
-    //
-    // Метроном использует заранее загруженные WAV-файлы.
-    // Первый beat такта использует accent WAV,
-    // остальные beats используют normal WAV.
 
     std::atomic<bool> metronomeTrigger{ false };
     std::atomic<bool> metronomeAccent{ false };
@@ -164,14 +186,14 @@ private:
 
     juce::String pitchToNote(double frequency);
 
+
+
+    
+
+
+
     //==========================================================================
     // Background pitch detection thread
-    //
-    // В audio callback выполняются только быстрые операции:
-    // копирование samples и установка ready flags.
-    //
-    // Pitch detection и onset detection выполняются здесь,
-    // чтобы не создавать audio dropouts.
 
     class PitchThread : public juce::Thread
     {
@@ -218,9 +240,6 @@ private:
 
                     //==============================================================
                     // Определяем фактическое начало звука внутри блока.
-                    //
-                    // Используем 20% от максимальной амплитуды блока
-                    // как простой onset threshold.
 
                     const auto* blockSamples =
                         owner.pitchAnalysisBuffer.getReadPointer(0);
@@ -254,10 +273,7 @@ private:
                         + static_cast<uint64_t>(onsetOffset);
 
                     //==============================================================
-                    // Обновляем RMS и определяем onset.
-                    //
-                    // Небольшой рост RMS относительно предыдущего блока
-                    // используется как признак новой ноты.
+                    // RMS / onset detection
 
                     const double previousRms =
                         owner.previousRmsValue;
@@ -270,7 +286,7 @@ private:
                             [this]
                             {
                                 owner.pitchLabel.setText(
-                                    "Pitch: -- Hz",
+                                    "Pitch: ---",
                                     juce::dontSendNotification);
                             });
                     }
@@ -280,7 +296,7 @@ private:
                         && rms > previousRms * 1.02;
 
                     //==============================================================
-                    // При обнаружении новой ноты запоминаем её sample position.
+                    // Запоминаем onset
 
                     if (onset)
                     {
@@ -297,13 +313,10 @@ private:
                             ? analysisSample - lastOnset
                             : 0;
 
-                        // Защита от повторного определения одной и той же ноты.
+                        // Защита от повторного определения одной ноты.
                         if (lastOnset != 0 && onsetGap < 11025)
                             continue;
                     }
-
-                    //==============================================================
-                    // Запоминаем sample position последней onset.
 
                     if (onset)
                     {
@@ -317,8 +330,7 @@ private:
                     }
 
                     //==============================================================
-                    // Обрабатываем pitch только для достаточно сильного
-                    // и валидного onset.
+                    // Valid pitch + onset
 
                     if (pitch > 20.0
                         && pitch < 1000.0
@@ -329,7 +341,7 @@ private:
 
                         const auto text =
                             owner.pitchToNote(pitch)
-                            + "  | "
+                            + "  |  "
                             + juce::String(pitch, 2)
                             + " Hz";
 
@@ -337,7 +349,7 @@ private:
                             owner.pitchToNote(pitch);
 
                         //==========================================================
-                        // Проверяем попадание в текущую игровую цель.
+                        // Проверяем попадание в target.
 
                         if (detectedNote == owner.targetNote
                             && !owner.targetHit.exchange(true))
@@ -347,75 +359,156 @@ private:
                                 std::memory_order_relaxed);
 
                             //======================================================
-                            // Определяем ближайший beat.
-                            //
-                            // Сейчас timingGood используется как диагностический
-                            // результат. Начисление очков пока происходит
-                            // при совпадении ноты с targetNote.
+                           //==============================================================
+// Scoring
+//
+// Pitch:
+// вычисляем ошибку в cents относительно target note.
+//
+// Timing:
+// отрицательное значение = EARLY
+// положительное значение = LATE.
+
+                            const double targetFrequency =
+                                noteNameToFrequency(owner.targetNote);
+
+                            double pitchErrorCents = 0.0;
+
+                            if (targetFrequency > 0.0 && pitch > 0.0)
+                            {
+                                pitchErrorCents =
+                                    1200.0 * std::log2(
+                                        pitch / targetFrequency);
+                            }
+
+                            //--------------------------------------------------------------
+                            // Реальный onset игрока.
 
                             const auto hitSample =
                                 owner.lastOnsetSample.load(
                                     std::memory_order_relaxed);
 
-                            const auto nextBeatSample =
+                            //--------------------------------------------------------------
+                            // Ближайший beat.
+
+                            const auto scheduledNextBeat =
                                 owner.nextBeatSample.load(
                                     std::memory_order_relaxed);
 
-                            const auto previousBeatSample =
-                                nextBeatSample
-                                - owner.beatLengthSamples.load(
+                            const auto beatLength =
+                                owner.beatLengthSamples.load(
                                     std::memory_order_relaxed);
 
+                            const auto scheduledPreviousBeat =
+                                scheduledNextBeat > beatLength
+                                ? scheduledNextBeat - beatLength
+                                : 0;
+
+                            //--------------------------------------------------------------
+                            // Signed timing error.
+                            //
+                            // Отрицательное значение = EARLY.
+                            // Положительное значение = LATE.
+
                             const auto errorToNext =
-                                std::llabs(
-                                    static_cast<long long>(hitSample)
-                                    - static_cast<long long>(nextBeatSample));
+                                static_cast<long long>(hitSample)
+                                - static_cast<long long>(scheduledNextBeat);
 
                             const auto errorToPrevious =
-                                std::llabs(
-                                    static_cast<long long>(hitSample)
-                                    - static_cast<long long>(previousBeatSample));
+                                static_cast<long long>(hitSample)
+                                - static_cast<long long>(scheduledPreviousBeat);
 
-                            const auto timingErrorSamples =
-                                std::min(
-                                    errorToNext,
-                                    errorToPrevious);
+                            const long long timingErrorSamples =
+                                std::llabs(errorToNext)
+                                < std::llabs(errorToPrevious)
+                                ? errorToNext
+                                : errorToPrevious;
 
-                            const bool timingGood =
-                                timingErrorSamples
-                                <= static_cast<long long>(
-                                    sampleRate * 0.100);
+                            const double timingErrorMs =
+                                static_cast<double>(timingErrorSamples)
+                                * 1000.0
+                                / sampleRate;
 
-                            juce::ignoreUnused(timingGood);
+                            //--------------------------------------------------------------
+                            // Note score.
 
-                            //======================================================
-                            // Начисление очков.
+                            const auto noteResult =
+                                ScoringSystem::calculateNoteScore(
+                                    pitchErrorCents,
+                                    timingErrorMs);
+
+                            //--------------------------------------------------------------
+                            // Difficulty + BPM.
+
+                            const auto difficultySettings =
+                                ScoringSystem::getDifficultySettings(
+                                    owner.difficulty);
+
+                            const double bpmMultiplier =
+                                ScoringSystem::getBpmMultiplier(
+                                    owner.speedPercent);
+
+                            const double finalNoteScore =
+                                noteResult.noteScore
+                                * difficultySettings.difficultyMultiplier
+                                * bpmMultiplier;
+
+                            const int scoreToAdd =
+                                static_cast<int>(
+                                    std::round(finalNoteScore));
 
                             const auto newScore =
                                 owner.score.fetch_add(
-                                    10,
+                                    scoreToAdd,
                                     std::memory_order_relaxed)
-                                + 10;
+                                + scoreToAdd;
+
+                            //--------------------------------------------------------------
+                            // Result on screen.
 
                             juce::MessageManager::callAsync(
-                                [this]
+                                [this, quality = noteResult.quality, timingErrorMs]
                                 {
-                                    owner.hitLabel.setText(
-                                        "HIT!",
-                                        juce::dontSendNotification);
+                                    juce::String qualityText;
 
-                                    juce::Timer::callAfterDelay(
-                                        300,
-                                        [this]
-                                        {
-                                            owner.hitLabel.setText(
-                                                "Ready",
-                                                juce::dontSendNotification);
-                                        });
+                                    switch (quality)
+                                    {
+                                    case HitQuality::Perfect:
+                                        qualityText = "PERFECT";
+                                        break;
+
+                                    case HitQuality::Great:
+                                        qualityText = "GREAT";
+                                        break;
+
+                                    case HitQuality::Good:
+                                        qualityText = "GOOD";
+                                        break;
+
+                                    case HitQuality::Miss:
+                                        qualityText = "MISS";
+                                        break;
+                                    }
+
+                                    const int roundedTiming =
+                                        static_cast<int>(
+                                            std::round(
+                                                std::abs(timingErrorMs)));
+
+                                    const juce::String timingText =
+                                        timingErrorMs < 0.0
+                                        ? "-" + juce::String(roundedTiming) + " ms EARLY"
+                                        : "+" + juce::String(roundedTiming) + " ms LATE";
+
+                                    owner.hitLabel.setText(
+                                        qualityText
+                                        + "\n"
+                                        + timingText,
+                                        juce::dontSendNotification);
                                 });
 
                             //======================================================
-                            // Переходим к следующей целевой ноте.
+                            // Следующая target note
 
                             owner.targetNoteIndex =
                                 (owner.targetNoteIndex + 1) % 6;
@@ -425,32 +518,30 @@ private:
                                     owner.targetNoteIndex];
 
                             //======================================================
-                            // Обновляем score в GUI thread.
+                            // Update score
 
                             juce::MessageManager::callAsync(
                                 [this, newScore]
                                 {
                                     owner.scoreLabel.setText(
-                                        "Score: "
-                                        + juce::String(newScore),
+                                        juce::String(newScore),
                                         juce::dontSendNotification);
                                 });
                         }
 
                         //==========================================================
-                        // Обновляем отображение текущей цели.
+                        // Update target
 
                         juce::MessageManager::callAsync(
                             [this]
                             {
                                 owner.targetNoteLabel.setText(
-                                    "Target: "
-                                    + owner.targetNote,
+                                    owner.targetNote,
                                     juce::dontSendNotification);
                             });
 
                         //==========================================================
-                        // Обновляем текущий pitch.
+                        // Update pitch
 
                         juce::MessageManager::callAsync(
                             [this, text]
@@ -464,9 +555,6 @@ private:
 
                 //==================================================================
                 // Второй analysis buffer
-                //
-                // Он используется для обработки следующего блока,
-                // пока первый блок уже обрабатывается.
 
                 if (owner.pitchBufferReady2.exchange(false))
                 {
@@ -494,9 +582,6 @@ private:
                         owner.pitchAnalysisStartSample2.load(
                             std::memory_order_relaxed);
 
-                    //==============================================================
-                    // Onset detection для второго буфера.
-
                     const double previousRms =
                         owner.previousRmsValue;
 
@@ -508,7 +593,7 @@ private:
                             [this]
                             {
                                 owner.pitchLabel.setText(
-                                    "Pitch: -- Hz",
+                                    "Pitch: ---",
                                     juce::dontSendNotification);
                             });
                     }
@@ -528,12 +613,6 @@ private:
                             std::memory_order_relaxed);
                     }
 
-                    //==============================================================
-                    // Обновляем pitch для второго буфера.
-                    //
-                    // Игровое начисление очков здесь намеренно не дублируется:
-                    // основная игровая обработка находится в первом buffer path.
-
                     if (pitch > 20.0
                         && pitch < 1000.0
                         && rms >= 0.005
@@ -551,8 +630,7 @@ private:
                             [this]
                             {
                                 owner.targetNoteLabel.setText(
-                                    "Target: "
-                                    + owner.targetNote,
+                                    owner.targetNote,
                                     juce::dontSendNotification);
                             });
 
@@ -566,8 +644,7 @@ private:
                     }
                 }
 
-                // Небольшая пауза позволяет thread корректно отдавать
-                // процессор другим задачам системы.
+                // Небольшая пауза для корректной работы thread.
                 wait(1);
             }
         }
