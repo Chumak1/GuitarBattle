@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include "Midi/MidiParser.h"
+
 //==============================================================================
 // UI palette
 //
@@ -70,7 +72,42 @@ MainComponent::MainComponent()
     //--------------------------------------------------------------------------
     // Main window size
 
-    setSize(900, 650);
+    setSize(1000, 950);
+
+    addAndMakeVisible(tablatureComponent);
+
+    {
+        juce::File midiFile(
+            "D:\\GuitarBattle\\GuitarBattle\\Source\\Songs\\Pridumay_Svetly_Mir.mid");
+
+        std::vector<TabNote> midiNotes;
+
+        const bool loaded =
+            MidiParser::loadMidi(
+                midiFile,
+                midiNotes);
+
+        if (loaded)
+        {
+            tablatureComponent.setNotes(midiNotes);
+
+            tablatureComponent.setBpm(
+                bpm.load(std::memory_order_relaxed));
+
+            DBG("================================");
+            DBG("MIDI TEST SUCCESS");
+            DBG("Notes loaded: "
+                + juce::String(
+                    static_cast<int>(midiNotes.size())));
+            DBG("================================");
+        }
+        else
+        {
+            DBG("================================");
+            DBG("MIDI TEST FAILED");
+            DBG("================================");
+        }
+    }
 
     //--------------------------------------------------------------------------
     // Pitch label
@@ -907,6 +944,13 @@ void MainComponent::getNextAudioBlock(
                 barBeatLabel.setText(
                     juce::String(barBeatNumber),
                     juce::dontSendNotification);
+
+                tablatureComponent.setBpm(
+                    bpm.load(
+                        std::memory_order_relaxed));
+
+                tablatureComponent.setPlayheadBeat(
+                    static_cast<double>(beatNumber));
             });
 
         //--------------------------------------------------------------------------
@@ -1695,5 +1739,15 @@ void MainComponent::resized()
         546,
         width - 80,
         60);
+
+    //--------------------------------------------------------------------------
+// Guitar tab
+
+    tablatureComponent.setBounds(
+        24,
+        650,
+        width - 48,
+        260);
+
 
 }

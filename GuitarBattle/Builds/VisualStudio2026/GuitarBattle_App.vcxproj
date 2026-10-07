@@ -3187,6 +3187,8 @@
     <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_basics_4.cpp" />
     <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_basics_5.cpp" />
     <ClCompile Include="..\..\JuceLibraryCode\include_juce_gui_extra.cpp" />
+    <ClCompile Include="..\..\Source\Midi\MidiParser.cpp" />
+    <ClCompile Include="..\..\Source\Midi\TablatureComponent.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\Source\MainComponent.h" />
@@ -4834,6 +4836,10 @@
     <ClInclude Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_gui_extra\native\juce_NSViewFrameWatcher_mac.h" />
     <ClInclude Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_gui_extra\juce_gui_extra.h" />
     <ClInclude Include="..\..\JuceLibraryCode\JuceHeader.h" />
+    <ClInclude Include="..\..\Source\Midi\MidiParser.h" />
+    <ClInclude Include="..\..\Source\Midi\TablatureComponent.h" />
+    <ClInclude Include="..\..\Source\Midi\TabMapper.h" />
+    <ClInclude Include="..\..\Source\Midi\TabNote.h" />
     <ClInclude Include="ScoringSystem.h" />
   </ItemGroup>
   <ItemGroup>

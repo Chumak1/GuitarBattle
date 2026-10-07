@@ -3,6 +3,8 @@
 #include <JuceHeader.h>
 #include "ScoringSystem.h"
 
+#include "Midi/TablatureComponent.h"
+
 //==============================================================================
 // Main application component.
 //
@@ -79,6 +81,8 @@ private:
     juce::TextButton normalButton{ "NORMAL" };
     juce::TextButton hardButton{ "HARD" };
 
+
+    TablatureComponent tablatureComponent;
 
 
     //==========================================================================

@@ -4,6 +4,16 @@
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
   <MAINGROUP id="YwvWlz" name="GuitarBattle">
     <GROUP id="{FD100ED6-F86C-F2E1-2AEB-B88EA6EF2BB0}" name="Source">
+      <GROUP id="{D979068A-8FDE-55FB-384B-D6AEAAF8B1A2}" name="Midi">
+        <FILE id="qqIcfM" name="MidiParser.cpp" compile="1" resource="0" file="Source/Midi/MidiParser.cpp"/>
+        <FILE id="UYqmsO" name="MidiParser.h" compile="0" resource="0" file="Source/Midi/MidiParser.h"/>
+        <FILE id="vV5pwe" name="TablatureComponent.cpp" compile="1" resource="0"
+              file="Source/Midi/TablatureComponent.cpp"/>
+        <FILE id="g2powN" name="TablatureComponent.h" compile="0" resource="0"
+              file="Source/Midi/TablatureComponent.h"/>
+        <FILE id="jb3rFS" name="TabMapper.h" compile="0" resource="0" file="Source/Midi/TabMapper.h"/>
+        <FILE id="P2B8SW" name="TabNote.h" compile="0" resource="0" file="Source/Midi/TabNote.h"/>
+      </GROUP>
       <FILE id="PvmoSG" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
       <FILE id="arNDKD" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>
       <FILE id="hsfyEv" name="MainComponent.cpp" compile="1" resource="0"
