@@ -2,8 +2,8 @@
 
 namespace
 {
-    constexpr float topMargin = 58.0f;
-    constexpr float stringSpacing = 30.0f;
+    constexpr float topMargin = 48.0f;
+    constexpr float stringSpacing = 26.0f;
 
     constexpr float leftMargin = 45.0f;
     constexpr float rightMargin = 20.0f;
@@ -81,33 +81,33 @@ void TablatureComponent::setPlayheadBeat(double beat)
     repaint();
 }
 
+// Freeze the visual timeline during count-in and while the game is paused.
+void TablatureComponent::setPlayheadRunning(bool shouldRun)
+{
+    playheadRunning = shouldRun;
+    lastSyncTime = juce::Time::getCurrentTime();
+    repaint();
+}
+
+void TablatureComponent::setCountInDisplay(bool active, int count)
+{
+    countInDisplayActive = active;
+    countInDisplayCount = juce::jmax(1, count);
+    repaint();
+}
+
 //==============================================================================
 
-juce::Colour TablatureComponent::getStringColour(
-    int stringIndex)
+juce::Colour TablatureComponent::getFingerColour(int finger)
 {
-    switch (stringIndex)
+    // Tab note colours encode the recommended fretting-hand finger, not the string.
+    switch (finger)
     {
-    case 0:
-        return juce::Colour::fromString("FFEF4444");
-
-    case 1:
-        return juce::Colour::fromString("FFF97316");
-
-    case 2:
-        return juce::Colour::fromString("FFEAB308");
-
-    case 3:
-        return juce::Colour::fromString("FF22C55E");
-
-    case 4:
-        return juce::Colour::fromString("FF3B82F6");
-
-    case 5:
-        return juce::Colour::fromString("FF8B5CF6");
-
-    default:
-        return textColour;
+    case 1: return juce::Colour::fromString("FF2563EB"); // index: blue
+    case 2: return juce::Colour::fromString("FF16A34A"); // middle: green
+    case 3: return juce::Colour::fromString("FFF97316"); // ring: orange
+    case 4: return juce::Colour::fromString("FFDC2626"); // pinky: red
+    default: return juce::Colour::fromString("FF64748B"); // open string
     }
 }
 
@@ -344,33 +344,23 @@ void TablatureComponent::drawNote(
     float y)
 {
     const auto colour =
-        getStringColour(note.stringIndex);
+        getFingerColour(note.finger);
 
     const double distance =
         note.startBeat - playheadBeat;
 
+    // A note remains active for its full written duration. The previous narrow
+    // +/- 0.20 beat test made the highlight flash briefly and disappear while
+    // the player was still holding a note.
     const bool isCurrent =
-        std::abs(distance) < 0.20;
+        distance <= 0.05 && distance > -juce::jmax(0.20, note.durationBeats);
 
     const bool isPast =
-        distance < -0.20;
+        distance <= -juce::jmax(0.20, note.durationBeats);
 
     //==========================================================================
-    // Highlight текущей ноты
+    // A single filled circle per note; no finger-number badges or extra rings.
 
-    if (isCurrent)
-    {
-        g.setColour(
-            colour.withAlpha(0.15f));
-
-        g.fillEllipse(
-            x - noteRadius - 7.0f,
-            y - noteRadius - 7.0f,
-            (noteRadius + 7.0f) * 2.0f,
-            (noteRadius + 7.0f) * 2.0f);
-    }
-
-    //==========================================================================
     // Состояние ноты
 
     if (isPast)
@@ -389,26 +379,26 @@ void TablatureComponent::drawNote(
         noteRadius * 2.0f,
         noteRadius * 2.0f);
 
-    //==========================================================================
-    // Номер лада
+    // The extra white/gold ring marks the note currently approaching the playhead.
+    // It is separate from the finger-colour circle, so timing is visible at a glance.
+    if (distance <= 0.10 && distance >= -0.35)
+    {
+        g.setColour(juce::Colour::fromString("FFFFC857"));
+        g.drawEllipse(x - noteRadius - 5.0f, y - noteRadius - 5.0f,
+                      (noteRadius + 5.0f) * 2.0f,
+                      (noteRadius + 5.0f) * 2.0f, 3.5f);
+    }
 
-    g.setColour(
-        juce::Colours::white);
-
-    g.setFont(
-        juce::FontOptions(
-            13.0f,
-            juce::Font::bold));
-
-    g.drawText(
-        juce::String(note.fret),
-        juce::Rectangle<float>(
-            x - noteRadius,
-            y - noteRadius,
-            noteRadius * 2.0f,
-            noteRadius * 2.0f),
-        juce::Justification::centred,
-        false);
+    // Show the fret/note value inside the coloured note marker; never show
+    // a separate finger-number badge. Colour alone identifies the fingering.
+    g.setColour(juce::Colours::white);
+    g.setFont(juce::FontOptions(juce::jmax(9.0f, noteRadius * 0.92f), juce::Font::bold));
+    g.drawText(juce::String(note.fret),
+               juce::Rectangle<int>(static_cast<int>(x - noteRadius),
+                                     static_cast<int>(y - noteRadius),
+                                     static_cast<int>(noteRadius * 2.0f),
+                                     static_cast<int>(noteRadius * 2.0f)),
+               juce::Justification::centred, false);
 
     //==========================================================================
     // Маленькая линия длительности
@@ -479,10 +469,25 @@ void TablatureComponent::paint(
         "Standard tuning",
         145,
         11,
-        150,
+        118,
         22,
         juce::Justification::left,
         false);
+
+    // Compact legend: the number and colour identify the fretting-hand finger.
+    const int legendX = 270;
+    for (int finger = 1; finger <= 4; ++finger)
+    {
+        const float cx = static_cast<float>(legendX + (finger - 1) * 35 + 10);
+        const float cy = 21.0f;
+        g.setColour(getFingerColour(finger));
+        g.fillEllipse(cx - 10.0f, cy - 10.0f, 20.0f, 20.0f);
+        g.setColour(juce::Colours::white);
+        g.setFont(juce::FontOptions(12.0f, juce::Font::bold));
+        g.drawText(juce::String(finger),
+                   juce::Rectangle<int>((int)cx - 10, (int)cy - 10, 20, 20),
+                   juce::Justification::centred, false);
+    }
 
     //==========================================================================
     // Размеры
@@ -564,8 +569,8 @@ void TablatureComponent::paint(
             firstStringY
             + displayRow * stringSpacing;
 
-        g.setColour(
-            getStringColour(stringIndex));
+        // String names are neutral; the note badge and colour indicate the finger.
+        g.setColour(secondaryTextColour);
 
         g.drawText(
             getStringName(stringIndex),
@@ -577,8 +582,9 @@ void TablatureComponent::paint(
             false);
     }
 
-    //==========================================================================
-    // Ноты
+    // Finger guidance is colour-only; no finger-number badges or legend are drawn.
+
+        // Ноты
 
     for (const auto& note : notes)
     {
@@ -637,6 +643,9 @@ void TablatureComponent::paint(
 
     g.fillPath(triangle);
 
+    // COUNT IN is rendered by the full-window overlay so the entire card can be
+    // centered on the screen rather than inside the tablature area.
+
     //==========================================================================
     // Текущий beat
 
@@ -652,9 +661,9 @@ void TablatureComponent::paint(
         "BEAT "
         + juce::String(playheadBeat, 2),
         static_cast<int>(playheadX - 45.0f),
-        getHeight() - 25,
+        getHeight() - 20,
         90,
-        18,
+        16,
         juce::Justification::centred,
         false);
 }
@@ -663,6 +672,9 @@ void TablatureComponent::paint(
 
 void TablatureComponent::timerCallback()
 {
+    if (!playheadRunning)
+        return;
+
     if (bpm <= 0.0)
         return;
 

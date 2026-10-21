@@ -1,9 +1,43 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
 <JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1">
+              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" defines="JUCE_USE_MP3AUDIOFORMAT=1">
   <MAINGROUP id="YwvWlz" name="GuitarBattle">
     <GROUP id="{FD100ED6-F86C-F2E1-2AEB-B88EA6EF2BB0}" name="Source">
+      <GROUP id="{263DF7EE-CD09-F830-E8C4-010189E33041}" name="Tuner">
+        <FILE id="cnPSUg" name="Tuner.cpp" compile="1" resource="0" file="Source/Tuner/Tuner.cpp"/>
+        <FILE id="PgVzW6" name="Tuner.h" compile="0" resource="0" file="Source/Tuner/Tuner.h"/>
+      </GROUP>
+      <GROUP id="{20E14C7B-D0F0-3C2A-194F-9B5C469CC3EC}" name="Gameplay">
+        <FILE id="gJzcOl" name="GameController.cpp" compile="1" resource="0"
+              file="Source/Gameplay/GameController.cpp"/>
+        <FILE id="ABy9RH" name="GameController.h" compile="0" resource="0"
+              file="Source/Gameplay/GameController.h"/>
+        <FILE id="Gcmgqo" name="GameSession.cpp" compile="1" resource="0" file="Source/Gameplay/GameSession.cpp"/>
+        <FILE id="TKqXZy" name="GameSession.h" compile="0" resource="0" file="Source/Gameplay/GameSession.h"/>
+        <FILE id="nXTPJ1" name="Metronome.cpp" compile="1" resource="0" file="Source/Gameplay/Metronome.cpp"/>
+        <FILE id="LKgkhc" name="Metronome.h" compile="0" resource="0" file="Source/Gameplay/Metronome.h"/>
+        <FILE id="fXhM0j" name="ScoringSystem.h" compile="0" resource="0" file="Source/Gameplay/ScoringSystem.h"/>
+        <FILE id="oVO9aj" name="ScoringSystem.cpp" compile="1" resource="0"
+              file="Source/Gameplay/ScoringSystem.cpp"/>
+        <FILE id="mklHYv" name="GameplayEngine.cpp" compile="1" resource="0"
+              file="Source/Gameplay/GameplayEngine.cpp"/>
+        <FILE id="APfuqV" name="GameplayEngine.h" compile="0" resource="0"
+              file="Source/Gameplay/GameplayEngine.h"/>
+      </GROUP>
+      <GROUP id="{85A8759B-236A-5392-9897-45659AFD7DD1}" name="UI">
+        <FILE id="t9kAyH" name="GameStyle.cpp" compile="1" resource="0" file="Source/UI/GameStyle.cpp"/>
+        <FILE id="O7EDSc" name="GameStyle.h" compile="0" resource="0" file="Source/UI/GameStyle.h"/>
+        <FILE id="t8Skoe" name="SelectComponent.cpp" compile="1" resource="0"
+              file="Source/UI/SelectComponent.cpp"/>
+        <FILE id="QZun1U" name="SelectComponent.h" compile="0" resource="0"
+              file="Source/UI/SelectComponent.h"/>
+        <FILE id="rxlKoT" name="TunerComponent.cpp" compile="1" resource="0"
+              file="Source/UI/TunerComponent.cpp"/>
+        <FILE id="Wi0ve9" name="TunerComponent.h" compile="0" resource="0"
+              file="Source/UI/TunerComponent.h"/>
+      </GROUP>
+      <GROUP id="{A35EFB33-1A02-30F8-880B-74B0F642A9AB}" name="Game"/>
       <GROUP id="{D979068A-8FDE-55FB-384B-D6AEAAF8B1A2}" name="Midi">
         <FILE id="qqIcfM" name="MidiParser.cpp" compile="1" resource="0" file="Source/Midi/MidiParser.cpp"/>
         <FILE id="UYqmsO" name="MidiParser.h" compile="0" resource="0" file="Source/Midi/MidiParser.h"/>
@@ -14,8 +48,15 @@
         <FILE id="jb3rFS" name="TabMapper.h" compile="0" resource="0" file="Source/Midi/TabMapper.h"/>
         <FILE id="P2B8SW" name="TabNote.h" compile="0" resource="0" file="Source/Midi/TabNote.h"/>
       </GROUP>
-      <FILE id="PvmoSG" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
+      <GROUP id="{F1BA47E3-4832-C3D6-94BF-99BD47676EB7}" name="Audio">
+        <FILE id="ykQrud" name="AudioEngine.cpp" compile="1" resource="0" file="Source/Audio/AudioEngine.cpp"/>
+        <FILE id="clTbVj" name="AudioEngine.h" compile="0" resource="0" file="Source/Audio/AudioEngine.h"/>
+        <FILE id="colv8R" name="PitchDetector.cpp" compile="1" resource="0"
+              file="Source/Audio/PitchDetector.cpp"/>
+        <FILE id="HOHEdQ" name="PitchDetector.h" compile="0" resource="0" file="Source/Audio/PitchDetector.h"/>
+      </GROUP>
       <FILE id="arNDKD" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>
+      <FILE id="PvmoSG" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
       <FILE id="hsfyEv" name="MainComponent.cpp" compile="1" resource="0"
             file="Source/MainComponent.cpp"/>
     </GROUP>

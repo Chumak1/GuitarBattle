@@ -1,34 +1,54 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "ScoringSystem.h"
+#include "Gameplay/GameplayStats.h"
+#include <array>
+#include <memory>
+#include <vector>
 
+#include "Gameplay/ScoringSystem.h"
+#include "Gameplay/GameplayEngine.h"
+#include "Midi/MidiParser.h"
 #include "Midi/TablatureComponent.h"
+#include "Audio/PitchDetector.h"
+#include "Tuner/Tuner.h"
+#include "Gameplay/Metronome.h"
+#include "Gameplay/GameSession.h"
+#include "Generation/MidiMelodyGenerator.h"
+#include "Network/ApiClient.h"
 
-//==============================================================================
-// Main application component.
-//
-// Отвечает за:
-// - пользовательский интерфейс;
-// - работу с аудиоустройством;
-// - захват входного сигнала гитары;
-// - определение pitch и onset на отдельном потоке;
-// - метроном;
-// - BPM и beat scheduler;
-// - игровую цель и score.
-//
-// ВАЖНО:
-// Аудиологика отделена от визуального оформления.
-// Изменения UI не должны влиять на audio callback и pitch detection.
-//==============================================================================
-class MainComponent : public juce::AudioAppComponent
+class MainComponent;
+class PitchDetectionThread;
+
+// Transparent drawing layer above the video background and below the controls.
+class MainOverlayComponent : public juce::Component
 {
 public:
+    explicit MainOverlayComponent(MainComponent& ownerToUse) : owner(ownerToUse)
+    {
+        setInterceptsMouseClicks(false, false);
+    }
+    void paint(juce::Graphics& g) override;
+private:
+    MainComponent& owner;
+};
+
+class MainComponent : public juce::AudioAppComponent,
+    private juce::Timer
+{
+public:
+
+    enum class GameState
+    {
+        SongSelect,
+        Tuner,
+        Playing,
+        Paused,
+        Finished
+    };
+
     MainComponent();
     ~MainComponent() override;
-
-    //==========================================================================
-    // JUCE audio callbacks
 
     void prepareToPlay(
         int samplesPerBlockExpected,
@@ -37,633 +57,431 @@ public:
     void getNextAudioBlock(
         const juce::AudioSourceChannelInfo& bufferToFill) override;
 
+    void timerCallback() override;
+
     void releaseResources() override;
 
-    //==========================================================================
-    // JUCE component callbacks
-
     void paint(juce::Graphics& g) override;
+    void paintOverlay(juce::Graphics& g);
+
     void resized() override;
+
+    friend class MainOverlayComponent;
+    friend class PitchDetectionThread;
 
 private:
 
     //==========================================================================
-    // UI
-    //
-    // Все элементы интерфейса находятся здесь.
-    // Карточки сам компонент рисует в paint().
-    //
-    // Label используются только для текста.
-    // Фон и скруглённые блоки рисуются отдельно.
+    // Game state
 
-       //==========================================================================
+    GameState gameState = GameState::SongSelect;
 
-    // UI
+    GameState stateBeforePause = GameState::Playing;
 
-    juce::Label pitchLabel;
-    juce::Label beatLabel;
-    juce::Label barBeatLabel;
-    juce::Label bpmLabel;
-    juce::Label scoreLabel;
-    juce::Label hitLabel;
-    juce::Label targetNoteLabel;
+    // Four-beat count-in before the song timeline begins.
+    std::atomic<bool> countInActive{ false };
+    std::atomic<int> countInRemaining{ 0 };
 
-    // Speed buttons
-    juce::TextButton speed50Button{ "50" };
-    juce::TextButton speed100Button{ "100" };
-    juce::TextButton speed120Button{ "120" };
+    std::atomic<bool> tunerActive{ false };
 
-    // Audio settings
-    juce::TextButton audioSettingsButton{ "Audio Settings" };
+    // Real audio sample at the exact moment START is pressed.
+    std::atomic<uint64_t> gameplayStartSample{ 0 };
 
-    // Difficulty buttons
-    juce::TextButton easyButton{ "EASY" };
-    juce::TextButton normalButton{ "NORMAL" };
-    juce::TextButton hardButton{ "HARD" };
+    // Total number of audio samples spent paused.
+    std::atomic<uint64_t> pausedSamples{ 0 };
 
+    // Audio sample at which the current pause started.
+    std::atomic<uint64_t> pauseStartSample{ 0 };
 
-    TablatureComponent tablatureComponent;
+    //==========================================================================
+    // Tuner
+
+    int tunerDetectedString = -1;
+
+    double tunerFrequency = 0.0;
+
+    double tunerCents = 0.0;
 
 
     //==========================================================================
-    // Pitch input buffer
-    //
-    // Audio callback быстро складывает входной сигнал сюда.
-    // Когда набирается 2048 samples, блок передаётся одному из двух
-    // analysis buffers для обработки на отдельном потоке.
+    // Decoded JPEG frame sequence avoids JUCE VideoComponent's native Windows
+    // playback window, which would otherwise cover all JUCE controls.
+    juce::Image backgroundFrame; // static background frame; animation disabled
+    MainOverlayComponent overlayComponent{ *this };
+
+    // UI
+
+    juce::Label songTitleLabel;
+    juce::Label gameSongTitleLabel;
+
+    juce::TextButton songPridumayButton{ "1 Power metal" };
+    juce::TextButton onlineCatalogButton{ "LOAD ONLINE SONG" };
+    juce::Label onlineCatalogStatusLabel;
+    juce::Label leaderboardTitleLabel;
+    juce::Label leaderboardLabel;
+    juce::TextButton refreshLeaderboardButton{ "REFRESH RATING" };
+    juce::TextButton accountLoginButton{ "LOGIN" };
+    juce::TextButton accountRegisterButton{ "REGISTER" };
+    juce::Label accountStatusLabel;
+    juce::Label loginScreenTitleLabel;
+    juce::Label currentUserLabel;
+    juce::TextButton logoutButton{ "LOG OUT" };
+    bool showAuthScreen = true;
+    juce::String currentUsername;
+    juce::String onlineAccessToken;
+    juce::String onlineSongUuid;
+    juce::String onlineGameSessionUuid;
+    // All server communication is asynchronous: requests run on this client's
+    // worker threads and their results arrive on the message thread.
+    ApiClient apiClient;
+    // Guards against stale responses from an older request overwriting newer UI.
+    int authRequestId = 0;
+    int leaderboardRequestId = 0;
+    int onlineSessionRequestId = 0;
+    void refreshGlobalLeaderboard();
+    void authenticateOnlineAccount(bool createAccount);
+    void finishOnlineSignIn(bool createAccount,
+                            const juce::String& fallbackName,
+                            const juce::String& accessToken,
+                            int requestId);
+    void startOnlineGameSession();
+    void submitOnlineGameResult();
+
+    // Legacy song buttons are retained in the class for minimal UI churn, but hidden.
+    juce::TextButton songMistButton{ "" };
+    juce::TextButton songChordsButton{ "" };
+    juce::TextButton aiSoloButton{ "" };
+    juce::TextButton oldGeneratorArchiveButton{ "OLD GENERATOR (ARCHIVE)" };
+    bool oldGeneratorArchiveOpen = false;
+    juce::ComboBox melodyStyleCombo;
+    juce::TextButton generateMelodyButton{ "Daily Challenge Monday" };
+    juce::TextButton newGenerationButton{ "NEW GENERATION" };
+    juce::Label songPridumayBestLabel;
+    juce::Label songMistBestLabel;
+    juce::Label songChordsBestLabel;
+    juce::Label dailyChallengeBestLabel;
+    juce::String selectedSongId{ "1 Power metal" };
+
+    struct SongEntry
+    {
+        juce::String title;
+        juce::File folder;
+        juce::File soloMidi;
+        juce::File drums;
+        juce::File bass;
+        juce::File rhythmGuitar;
+        juce::File others;
+        double bpm = 120.0;
+    };
+    juce::File songsRoot;
+    std::vector<SongEntry> songLibrary;
+    SongEntry selectedSong;
+    void scanSongLibrary();
+    void loadFirstOnlineCatalogSong();
+    bool loadSongAudio(const SongEntry& song);
+    juce::File findSongAsset(const juce::File& folder, const juce::StringArray& stems,
+                             const juce::StringArray& extensions) const;
+
+    juce::Label gameSessionLabel;
+
+    juce::Label pitchLabel;
+
+    juce::Label beatLabel;
+
+    juce::Label barBeatLabel;
+
+    juce::Label bpmLabel;
+
+    juce::Label scoreLabel;
+
+    juce::Label hitLabel;
+
+    juce::Label targetNoteLabel;
+
+    juce::Label tunerTitleLabel;
+
+    juce::Label tunerNoteLabel;
+
+    juce::Label tunerFrequencyLabel;
+
+    juce::Label tunerStringLabel;
+
+    juce::Label tunerCentsLabel;
+
+    juce::Label tunerStatusLabel;
+
+    juce::TextButton tunerStartButton{ "START GAME" };
+
+    juce::TextButton tunerSkipButton{ "SKIP TUNING" };
+
+    juce::TextButton gameStartButton{ "START" };
+
+    juce::TextButton pauseButton{ "PAUSE" };
+
+    juce::TextButton menuButton{ "MAIN MENU" };
+
+    juce::TextButton speed50Button{ "50%" };
+
+    juce::TextButton speed100Button{ "100%" };
+
+    juce::TextButton speed120Button{ "120%" };
+
+    juce::TextButton audioSettingsButton{ "Audio Settings" };
+    juce::TextButton distortionButton{ "DISTORTION OFF" };
+    juce::TextButton midiBackingButton{ "FULL MIX OFF" };
+    juce::Slider midiBackingVolumeSlider;
+    juce::Label midiBackingVolumeLabel;
+    std::atomic<bool> midiBackingEnabled{ true };
+    std::atomic<float> midiBackingVolume{ 0.22f };
+
+    juce::TextButton midiRhythmGuitarButton{ "RHYTHM GUITAR ON" };
+    juce::Slider midiRhythmGuitarVolumeSlider;
+    juce::Label midiRhythmGuitarVolumeLabel;
+    std::atomic<bool> midiRhythmGuitarEnabled{ true };
+    std::atomic<float> midiRhythmGuitarVolume{ 0.20f };
+
+    juce::TextButton midiBassButton{ "BASS ON" };
+    juce::Slider midiBassVolumeSlider;
+    juce::Label midiBassVolumeLabel;
+    std::atomic<bool> midiBassEnabled{ true };
+    std::atomic<float> midiBassVolume{ 0.45f };
+    juce::TextButton midiDrumsButton{ "DRUMS ON" };
+    juce::Slider midiDrumsVolumeSlider;
+    juce::Label midiDrumsVolumeLabel;
+    std::atomic<bool> midiDrumsEnabled{ true };
+    std::atomic<float> midiDrumsVolume{ 0.45f };
+    juce::TextButton midiPianoButton{ "OTHERS ON" };
+    juce::Slider midiPianoVolumeSlider;
+    juce::Label midiPianoVolumeLabel;
+    std::atomic<bool> midiPianoEnabled{ true };
+    std::atomic<float> midiPianoVolume{ 0.30f };
+
+    juce::TextButton metronomeMixerButton{ "METRONOME ON" };
+    juce::Slider metronomeMixerVolumeSlider;
+    juce::Label metronomeMixerVolumeLabel;
+    std::atomic<bool> metronomeMixerEnabled{ true };
+    std::atomic<float> metronomeMixerVolume{ 0.70f };
+
+    struct BackingNote
+    {
+        double startBeat = 0.0;
+        double durationBeats = 0.1;
+        int midiNote = 60;
+        int velocity = 80;
+        int instrument = 0; // 1=bass, 2=drums, 3=piano, 4=rhythm guitar
+    };
+    std::vector<BackingNote> backingNotes;
+    std::atomic<bool> dailyChallengeLoaded{ false };
+    bool loadBackingMidiEvents(const juce::File& directory);
+
+    // Sample-based instruments for the generated backing MIDI. These are loaded
+    // once before playback; the audio callback only reads immutable buffers.
+    struct BackingSampleRegion
+    {
+        juce::AudioBuffer<float> audio;
+        double sourceSampleRate = 44100.0;
+        int rootKey = 60, lowKey = 0, highKey = 127;
+        double loopStart = -1.0, loopEnd = -1.0;
+        bool looping = false;
+    };
+    std::array<std::vector<BackingSampleRegion>, 4> backingSampleRegions;
+    std::array<std::array<int, 128>, 4> backingSampleMap{};
+    std::array<std::atomic<bool>, 4> backingSamplesLoaded{};
+    void loadBackingSampleBanks();
+    float renderBackingSample(int instrument, int midiNote, double elapsedOutputSamples, double outputSampleRate) const;
+    juce::Slider distortionDriveSlider;
+    juce::Slider distortionToneSlider;
+    juce::Label distortionDriveLabel;
+    juce::Label distortionToneLabel;
+    std::atomic<bool> distortionEnabled{ false };
+    std::atomic<float> distortionDrive{ 2.5f };
+    std::atomic<float> distortionTone{ 0.65f };
+    float distortionFilterState[2] { 0.0f, 0.0f };
+
+    // Difficulty remains available to the scoring system.
+    // Buttons are intentionally hidden from the UI.
+
+    juce::TextButton easyButton{ "EASY" };
+
+    juce::TextButton normalButton{ "NORMAL" };
+
+    juce::TextButton hardButton{ "HARD" };
+
+    TablatureComponent tablatureComponent;
+
+    //==========================================================================
+    // Pitch analysis buffers
 
     juce::AudioBuffer<float> pitchBuffer;
+
     int pitchBufferPosition = 0;
 
     std::atomic<uint64_t> audioSampleCounter{ 0 };
 
-    //==========================================================================
-    // Double buffer для анализа pitch
+    std::atomic<double> currentPlayheadBeat{ 0.0 };
 
     juce::AudioBuffer<float> pitchAnalysisBuffer;
+
     std::atomic<bool> pitchBufferReady{ false };
 
     juce::AudioBuffer<float> pitchAnalysisBuffer2;
+
     std::atomic<bool> pitchBufferReady2{ false };
 
     std::atomic<uint64_t> pitchAnalysisStartSample{ 0 };
+
     std::atomic<uint64_t> pitchAnalysisStartSample2{ 0 };
 
     //==========================================================================
-    // Onset / pitch state
+    // Note / onset detection
 
     std::atomic<bool> noteOn{ false };
+
     std::atomic<uint64_t> lastNoteOnSample{ 0 };
+
     std::atomic<uint64_t> lastOnsetSample{ 0 };
 
     double previousRmsValue = 0.0;
+
+    double onsetNoiseFloor = 0.0;
+
+    uint64_t lastDetectedOnsetSample = 0;
+
+    double previousRmsValue2 = 0.0;
+
     double lastPitch = 0.0;
 
     //==========================================================================
-    // BPM
+    // Tempo
 
     std::atomic<double> bpm{ 120.0 };
+    // Playback-rate multiplier for all external WAV stems; 1.0 = original speed.
+    std::atomic<double> audioPlaybackRate{ 1.0 };
+
+    double speedPercent = 100.0;
+
+    double baseBpm = 140.0;
 
     //==========================================================================
-    // Game state
+    // Difficulty / scoring
 
     Difficulty difficulty = Difficulty::Normal;
 
-    double speedPercent = 100.0;
-    double baseBpm = 120.0;
-    
-    
-    std::atomic<int> score{ 0 };
-    std::atomic<bool> targetHit{ false };
-    std::atomic<uint64_t> lastHitSample{ 0 };
 
-    juce::String targetNote = "E2";
-    int targetNoteIndex = 0;
 
-    const juce::String targetNotes[6] =
-    {
-        "E2",
-        "A2",
-        "D3",
-        "G3",
-        "B3",
-        "E4"
-    };
 
-    //==========================================================================
-    // Beat scheduler
-
-    std::atomic<uint64_t> beatLengthSamples{ 0 };
-    std::atomic<uint64_t> nextBeatSample{ 0 };
-    std::atomic<uint64_t> beatCounter{ 0 };
-    std::atomic<int> beatInBar{ 0 };
-
-    //==========================================================================
-    // Metronome
-
-    std::atomic<bool> metronomeTrigger{ false };
-    std::atomic<bool> metronomeAccent{ false };
 
     int metronomeSamplesRemaining = 0;
+
     int metronomePlaybackPosition = 0;
+
     bool metronomePlayingAccent = false;
+
+    // Clean electric-guitar sample bank (SFZ + WAV/FLAC samples).
+    // The bank is loaded outside the real-time audio callback.
+    struct GuitarSampleRegion
+    {
+        juce::AudioBuffer<float> audio;
+        double sourceSampleRate = 44100.0;
+        int rootKey = 60;
+        int lowKey = 0;
+        int highKey = 127;
+        double loopStart = -1.0;
+        double loopEnd = -1.0;
+        bool looping = false;
+    };
+
+    std::vector<GuitarSampleRegion> guitarSampleRegions;
+    std::array<int, 128> guitarRegionForMidi{};
+    std::atomic<bool> guitarSamplesLoaded{ false };
+
+    void loadGuitarSampleBank();
+    float renderGuitarSample(int midiNote, double elapsedOutputSamples, double outputSampleRate) const;
 
     juce::AudioFormatManager audioFormatManager;
 
+    // Song stems are decoded before playback; the real-time callback only reads and mixes samples.
+    struct ExternalAudioTrack
+    {
+        juce::AudioBuffer<float> audio; // decoded original stem
+        std::shared_ptr<juce::AudioBuffer<float>> playbackAudio; // WSOLA time-stretched, same pitch
+        double sourceSampleRate = 44100.0;
+        std::atomic<bool> loaded{ false };
+    };
+    std::array<ExternalAudioTrack, 4> externalAudioTracks;
+    bool loadExternalAudioTrack(size_t index, const juce::File& file);
+    void prepareExternalAudioForSpeed(double speedPercent);
+    // Keep the previous MIDI generator implementation in the source, but use
+    // the external stem mixer during normal gameplay.
+    const bool externalAudioMixerActive = true;
+
     std::unique_ptr<juce::AudioFormatReader> metronomeAccentReader;
+
     std::unique_ptr<juce::AudioFormatReader> metronomeNormalReader;
 
     juce::AudioBuffer<float> metronomeAccentBuffer;
+
     juce::AudioBuffer<float> metronomeNormalBuffer;
 
-    //==========================================================================
-    // Pitch detection functions
 
-    double detectPitch(
-        const float* samples,
-        int numSamples,
-        double sampleRate);
+    static constexpr int pitchAnalysisSize = 4096;
+    PitchDetector pitchDetector;
+    GuitarTuner tuner;
+    Metronome metronome;
+    GameSession gameSession;
+    GameplayStats gameplayStats;
 
-    double detectRms(
-        const float* samples,
-        int numSamples);
-
-    juce::String pitchToNote(double frequency);
-
-
-
-    
+    int feedbackType = 0; // 1 PERFECT, 2 GREAT, 3 GOOD, 4 MISS, 5 combo milestone
+    uint32_t feedbackStartMs = 0;
+    float feedbackBaseFontSize = 24.0f;
 
 
 
     //==========================================================================
-    // Background pitch detection thread
-
-    class PitchThread : public juce::Thread
-    {
-    public:
-
-        PitchThread(MainComponent& owner)
-            : juce::Thread("Pitch Detection Thread"),
-            owner(owner)
-        {
-        }
-
-        void run() override
-        {
-            while (!threadShouldExit())
-            {
-                //==================================================================
-                // Первый analysis buffer
-
-                if (owner.pitchBufferReady.exchange(false))
-                {
-                    auto* device =
-                        owner.deviceManager.getCurrentAudioDevice();
-
-                    if (device == nullptr)
-                        continue;
-
-                    const double sampleRate =
-                        device->getCurrentSampleRate();
-
-                    const double pitch =
-                        owner.detectPitch(
-                            owner.pitchAnalysisBuffer.getReadPointer(0),
-                            2048,
-                            sampleRate);
-
-                    const double rms =
-                        owner.detectRms(
-                            owner.pitchAnalysisBuffer.getReadPointer(0),
-                            2048);
-
-                    const auto analysisSample =
-                        owner.pitchAnalysisStartSample.load(
-                            std::memory_order_relaxed);
-
-                    //==============================================================
-                    // Определяем фактическое начало звука внутри блока.
-
-                    const auto* blockSamples =
-                        owner.pitchAnalysisBuffer.getReadPointer(0);
-
-                    int onsetOffset = 0;
-                    double maxSample = 0.0;
-
-                    for (int i = 0; i < 2048; ++i)
-                    {
-                        maxSample = std::max(
-                            maxSample,
-                            std::abs(
-                                static_cast<double>(blockSamples[i])));
-                    }
-
-                    const double threshold = maxSample * 0.2;
-
-                    for (int i = 0; i < 2048; ++i)
-                    {
-                        if (std::abs(
-                            static_cast<double>(blockSamples[i]))
-                            >= threshold)
-                        {
-                            onsetOffset = i;
-                            break;
-                        }
-                    }
-
-                    const auto detectedOnsetSample =
-                        analysisSample
-                        + static_cast<uint64_t>(onsetOffset);
-
-                    //==============================================================
-                    // RMS / onset detection
-
-                    const double previousRms =
-                        owner.previousRmsValue;
-
-                    owner.previousRmsValue = rms;
-
-                    if (rms < 0.005)
-                    {
-                        juce::MessageManager::callAsync(
-                            [this]
-                            {
-                                owner.pitchLabel.setText(
-                                    "Pitch: ---",
-                                    juce::dontSendNotification);
-                            });
-                    }
-
-                    const bool onset =
-                        rms > 0.005
-                        && rms > previousRms * 1.02;
-
-                    //==============================================================
-                    // Запоминаем onset
-
-                    if (onset)
-                    {
-                        owner.lastOnsetSample.store(
-                            detectedOnsetSample,
-                            std::memory_order_relaxed);
-
-                        const auto lastOnset =
-                            owner.lastNoteOnSample.load(
-                                std::memory_order_relaxed);
-
-                        const auto onsetGap =
-                            analysisSample > lastOnset
-                            ? analysisSample - lastOnset
-                            : 0;
-
-                        // Защита от повторного определения одной ноты.
-                        if (lastOnset != 0 && onsetGap < 11025)
-                            continue;
-                    }
-
-                    if (onset)
-                    {
-                        owner.lastNoteOnSample.store(
-                            analysisSample,
-                            std::memory_order_relaxed);
-
-                        owner.targetHit.store(
-                            false,
-                            std::memory_order_relaxed);
-                    }
-
-                    //==============================================================
-                    // Valid pitch + onset
-
-                    if (pitch > 20.0
-                        && pitch < 1000.0
-                        && rms >= 0.005
-                        && onset)
-                    {
-                        owner.lastPitch = pitch;
-
-                        const auto text =
-                            owner.pitchToNote(pitch)
-                            + "  |  "
-                            + juce::String(pitch, 2)
-                            + " Hz";
-
-                        const auto detectedNote =
-                            owner.pitchToNote(pitch);
-
-                        //==========================================================
-                        // Проверяем попадание в target.
-
-                        if (detectedNote == owner.targetNote
-                            && !owner.targetHit.exchange(true))
-                        {
-                            owner.lastHitSample.store(
-                                analysisSample,
-                                std::memory_order_relaxed);
-
-                            //======================================================
-                           //==============================================================
-// Scoring
-//
-// Pitch:
-// вычисляем ошибку в cents относительно target note.
-//
-// Timing:
-// отрицательное значение = EARLY
-// положительное значение = LATE.
-
-                            const double targetFrequency =
-                                noteNameToFrequency(owner.targetNote);
-
-                            double pitchErrorCents = 0.0;
-
-                            if (targetFrequency > 0.0 && pitch > 0.0)
-                            {
-                                pitchErrorCents =
-                                    1200.0 * std::log2(
-                                        pitch / targetFrequency);
-                            }
-
-                            //--------------------------------------------------------------
-                            // Реальный onset игрока.
-
-                            const auto hitSample =
-                                owner.lastOnsetSample.load(
-                                    std::memory_order_relaxed);
-
-                            //--------------------------------------------------------------
-                            // Ближайший beat.
-
-                            const auto scheduledNextBeat =
-                                owner.nextBeatSample.load(
-                                    std::memory_order_relaxed);
-
-                            const auto beatLength =
-                                owner.beatLengthSamples.load(
-                                    std::memory_order_relaxed);
-
-                            const auto scheduledPreviousBeat =
-                                scheduledNextBeat > beatLength
-                                ? scheduledNextBeat - beatLength
-                                : 0;
-
-                            //--------------------------------------------------------------
-                            // Signed timing error.
-                            //
-                            // Отрицательное значение = EARLY.
-                            // Положительное значение = LATE.
-
-                            const auto errorToNext =
-                                static_cast<long long>(hitSample)
-                                - static_cast<long long>(scheduledNextBeat);
-
-                            const auto errorToPrevious =
-                                static_cast<long long>(hitSample)
-                                - static_cast<long long>(scheduledPreviousBeat);
-
-                            const long long timingErrorSamples =
-                                std::llabs(errorToNext)
-                                < std::llabs(errorToPrevious)
-                                ? errorToNext
-                                : errorToPrevious;
-
-                            const double timingErrorMs =
-                                static_cast<double>(timingErrorSamples)
-                                * 1000.0
-                                / sampleRate;
-
-                            //--------------------------------------------------------------
-                            // Note score.
-
-                            const auto noteResult =
-                                ScoringSystem::calculateNoteScore(
-                                    pitchErrorCents,
-                                    timingErrorMs);
-
-                            //--------------------------------------------------------------
-                            // Difficulty + BPM.
-
-                            const auto difficultySettings =
-                                ScoringSystem::getDifficultySettings(
-                                    owner.difficulty);
-
-                            const double bpmMultiplier =
-                                ScoringSystem::getBpmMultiplier(
-                                    owner.speedPercent);
-
-                            const double finalNoteScore =
-                                noteResult.noteScore
-                                * difficultySettings.difficultyMultiplier
-                                * bpmMultiplier;
-
-                            const int scoreToAdd =
-                                static_cast<int>(
-                                    std::round(finalNoteScore));
-
-                            const auto newScore =
-                                owner.score.fetch_add(
-                                    scoreToAdd,
-                                    std::memory_order_relaxed)
-                                + scoreToAdd;
-
-                            //--------------------------------------------------------------
-                            // Result on screen.
-
-                            juce::MessageManager::callAsync(
-                                [this, quality = noteResult.quality, timingErrorMs]
-                                {
-                                    juce::String qualityText;
-
-                                    switch (quality)
-                                    {
-                                    case HitQuality::Perfect:
-                                        qualityText = "PERFECT";
-                                        break;
-
-                                    case HitQuality::Great:
-                                        qualityText = "GREAT";
-                                        break;
-
-                                    case HitQuality::Good:
-                                        qualityText = "GOOD";
-                                        break;
-
-                                    case HitQuality::Miss:
-                                        qualityText = "MISS";
-                                        break;
-                                    }
-
-                                    const int roundedTiming =
-                                        static_cast<int>(
-                                            std::round(
-                                                std::abs(timingErrorMs)));
-
-                                    const juce::String timingText =
-                                        timingErrorMs < 0.0
-                                        ? "-" + juce::String(roundedTiming) + " ms EARLY"
-                                        : "+" + juce::String(roundedTiming) + " ms LATE";
-
-                                    owner.hitLabel.setText(
-                                        qualityText
-                                        + "\n"
-                                        + timingText,
-                                        juce::dontSendNotification);
-                                });
-
-                            //======================================================
-                            // Следующая target note
-
-                            owner.targetNoteIndex =
-                                (owner.targetNoteIndex + 1) % 6;
-
-                            owner.targetNote =
-                                owner.targetNotes[
-                                    owner.targetNoteIndex];
-
-                            //======================================================
-                            // Update score
-
-                            juce::MessageManager::callAsync(
-                                [this, newScore]
-                                {
-                                    owner.scoreLabel.setText(
-                                        juce::String(newScore),
-                                        juce::dontSendNotification);
-                                });
-                        }
-
-                        //==========================================================
-                        // Update target
-
-                        juce::MessageManager::callAsync(
-                            [this]
-                            {
-                                owner.targetNoteLabel.setText(
-                                    owner.targetNote,
-                                    juce::dontSendNotification);
-                            });
-
-                        //==========================================================
-                        // Update pitch
-
-                        juce::MessageManager::callAsync(
-                            [this, text]
-                            {
-                                owner.pitchLabel.setText(
-                                    text,
-                                    juce::dontSendNotification);
-                            });
-                    }
-                }
-
-                //==================================================================
-                // Второй analysis buffer
-
-                if (owner.pitchBufferReady2.exchange(false))
-                {
-                    auto* device =
-                        owner.deviceManager.getCurrentAudioDevice();
-
-                    if (device == nullptr)
-                        continue;
-
-                    const double sampleRate =
-                        device->getCurrentSampleRate();
-
-                    const double pitch =
-                        owner.detectPitch(
-                            owner.pitchAnalysisBuffer2.getReadPointer(0),
-                            2048,
-                            sampleRate);
-
-                    const double rms =
-                        owner.detectRms(
-                            owner.pitchAnalysisBuffer2.getReadPointer(0),
-                            2048);
-
-                    const auto analysisSample =
-                        owner.pitchAnalysisStartSample2.load(
-                            std::memory_order_relaxed);
-
-                    const double previousRms =
-                        owner.previousRmsValue;
-
-                    owner.previousRmsValue = rms;
-
-                    if (rms < 0.005)
-                    {
-                        juce::MessageManager::callAsync(
-                            [this]
-                            {
-                                owner.pitchLabel.setText(
-                                    "Pitch: ---",
-                                    juce::dontSendNotification);
-                            });
-                    }
-
-                    const bool onset =
-                        rms > 0.005
-                        && rms > previousRms * 1.02;
-
-                    if (onset)
-                    {
-                        owner.lastNoteOnSample.store(
-                            analysisSample,
-                            std::memory_order_relaxed);
-
-                        owner.targetHit.store(
-                            false,
-                            std::memory_order_relaxed);
-                    }
-
-                    if (pitch > 20.0
-                        && pitch < 1000.0
-                        && rms >= 0.005
-                        && onset)
-                    {
-                        owner.lastPitch = pitch;
-
-                        const auto text =
-                            owner.pitchToNote(pitch)
-                            + "  |  "
-                            + juce::String(pitch, 2)
-                            + " Hz";
-
-                        juce::MessageManager::callAsync(
-                            [this]
-                            {
-                                owner.targetNoteLabel.setText(
-                                    owner.targetNote,
-                                    juce::dontSendNotification);
-                            });
-
-                        juce::MessageManager::callAsync(
-                            [this, text]
-                            {
-                                owner.pitchLabel.setText(
-                                    text,
-                                    juce::dontSendNotification);
-                            });
-                    }
-                }
-
-                // Небольшая пауза для корректной работы thread.
-                wait(1);
-            }
-        }
-
-    private:
-
-        MainComponent& owner;
-    };
-
-    PitchThread pitchThread{ *this };
+    // Target helpers
+
+    void setTargetFromMidiIndex(
+        int index);
+
+    bool loadSongMidi(const juce::String& songId);
+    bool generateDailyChallengeMidi(bool forceRandomSeed = false);
+    bool loadGeneratedMelody();
+    juce::File dailyChallengeMidiFile;
+    void beginTuningForSelectedSong();
+    int getBestScore(const juce::String& songId);
+    void saveBestScoreForSelectedSong(int score);
+    void updateSongBestScoreLabels();
+
+    uint64_t getTargetSample(
+        int index,
+        double sampleRate) const;
+
+    void advanceTarget();
 
     //==========================================================================
-    // Application settings
+    // Game helpers
+
+    void pauseGame();
+
+    void resumeGame();
+
+    void returnToSongSelect();
+
+    // Animated feedback for note quality and combo milestones.
+    void showHitFeedback(const juce::String& text, int type);
+    void updateHitFeedbackAnimation();
+
+    //==========================================================================
+    // Pitch worker
+
+    // Audio analysis worker lives in Audio/PitchDetectionThread.h/.cpp.
+    std::unique_ptr<class PitchDetectionThread> pitchThread;
+
+    //==========================================================================
+    // Application properties
 
     juce::ApplicationProperties appProperties;
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(MainComponent)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(
+        MainComponent)
 };

@@ -12,6 +12,8 @@ public:
     void setNotes(const std::vector<TabNote>& newNotes);
 
     void setPlayheadBeat(double beat);
+    void setPlayheadRunning(bool shouldRun);
+    void setCountInDisplay(bool active, int count);
 
     void setBpm(double newBpm);
 
@@ -21,6 +23,9 @@ private:
     std::vector<TabNote> notes;
 
     double playheadBeat = 0.0;
+    bool playheadRunning = false;
+    bool countInDisplayActive = false;
+    int countInDisplayCount = 4;
     double bpm = 120.0;
 
     double syncedBeat = 0.0;
@@ -30,7 +35,7 @@ private:
 
     static constexpr int numberOfStrings = 6;
 
-    static juce::Colour getStringColour(int stringIndex);
+    static juce::Colour getFingerColour(int finger);
     static const char* getStringName(int stringIndex);
 
     void drawString(

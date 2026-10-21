@@ -12,6 +12,9 @@ struct TabNote
 
     int fret = 0;
 
+    // Suggested fretting-hand finger: 0=open string, 1=index, 2=middle, 3=ring, 4=pinky.
+    int finger = 0;
+
     double startBeat = 0.0;
     double durationBeats = 0.0;
 };

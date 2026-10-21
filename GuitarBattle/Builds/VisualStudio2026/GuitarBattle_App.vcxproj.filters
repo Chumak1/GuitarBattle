@@ -2,8 +2,20 @@
 
 <Project ToolsVersion="18.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
+    <Filter Include="GuitarBattle\Source\Tuner">
+      <UniqueIdentifier>{7E95EA09-8376-09BC-C2A4-8DA25E5D7330}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GuitarBattle\Source\Gameplay">
+      <UniqueIdentifier>{9A37E119-D6D0-B341-2DED-67F448EB5DCF}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GuitarBattle\Source\UI">
+      <UniqueIdentifier>{36EB7C22-0F1A-E5F8-144F-9AC78821ECD7}</UniqueIdentifier>
+    </Filter>
     <Filter Include="GuitarBattle\Source\Midi">
       <UniqueIdentifier>{851BB9C7-98E4-351B-F37E-048824146868}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="GuitarBattle\Source\Audio">
+      <UniqueIdentifier>{B2FA1AF8-6F4D-754F-CD97-934DA737417C}</UniqueIdentifier>
     </Filter>
     <Filter Include="GuitarBattle\Source">
       <UniqueIdentifier>{F36BB5F9-8BD5-7BBA-F63A-3736FBA77CED}</UniqueIdentifier>
@@ -853,11 +865,44 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="..\..\Source\Tuner\Tuner.cpp">
+      <Filter>GuitarBattle\Source\Tuner</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Gameplay\GameController.cpp">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Gameplay\GameSession.cpp">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Gameplay\Metronome.cpp">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Gameplay\ScoringSystem.cpp">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Gameplay\GameplayEngine.cpp">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\GameStyle.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\SelectComponent.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\TunerComponent.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\Midi\MidiParser.cpp">
       <Filter>GuitarBattle\Source\Midi</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Midi\TablatureComponent.cpp">
       <Filter>GuitarBattle\Source\Midi</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Audio\AudioEngine.cpp">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Audio\PitchDetector.cpp">
+      <Filter>GuitarBattle\Source\Audio</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Main.cpp">
       <Filter>GuitarBattle\Source</Filter>
@@ -4116,6 +4161,33 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\Source\Tuner\Tuner.h">
+      <Filter>GuitarBattle\Source\Tuner</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Gameplay\GameController.h">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Gameplay\GameSession.h">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Gameplay\Metronome.h">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Gameplay\ScoringSystem.h">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Gameplay\GameplayEngine.h">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\GameStyle.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\SelectComponent.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\TunerComponent.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\Midi\MidiParser.h">
       <Filter>GuitarBattle\Source\Midi</Filter>
     </ClInclude>
@@ -4127,6 +4199,12 @@
     </ClInclude>
     <ClInclude Include="..\..\Source\Midi\TabNote.h">
       <Filter>GuitarBattle\Source\Midi</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Audio\AudioEngine.h">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Audio\PitchDetector.h">
+      <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\MainComponent.h">
       <Filter>GuitarBattle\Source</Filter>
