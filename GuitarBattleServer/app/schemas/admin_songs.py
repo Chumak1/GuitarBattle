@@ -2,6 +2,8 @@ from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.schemas.songs import SongReadinessResponse
+
 class AdminSongCreate(BaseModel):
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     title: str = Field(min_length=1, max_length=200)
@@ -74,6 +76,7 @@ class AdminSongResponse(BaseModel):
     description: str | None
     created_at: datetime
     updated_at: datetime
+    readiness: SongReadinessResponse = Field(default_factory=SongReadinessResponse)
 
 class AdminSongListResponse(BaseModel):
     items: list[AdminSongResponse]
@@ -92,3 +95,20 @@ class AdminSongFileResponse(BaseModel):
     size_bytes: int
     sha256: str
     created_at: datetime
+    download_url: str | None = None
+
+
+class AdminSongStemsResponse(BaseModel):
+    drums: AdminSongFileResponse | None = None
+    bass: AdminSongFileResponse | None = None
+    guitar: AdminSongFileResponse | None = None
+    others: AdminSongFileResponse | None = None
+
+
+class AdminSongAssetsResponse(BaseModel):
+    midi: AdminSongFileResponse | None = None
+    stems: AdminSongStemsResponse = Field(default_factory=AdminSongStemsResponse)
+
+
+class AdminSongDetailResponse(AdminSongResponse):
+    assets: AdminSongAssetsResponse = Field(default_factory=AdminSongAssetsResponse)

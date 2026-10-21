@@ -305,3 +305,167 @@ def test_unpublish_hides_song_from_catalog(db_client, admin_user, published_song
     assert listing["total"] == 0
     detail = db_client.get(f"{helpers.API}/songs/{published_song['slug']}")
     assert detail.status_code == 404
+
+
+def _upload_midi(db_client, admin_user, song_id):
+    midi_bytes = helpers.build_midi_bytes(bpm=120, note=64, duration_ticks=480)
+    response = db_client.post(
+        f"{helpers.API}/admin/songs/{song_id}/files/midi",
+        files={"file": ("song.mid", midi_bytes, "audio/midi")},
+        headers=admin_user["headers"],
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def _upload_stem(db_client, admin_user, song_id, role, marker):
+    data = b"ID3" + bytes([marker]) * 128
+    response = db_client.post(
+        f"{helpers.API}/admin/songs/{song_id}/files/audio/{role}",
+        files={"file": (f"{role}.mp3", data, "audio/mpeg")},
+        headers=admin_user["headers"],
+    )
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def test_public_assets_and_midi_only_readiness(
+    db_client, admin_user, published_song
+):
+    midi = _upload_midi(db_client, admin_user, published_song["id"])
+
+    detail = db_client.get(f"{helpers.API}/songs/{published_song['slug']}")
+    assert detail.status_code == 200
+    body = detail.json()
+
+    assert body["title"] == published_song["title"]
+    assert body["genre"] == published_song["genre"]
+    assert body["bpm"] == published_song["bpm"]
+    assert body["difficulty"] == published_song["difficulty"]
+    assert body["duration_seconds"] == published_song["duration_seconds"]
+
+    readiness = body["readiness"]
+    assert readiness["state"] == "midi_only"
+    assert readiness["available_roles"] == ["midi"]
+    assert readiness["missing_roles"] == ["drums", "bass", "guitar", "others"]
+    assert readiness["has_midi"] is True
+    assert readiness["has_all_stems"] is False
+    assert readiness["is_playable"] is True
+    assert readiness["is_complete"] is False
+    assert readiness["publish_ready"] is False
+
+    assert body["assets"]["midi"]["id"] == midi["id"]
+    assert body["assets"]["midi"]["download_url"].endswith(
+        f"/songs/{published_song['slug']}/files/{midi['id']}/download"
+    )
+    assert body["assets"]["stems"] == {
+        "drums": None,
+        "bass": None,
+        "guitar": None,
+        "others": None,
+    }
+
+    listing = db_client.get(f"{helpers.API}/songs").json()
+    assert listing["items"][0]["readiness"]["state"] == "midi_only"
+
+    # A MIDI-only song remains publishable and playable; stems are optional.
+    published = helpers.publish_song(
+        db_client, admin_user["headers"], published_song["id"]
+    )
+    assert published["is_published"] is True
+    assert published["readiness"]["is_playable"] is True
+    assert published["readiness"]["publish_ready"] is False
+
+
+def test_public_assets_and_readiness_become_complete(
+    db_client, admin_user, published_song
+):
+    midi = _upload_midi(db_client, admin_user, published_song["id"])
+    stems = {
+        role: _upload_stem(db_client, admin_user, published_song["id"], role, index)
+        for index, role in enumerate(("drums", "bass", "guitar", "others"), start=1)
+    }
+
+    detail = db_client.get(f"{helpers.API}/songs/{published_song['slug']}")
+    assert detail.status_code == 200
+    body = detail.json()
+    readiness = body["readiness"]
+
+    assert readiness["state"] == "complete"
+    assert readiness["available_roles"] == [
+        "midi",
+        "drums",
+        "bass",
+        "guitar",
+        "others",
+    ]
+    assert readiness["missing_roles"] == []
+    assert readiness["has_midi"] is True
+    assert readiness["has_all_stems"] is True
+    assert readiness["is_playable"] is True
+    assert readiness["is_complete"] is True
+    assert readiness["publish_ready"] is True
+
+    assert body["assets"]["midi"]["id"] == midi["id"]
+    for role, uploaded in stems.items():
+        asset = body["assets"]["stems"][role]
+        assert asset["id"] == uploaded["id"]
+        assert asset["role"] == role
+        assert asset["download_url"].endswith(
+            f"/songs/{published_song['slug']}/files/{uploaded['id']}/download"
+        )
+
+    listing = db_client.get(f"{helpers.API}/songs").json()
+    assert listing["items"][0]["readiness"]["state"] == "complete"
+
+
+def test_admin_readiness_and_assets_report_missing_tracks(
+    db_client, admin_user, draft_song
+):
+    detail = db_client.get(
+        f"{helpers.API}/admin/songs/{draft_song['id']}",
+        headers=admin_user["headers"],
+    )
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["readiness"]["state"] == "empty"
+    assert body["readiness"]["missing_roles"] == [
+        "midi",
+        "drums",
+        "bass",
+        "guitar",
+        "others",
+    ]
+    assert body["assets"]["midi"] is None
+    assert body["assets"]["stems"] == {
+        "drums": None,
+        "bass": None,
+        "guitar": None,
+        "others": None,
+    }
+
+    midi = _upload_midi(db_client, admin_user, draft_song["id"])
+    _upload_stem(db_client, admin_user, draft_song["id"], "drums", 7)
+
+    detail = db_client.get(
+        f"{helpers.API}/admin/songs/{draft_song['id']}",
+        headers=admin_user["headers"],
+    )
+    body = detail.json()
+    assert body["readiness"]["state"] == "partial"
+    assert body["readiness"]["available_roles"] == ["midi", "drums"]
+    assert body["readiness"]["missing_roles"] == ["bass", "guitar", "others"]
+    assert body["readiness"]["is_playable"] is True
+    assert body["readiness"]["publish_ready"] is False
+    assert body["assets"]["midi"]["id"] == midi["id"]
+    assert body["assets"]["midi"]["download_url"].endswith(
+        f"/admin/songs/{draft_song['id']}/files/{midi['id']}/download"
+    )
+    assert body["assets"]["stems"]["drums"] is not None
+    assert body["assets"]["stems"]["bass"] is None
+
+    listing = db_client.get(
+        f"{helpers.API}/admin/songs", headers=admin_user["headers"]
+    )
+    assert listing.status_code == 200
+    assert listing.json()["items"][0]["readiness"]["state"] == "partial"

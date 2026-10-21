@@ -17,7 +17,17 @@ from app.config import settings
 from app.database import get_db
 from app.models.song import Song, SongFile
 from app.models.user import User
-from app.schemas.admin_songs import AdminSongCreate, AdminSongFileResponse, AdminSongListResponse, AdminSongResponse, AdminSongUpdate
+from app.schemas.admin_songs import (
+    AdminSongAssetsResponse,
+    AdminSongCreate,
+    AdminSongDetailResponse,
+    AdminSongFileResponse,
+    AdminSongListResponse,
+    AdminSongResponse,
+    AdminSongStemsResponse,
+    AdminSongUpdate,
+)
+from app.services.song_assets import build_readiness, load_newest_files_by_song
 
 router = APIRouter(prefix="/admin/songs", tags=["admin: songs"])
 
@@ -25,6 +35,40 @@ def require_admin(current_user: User = Depends(get_current_user)) -> User:
     if not current_user.is_admin:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Administrator access required")
     return current_user
+
+
+def _admin_file_response(song_id: UUID, stored_file: SongFile) -> AdminSongFileResponse:
+    result = AdminSongFileResponse.model_validate(stored_file)
+    result.download_url = (
+        f"{settings.api_v1_prefix}/admin/songs/{song_id}/files/{stored_file.id}/download"
+    )
+    return result
+
+
+def _admin_song_response(song: Song, files_by_role: dict[str, SongFile]) -> AdminSongResponse:
+    result = AdminSongResponse.model_validate(song)
+    result.readiness = build_readiness(files_by_role)
+    return result
+
+
+def _admin_song_detail(song: Song, files_by_role: dict[str, SongFile]) -> AdminSongDetailResponse:
+    result = AdminSongDetailResponse.model_validate(song)
+    result.readiness = build_readiness(files_by_role)
+
+    def optional(role: str) -> AdminSongFileResponse | None:
+        stored_file = files_by_role.get(role)
+        return _admin_file_response(song.id, stored_file) if stored_file is not None else None
+
+    result.assets = AdminSongAssetsResponse(
+        midi=optional("midi"),
+        stems=AdminSongStemsResponse(
+            drums=optional("drums"),
+            bass=optional("bass"),
+            guitar=optional("guitar"),
+            others=optional("others"),
+        ),
+    )
+    return result
 
 @router.get("", response_model=AdminSongListResponse, summary="List all songs, including drafts")
 def list_all_songs(
@@ -43,10 +87,12 @@ def list_all_songs(
         filters.append(Song.is_published.is_(published))
     total = db.scalar(select(func.count()).select_from(Song).where(*filters)) or 0
     items = db.scalars(select(Song).where(*filters).order_by(Song.updated_at.desc(), Song.id.asc()).limit(limit).offset(offset)).all()
-    return AdminSongListResponse(items=items, total=total, limit=limit, offset=offset)
+    files_by_song = load_newest_files_by_song(db, (song.id for song in items))
+    responses = [_admin_song_response(song, files_by_song.get(song.id, {})) for song in items]
+    return AdminSongListResponse(items=responses, total=total, limit=limit, offset=offset)
 
 @router.post("", response_model=AdminSongResponse, status_code=status.HTTP_201_CREATED, summary="Create a song draft")
-def create_song(payload: AdminSongCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> Song:
+def create_song(payload: AdminSongCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> AdminSongResponse:
     song = Song(**payload.model_dump(), is_published=False, version=1)
     db.add(song)
     try:
@@ -55,23 +101,25 @@ def create_song(payload: AdminSongCreate, db: Session = Depends(get_db), _: User
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Song slug already exists")
-    return song
+    return _admin_song_response(song, {})
 
-@router.get("/{song_id}", response_model=AdminSongResponse, summary="Get a song, including drafts")
-def get_admin_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> Song:
+@router.get("/{song_id}", response_model=AdminSongDetailResponse, summary="Get a song, including drafts")
+def get_admin_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> AdminSongDetailResponse:
     song = db.get(Song, song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
-    return song
+    files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+    return _admin_song_detail(song, files_by_role)
 
 @router.patch("/{song_id}", response_model=AdminSongResponse, summary="Update song metadata")
-def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> Song:
+def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> AdminSongResponse:
     song = db.get(Song, song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
-        return song
+        files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+        return _admin_song_response(song, files_by_role)
     non_nullable_fields = {"slug", "title", "genre", "bpm", "difficulty", "duration_seconds"}
     if any(key in non_nullable_fields and value is None for key, value in changes.items()):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Required song fields cannot be null")
@@ -84,27 +132,30 @@ def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(g
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Song slug already exists")
-    return song
+    files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+    return _admin_song_response(song, files_by_role)
 
 @router.post("/{song_id}/publish", response_model=AdminSongResponse, summary="Publish a song")
-def publish_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> Song:
+def publish_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> AdminSongResponse:
     song = db.get(Song, song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
     song.is_published = True
     db.commit()
     db.refresh(song)
-    return song
+    files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+    return _admin_song_response(song, files_by_role)
 
 @router.post("/{song_id}/unpublish", response_model=AdminSongResponse, summary="Unpublish a song")
-def unpublish_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> Song:
+def unpublish_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> AdminSongResponse:
     song = db.get(Song, song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
     song.is_published = False
     db.commit()
     db.refresh(song)
-    return song
+    files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+    return _admin_song_response(song, files_by_role)
 
 @router.delete("/{song_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a song")
 def delete_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> Response:

@@ -2092,6 +2092,8 @@ namespace
         double bpm = 120.0;
         int version = 0;
         bool usedCache = false;
+        juce::String assetState;
+        juce::String missingRoles;
         juce::File songFolder;
         juce::File midiFile;
         juce::File drumsFile;
@@ -2151,6 +2153,25 @@ void MainComponent::loadFirstOnlineCatalogSong()
         const auto detail = detailResponse.json;
         if (!detail.isObject())
             return;
+
+        // The server describes asset completeness in the same song object as the
+        // metadata.  Older servers do not send it; the client then behaves as before.
+        const auto readinessValue = detail.getProperty("readiness", juce::var());
+        if (readinessValue.isObject())
+        {
+            download->assetState = readinessValue.getProperty("state", juce::var()).toString();
+            if (const auto* missing = readinessValue.getProperty("missing_roles", juce::var()).getArray())
+            {
+                juce::StringArray roles;
+                for (const auto& role : *missing)
+                {
+                    const auto name = role.toString();
+                    if (name.isNotEmpty())
+                        roles.add(name);
+                }
+                download->missingRoles = roles.joinIntoString(", ");
+            }
+        }
 
         const auto filesValue = detail.getProperty("files", juce::var());
         const auto* files = filesValue.getArray();
@@ -2391,6 +2412,10 @@ void MainComponent::loadFirstOnlineCatalogSong()
             if (download->version > 0)
                 statusText << " (v" << download->version
                            << (download->usedCache ? ", cached)" : ")");
+            if (download->assetState == "midi_only")
+                statusText << " [MIDI only]";
+            else if (download->missingRoles.isNotEmpty())
+                statusText << " [missing: " << download->missingRoles << "]";
             statusText << ". Press the local song button to switch back.";
         }
 

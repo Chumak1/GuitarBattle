@@ -20,8 +20,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | POST | `/auth/login` | `identifier`, `password` | `access_token`, `token_type` |
 | GET | `/auth/me` | Bearer | профиль |
 | PATCH | `/auth/me` | `display_name` | профиль |
-| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных |
-| GET | `/songs/{slug}` | — | детали + `version` + файлы |
+| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных; у каждого элемента `readiness` |
+| GET | `/songs/{slug}` | — | детали + `version` + `files` + `assets` + `readiness` |
 | GET | `/songs/{slug}/files/{file_id}/download` | — | MIDI/MP3 |
 | POST | `/admin/songs/{id}/files/midi` | Bearer admin, multipart `file` | новый `SongFile` (`role=midi`) |
 | POST | `/admin/songs/{id}/files/audio/{role}` | Bearer admin, multipart `file`; `role`: `drums`, `bass`, `guitar`, `others` | новый `SongFile` |
@@ -48,6 +48,25 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   ожидаемым `size_bytes`, скачивание пропускается. Иначе скачиваются MIDI и все стемы,
   а `version.txt` пишется только после полного успеха. При `version <= 0` клиент всегда
   скачивает файлы и версию не пишет.
+
+## Ассеты и готовность песни
+
+- `GET /songs/{slug}` отдаёт единый объект:
+  - `assets.midi` — `SongFileResponse | null`;
+  - `assets.stems` — объект с ключами `drums`, `bass`, `guitar`, `others`, каждый
+    `SongFileResponse | null`;
+  - `files[]` сохранён для обратной совместимости и содержит те же самые новые файлы;
+  - `readiness` — `state` (`empty`, `midi_only`, `partial`, `complete`),
+    `available_roles`, `missing_roles`, `has_midi`, `has_all_stems`,
+    `is_playable`, `is_complete`, `publish_ready`.
+- `GET /songs` отдаёт `readiness` в каждом элементе списка, но без `assets` —
+  ассеты запрашиваются в деталях.
+- `is_playable` требует только MIDI: MIDI-only песня остаётся рабочей.
+  `is_complete` и `publish_ready` требуют MIDI + все четыре MP3-стема.
+- Админские `GET /admin/songs` и `GET /admin/songs/{id}` содержат тот же `readiness`;
+  детальный ответ дополнительно содержит `assets` с админскими `download_url`.
+  Публикация не блокируется при неполном наборе стемов, чтобы не ломать MIDI-only
+  песни; администратор видит `publish_ready` и `missing_roles` до публикации.
 
 ## Где искать в клиенте
 

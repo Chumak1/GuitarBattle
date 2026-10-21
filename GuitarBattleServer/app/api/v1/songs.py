@@ -8,9 +8,59 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.song import Song, SongFile
-from app.schemas.songs import SongDetailResponse, SongFileResponse, SongListResponse, SongSummaryResponse
+from app.schemas.songs import (
+    SongAssetsResponse,
+    SongDetailResponse,
+    SongFileResponse,
+    SongListResponse,
+    SongStemsResponse,
+    SongSummaryResponse,
+)
+from app.services.song_assets import (
+    ASSET_ROLES,
+    build_readiness,
+    load_newest_files_by_song,
+    newest_files_by_role,
+)
 
 router = APIRouter(prefix="/songs", tags=["songs"])
+
+
+def _public_file_response(song: Song, stored_file: SongFile) -> SongFileResponse:
+    return SongFileResponse(
+        id=stored_file.id,
+        role=stored_file.role,
+        content_type=stored_file.content_type,
+        size_bytes=stored_file.size_bytes,
+        sha256=stored_file.sha256,
+        download_url=(
+            f"{settings.api_v1_prefix}/songs/{song.slug}/files/{stored_file.id}/download"
+            if stored_file.role in ASSET_ROLES
+            else None
+        ),
+    )
+
+
+def _public_assets(song: Song, files_by_role: dict[str, SongFile]) -> SongAssetsResponse:
+    def optional(role: str) -> SongFileResponse | None:
+        stored_file = files_by_role.get(role)
+        return _public_file_response(song, stored_file) if stored_file is not None else None
+
+    return SongAssetsResponse(
+        midi=optional("midi"),
+        stems=SongStemsResponse(
+            drums=optional("drums"),
+            bass=optional("bass"),
+            guitar=optional("guitar"),
+            others=optional("others"),
+        ),
+    )
+
+
+def _public_summary(song: Song, files_by_role: dict[str, SongFile]) -> SongSummaryResponse:
+    result = SongSummaryResponse.model_validate(song)
+    result.readiness = build_readiness(files_by_role)
+    return result
 
 
 @router.get("", response_model=SongListResponse, summary="List published songs")
@@ -40,7 +90,9 @@ def list_songs(
         .limit(limit)
         .offset(offset)
     ).all()
-    return SongListResponse(items=songs, total=total, limit=limit, offset=offset)
+    files_by_song = load_newest_files_by_song(db, (song.id for song in songs))
+    items = [_public_summary(song, files_by_song.get(song.id, {})) for song in songs]
+    return SongListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{slug}", response_model=SongDetailResponse, summary="Get a published song")
@@ -56,30 +108,16 @@ def get_song(slug: str, db: Session = Depends(get_db)) -> SongDetailResponse:
         .where(SongFile.song_id == song.id)
         .order_by(SongFile.role.asc(), SongFile.created_at.desc(), SongFile.id.desc())
     ).all()
-    files = []
-    seen_roles: set[str] = set()
-    for stored_file in all_files:
-        if stored_file.role not in seen_roles:
-            files.append(stored_file)
-            seen_roles.add(stored_file.role)
+    files_by_role = newest_files_by_role(all_files)
 
     result = SongDetailResponse.model_validate(song)
-    downloadable_roles = {"midi", "drums", "bass", "guitar", "others"}
+    result.readiness = build_readiness(files_by_role)
     result.files = [
-        SongFileResponse(
-            id=file.id,
-            role=file.role,
-            content_type=file.content_type,
-            size_bytes=file.size_bytes,
-            sha256=file.sha256,
-            download_url=(
-                f"{settings.api_v1_prefix}/songs/{song.slug}/files/{file.id}/download"
-                if file.role in downloadable_roles
-                else None
-            ),
-        )
-        for file in files
+        _public_file_response(song, files_by_role[role])
+        for role in ASSET_ROLES
+        if role in files_by_role
     ]
+    result.assets = _public_assets(song, files_by_role)
     return result
 
 
