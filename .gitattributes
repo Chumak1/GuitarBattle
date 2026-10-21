@@ -1,0 +1,7 @@
+GuitarBattle/Songs/**/*.zip filter=lfs diff=lfs merge=lfs -text
+GuitarBattle/Sounds/**/*.wav filter=lfs diff=lfs merge=lfs -text
+GuitarBattle/Sounds/**/*.flac filter=lfs diff=lfs merge=lfs -text
+GuitarBattle/Sounds/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
+GuitarBattle/Sounds/**/*.zip filter=lfs diff=lfs merge=lfs -text
+GuitarBattle/Songs/**/*.wav filter=lfs diff=lfs merge=lfs -text
+GuitarBattle/Songs/**/*.mp3 filter=lfs diff=lfs merge=lfs -text
