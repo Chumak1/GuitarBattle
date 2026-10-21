@@ -1,0 +1,54 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "default_agent": "juce-dev",
+  "permissions": [
+    {
+      "action": "read",
+      "resource": "**/.env",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "**/.env.*",
+      "effect": "deny"
+    },
+    {
+      "action": "read",
+      "resource": "**/.env.example",
+      "effect": "allow"
+    },
+    {
+      "action": "edit",
+      "resource": "Backup Server/**",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": "GuitarBattle/Backup/**",
+      "effect": "deny"
+    },
+    {
+      "action": "edit",
+      "resource": "GuitarBattle/Builds/**/x64/**",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "*docker compose down -v*",
+      "effect": "deny"
+    },
+    {
+      "action": "shell",
+      "resource": "*git push*",
+      "effect": "ask"
+    }
+  ],
+  "mcp": {
+    "servers": {
+      "context7": {
+        "type": "remote",
+        "url": "https://mcp.context7.com/mcp"
+      }
+    }
+  }
+}

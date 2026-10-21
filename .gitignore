@@ -1,11 +1,12 @@
+# Visual Studio / MSBuild
 .vs/
 *.user
 *.suo
-
+*.VC.db
+*.VC.opendb
 **/x64/
 **/Debug/
 **/Release/
-
 *.exe
 *.pdb
 *.ilk
@@ -14,4 +15,24 @@
 *.res
 *.recipe
 *.log
-*.json
+
+# JUCE build output
+GuitarBattle/Builds/**/.vs/
+GuitarBattle/Builds/**/x64/
+
+# Local archives and backups
+/Backup Server/
+/GuitarBattle/Backup/
+/GuitarBattle/Source.zip
+/GuitarBattleServer.zip
+
+# Python / server
+GuitarBattleServer/.env
+GuitarBattleServer/.venv/
+GuitarBattleServer/**/__pycache__/
+GuitarBattleServer/.pytest_cache/
+GuitarBattleServer/.ruff_cache/
+
+# OS
+Thumbs.db
+desktop.ini
