@@ -177,6 +177,9 @@ async def upload_song_midi(
         sha256=hashlib.sha256(data).hexdigest(),
     )
     db.add(record)
+    # Song.version is the content/cache version clients use for offline assets.
+    # Bump it in the same transaction as the new file record.
+    song.version += 1
     try:
         db.commit()
         db.refresh(record)
@@ -265,6 +268,9 @@ async def upload_song_audio_stem(
         sha256=hashlib.sha256(data).hexdigest(),
     )
     db.add(record)
+    # Song.version is the content/cache version clients use for offline assets.
+    # Bump it in the same transaction as the new file record.
+    song.version += 1
     try:
         db.commit()
         db.refresh(record)

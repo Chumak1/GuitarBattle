@@ -166,6 +166,7 @@ def test_midi_upload_analysis_and_public_download(
 
     detail = db_client.get(f"{helpers.API}/songs/{published_song['slug']}")
     assert detail.status_code == 200
+    assert detail.json()["version"] == published_song["version"] + 1
     files = detail.json()["files"]
     assert len(files) == 1
     assert files[0]["role"] == "midi"
@@ -236,6 +237,60 @@ def test_midi_upload_rejects_wrong_extension_or_content(
         headers=admin_user["headers"],
     )
     assert fake_midi.status_code == 422
+
+
+def test_audio_stem_upload_increments_version_and_replaces_role(
+    db_client, admin_user, published_song
+):
+    fake_drums = b"ID3" + b"\x00" * 128
+    first_upload = db_client.post(
+        f"{helpers.API}/admin/songs/{published_song['id']}/files/audio/drums",
+        files={"file": ("drums.mp3", fake_drums, "audio/mpeg")},
+        headers=admin_user["headers"],
+    )
+    assert first_upload.status_code == 201, first_upload.text
+    assert first_upload.json()["role"] == "drums"
+    assert first_upload.json()["content_type"] == "audio/mpeg"
+
+    detail = db_client.get(f"{helpers.API}/songs/{published_song['slug']}")
+    assert detail.status_code == 200
+    assert detail.json()["version"] == published_song["version"] + 1
+    assert [(item["role"], item["id"]) for item in detail.json()["files"]] == [
+        ("drums", first_upload.json()["id"])
+    ]
+
+    # Re-uploading a role replaces the public file and bumps the version again.
+    newer_drums = b"ID3" + b"\x01" * 160
+    second_upload = db_client.post(
+        f"{helpers.API}/admin/songs/{published_song['id']}/files/audio/drums",
+        files={"file": ("drums-new.mp3", newer_drums, "audio/mpeg")},
+        headers=admin_user["headers"],
+    )
+    assert second_upload.status_code == 201, second_upload.text
+
+    detail = db_client.get(f"{helpers.API}/songs/{published_song['slug']}")
+    assert detail.json()["version"] == published_song["version"] + 2
+    drums_files = [
+        item for item in detail.json()["files"] if item["role"] == "drums"
+    ]
+    assert [item["id"] for item in drums_files] == [second_upload.json()["id"]]
+    assert drums_files[0]["size_bytes"] == len(newer_drums)
+
+    # A different role is published alongside the drums, with one more bump.
+    fake_bass = b"ID3" + b"\x02" * 96
+    bass_upload = db_client.post(
+        f"{helpers.API}/admin/songs/{published_song['id']}/files/audio/bass",
+        files={"file": ("bass.mp3", fake_bass, "audio/mpeg")},
+        headers=admin_user["headers"],
+    )
+    assert bass_upload.status_code == 201, bass_upload.text
+
+    detail = db_client.get(f"{helpers.API}/songs/{published_song['slug']}")
+    assert detail.json()["version"] == published_song["version"] + 3
+    files_by_role = {item["role"]: item for item in detail.json()["files"]}
+    assert set(files_by_role) == {"drums", "bass"}
+    assert files_by_role["drums"]["id"] == second_upload.json()["id"]
+    assert files_by_role["bass"]["id"] == bass_upload.json()["id"]
 
 
 def test_unpublish_hides_song_from_catalog(db_client, admin_user, published_song):

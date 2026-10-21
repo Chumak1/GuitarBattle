@@ -21,8 +21,10 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/auth/me` | Bearer | профиль |
 | PATCH | `/auth/me` | `display_name` | профиль |
 | GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных |
-| GET | `/songs/{slug}` | — | детали + файлы |
+| GET | `/songs/{slug}` | — | детали + `version` + файлы |
 | GET | `/songs/{slug}/files/{file_id}/download` | — | MIDI/MP3 |
+| POST | `/admin/songs/{id}/files/midi` | Bearer admin, multipart `file` | новый `SongFile` (`role=midi`) |
+| POST | `/admin/songs/{id}/files/audio/{role}` | Bearer admin, multipart `file`; `role`: `drums`, `bass`, `guitar`, `others` | новый `SongFile` |
 | POST | `/games/sessions` | `song_id` (UUID), `speed_percent` | сессия |
 | POST | `/games/sessions/{id}/finish` | `score_points`, `accuracy_percent`, `max_combo`, `perfect_count`, `good_count`, `miss_count` | score |
 | GET | `/games/history` | Bearer, `limit`, `offset` | история |
@@ -30,6 +32,22 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков |
 
 Админские маршруты `/admin/songs...` требуют `is_admin`.
+
+## Версии контента и кэш ассетов
+
+- `Song.version` — целочисленная **версия контента/кэша**, а не версия файла. Она
+  возвращается в `GET /songs/{slug}` (и в админских ответах песни).
+- `version` увеличивается на 1 при `PATCH /admin/songs/{id}` и при каждой успешной
+  загрузке MIDI (`/files/midi`) или MP3-стема (`/files/audio/{role}`) — в той же
+  транзакции, что и создание `SongFile`.
+- `GET /songs/{slug}` отдаёт только самый новый файл для каждой роли; у файлов есть
+  `role`, `size_bytes`, `sha256`, `download_url`.
+- Клиент (`loadFirstOnlineCatalogSong`) хранит `version.txt` в
+  `%APPDATA%/GuitarBattle/OnlineSongs/<slug>/`. Если версия на сервере > 0 и совпадает
+  с `version.txt`, а MIDI (с заголовком `MThd`) и все опубликованные стемы существуют с
+  ожидаемым `size_bytes`, скачивание пропускается. Иначе скачиваются MIDI и все стемы,
+  а `version.txt` пишется только после полного успеха. При `version <= 0` клиент всегда
+  скачивает файлы и версию не пишет.
 
 ## Где искать в клиенте
 

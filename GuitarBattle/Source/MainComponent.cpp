@@ -2090,6 +2090,8 @@ namespace
         juce::String title;
         juce::String songId;
         double bpm = 120.0;
+        int version = 0;
+        bool usedCache = false;
         juce::File songFolder;
         juce::File midiFile;
         juce::File drumsFile;
@@ -2155,21 +2157,6 @@ void MainComponent::loadFirstOnlineCatalogSong()
         if (files == nullptr)
             return;
 
-        juce::String downloadUrl;
-        for (const auto& file : *files)
-            if (file.getProperty("role", juce::var()).toString() == "midi")
-            {
-                downloadUrl = file.getProperty("download_url", juce::var()).toString();
-                break;
-            }
-
-        if (downloadUrl.isEmpty())
-            return;
-
-        const auto midiBytes = ApiClient::download(downloadUrl, 5000);
-        if (midiBytes.getSize() < 14)
-            return;
-
         const auto cacheRoot = juce::File::getSpecialLocation(
             juce::File::userApplicationDataDirectory)
             .getChildFile("GuitarBattle")
@@ -2179,62 +2166,140 @@ void MainComponent::loadFirstOnlineCatalogSong()
             return;
 
         const auto midiFile = songFolder.getChildFile(slug + ".mid");
-        if (!midiFile.replaceWithData(midiBytes.getData(), midiBytes.getSize()))
-            return;
+        const auto versionFile = songFolder.getChildFile("version.txt");
 
-        // Download available instrumental stems into the same per-song cache.
-        // They remain separate from the microphone input used by pitch detection.
-        auto downloadStem = [](const juce::String& role, const juce::File& targetFile,
-                               const juce::var& fileInfo) -> bool
+        // Resolve every downloadable asset of the song detail to its cache path.
+        struct PendingAsset
         {
-            const auto stemUrl = fileInfo.getProperty("download_url", juce::var()).toString();
-            if (stemUrl.isEmpty())
-                return false;
-
-            const auto expectedSize = static_cast<int64_t>(fileInfo.getProperty("size_bytes", 0));
-            if (targetFile.existsAsFile() && expectedSize > 0
-                && targetFile.getSize() == expectedSize)
-            {
-                DBG("ONLINE CATALOG: using cached " + role + " MP3: " + targetFile.getFullPathName());
-                return true;
-            }
-
-            const auto writtenBytes = ApiClient::downloadToFile(stemUrl, targetFile, 5000);
-            if (writtenBytes < 4)
-            {
-                DBG("ONLINE CATALOG: could not download stem role=" + role + " url=" + stemUrl);
-                return false;
-            }
-
-            DBG("ONLINE CATALOG: downloaded " + role + " MP3 ("
-                + juce::String(writtenBytes) + " bytes)");
-            return true;
+            juce::String role;
+            juce::String downloadUrl;
+            juce::File targetFile;
+            juce::int64 expectedSize = 0;
+            bool isMidi = false;
         };
 
-        juce::File drumsFile, bassFile, guitarFile, othersFile;
+        std::vector<PendingAsset> assets;
+        bool assetsComplete = true;
+        bool hasMidi = false;
+
         for (const auto& fileInfo : *files)
         {
             const auto role = fileInfo.getProperty("role", juce::var()).toString().toLowerCase();
-            if (role == "drums")
-            {
-                const auto target = songFolder.getChildFile("drums.mp3");
-                if (downloadStem(role, target, fileInfo)) drumsFile = target;
-            }
+            const auto fileUrl = fileInfo.getProperty("download_url", juce::var()).toString();
+            if (fileUrl.isEmpty())
+                continue;
+
+            PendingAsset asset;
+            asset.role = role;
+            asset.downloadUrl = fileUrl;
+            asset.expectedSize = static_cast<juce::int64>(fileInfo.getProperty("size_bytes", 0));
+            asset.isMidi = role == "midi";
+
+            if (asset.isMidi)
+                asset.targetFile = midiFile;
+            else if (role == "drums")
+                asset.targetFile = songFolder.getChildFile("drums.mp3");
             else if (role == "bass")
-            {
-                const auto target = songFolder.getChildFile("bass.mp3");
-                if (downloadStem(role, target, fileInfo)) bassFile = target;
-            }
+                asset.targetFile = songFolder.getChildFile("bass.mp3");
             else if (role == "guitar")
-            {
-                const auto target = songFolder.getChildFile("guitar.mp3");
-                if (downloadStem(role, target, fileInfo)) guitarFile = target;
-            }
+                asset.targetFile = songFolder.getChildFile("guitar.mp3");
             else if (role == "others")
+                asset.targetFile = songFolder.getChildFile("others.mp3");
+            else
+                continue;
+
+            // Without a trustworthy size the cached files cannot be validated.
+            if (asset.expectedSize <= 0)
+                assetsComplete = false;
+
+            hasMidi = hasMidi || asset.isMidi;
+            assets.push_back(std::move(asset));
+        }
+
+        if (!hasMidi || !assetsComplete)
+            return;
+
+        const auto serverVersion = static_cast<int>(detail.getProperty("version", 0));
+        const auto cachedVersion = versionFile.existsAsFile()
+            ? versionFile.loadFileAsString().trim().getIntValue()
+            : 0;
+
+        auto hasMidiHeader = [](const juce::File& file)
+        {
+            juce::FileInputStream stream(file);
+            if (!stream.openedOk())
+                return false;
+
+            char header[4] {};
+            return stream.read(header, 4) == 4
+                && header[0] == 'M' && header[1] == 'T'
+                && header[2] == 'h' && header[3] == 'd';
+        };
+
+        // The cache is reused only when the server content version matches and
+        // every published file is present with the advertised size.
+        auto usedCache = serverVersion > 0 && cachedVersion == serverVersion;
+        if (usedCache)
+            for (const auto& asset : assets)
+                if (!asset.targetFile.existsAsFile()
+                    || asset.targetFile.getSize() != asset.expectedSize
+                    || (asset.isMidi && !hasMidiHeader(asset.targetFile)))
+                {
+                    usedCache = false;
+                    break;
+                }
+
+        if (usedCache)
+        {
+            DBG("ONLINE CATALOG: using cached assets for version " + juce::String(serverVersion));
+        }
+        else
+        {
+            // A version mismatch forces every stem to be downloaded again, even
+            // if the previously cached file happens to have the same size.
+            auto allAssetsDownloaded = true;
+
+            for (const auto& asset : assets)
             {
-                const auto target = songFolder.getChildFile("others.mp3");
-                if (downloadStem(role, target, fileInfo)) othersFile = target;
+                const auto writtenBytes = ApiClient::downloadToFile(asset.downloadUrl,
+                                                                    asset.targetFile,
+                                                                    5000);
+                const auto sizeOk = writtenBytes > 0 && writtenBytes == asset.expectedSize;
+                const auto headerOk = !asset.isMidi || (sizeOk && hasMidiHeader(asset.targetFile));
+
+                if (!sizeOk || !headerOk)
+                {
+                    DBG("ONLINE CATALOG: could not download " + asset.role
+                        + " from " + asset.downloadUrl);
+                    asset.targetFile.deleteFile();
+
+                    if (asset.isMidi)
+                        return;
+
+                    allAssetsDownloaded = false;
+                    continue;
+                }
+
+                DBG("ONLINE CATALOG: downloaded " + asset.role + " ("
+                    + juce::String(writtenBytes) + " bytes)");
             }
+
+            // Only a complete asset set may be marked as this content version.
+            if (allAssetsDownloaded && serverVersion > 0
+                && !versionFile.replaceWithText(juce::String(serverVersion)))
+                DBG("ONLINE CATALOG: could not write " + versionFile.getFullPathName());
+        }
+
+        juce::File drumsFile, bassFile, guitarFile, othersFile;
+        for (const auto& asset : assets)
+        {
+            if (!asset.targetFile.existsAsFile())
+                continue;
+
+            if (asset.role == "drums")         drumsFile = asset.targetFile;
+            else if (asset.role == "bass")     bassFile = asset.targetFile;
+            else if (asset.role == "guitar")   guitarFile = asset.targetFile;
+            else if (asset.role == "others")   othersFile = asset.targetFile;
         }
 
         const auto title = detail.getProperty("title", juce::var()).toString();
@@ -2244,6 +2309,8 @@ void MainComponent::loadFirstOnlineCatalogSong()
         download->title = title;
         download->songId = detail.getProperty("id", juce::var()).toString();
         download->bpm = static_cast<double>(detail.getProperty("bpm", 120));
+        download->version = serverVersion;
+        download->usedCache = usedCache;
         download->songFolder = songFolder;
         download->midiFile = midiFile;
         download->drumsFile = drumsFile;
@@ -2251,7 +2318,7 @@ void MainComponent::loadFirstOnlineCatalogSong()
         download->guitarFile = guitarFile;
         download->othersFile = othersFile;
         download->ok = true;
-        DBG("ONLINE CATALOG: downloaded " + title + " from " + downloadUrl);
+        DBG("ONLINE CATALOG: loaded " + title + " (version " + juce::String(serverVersion) + ")");
     };
 
     apiClient.runAsync(std::move(backgroundWork), [safeThis, download]()
@@ -2316,10 +2383,18 @@ void MainComponent::loadFirstOnlineCatalogSong()
         }
 
         self->onlineCatalogButton.setEnabled(true);
-        self->onlineCatalogStatusLabel.setText(
-            loaded ? "Online song loaded. Press the local song button to switch back."
-                   : "Could not load online song. Check that GuitarBattleServer is running.",
-            juce::dontSendNotification);
+
+        juce::String statusText = "Could not load online song. Check that GuitarBattleServer is running.";
+        if (loaded)
+        {
+            statusText = "Online song loaded";
+            if (download->version > 0)
+                statusText << " (v" << download->version
+                           << (download->usedCache ? ", cached)" : ")");
+            statusText << ". Press the local song button to switch back.";
+        }
+
+        self->onlineCatalogStatusLabel.setText(statusText, juce::dontSendNotification);
         self->resized();
         self->repaint();
         if (loaded)
