@@ -1659,8 +1659,9 @@ juce::File MainComponent::findSongAsset(const juce::File& folder,
 
 void MainComponent::authenticateOnlineAccount(bool createAccount)
 {
-    // JUCE 9 no longer supports AlertWindow::runModalLoop(). Keep the dialog
-    // alive asynchronously and process credentials from its completion callback.
+    // JUCE 9 no longer supports AlertWindow::runModalLoop(). The dialog stays
+    // open while credentials are checked; only CANCEL (or a successful sign-in)
+    // dismisses it.
     auto* prompt = new juce::AlertWindow(
         createAccount ? "Create GuitarBattle account" : "Sign in to GuitarBattle",
         createAccount
@@ -1684,97 +1685,149 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
     }
     prompt->addButton("CANCEL", 0);
 
-    prompt->enterModalState(true,
-        juce::ModalCallbackFunction::create([this, createAccount, prompt](int result)
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::Component::SafePointer<juce::AlertWindow> safePrompt(prompt);
+    const bool createNewAccount = createAccount;
+
+    // Invalidate an attempt left over from a previous credentials dialog.
+    ++authRequestId;
+
+    auto setSubmitEnabled = [safePrompt](bool shouldBeEnabled)
     {
-        if (result != 1)
+        if (auto* dialog = safePrompt.getComponent())
+            if (auto* submit = dialog->getButton(0))
+                submit->setEnabled(shouldBeEnabled);
+    };
+
+    auto showError = [safeThis, safePrompt](const juce::String& title,
+                                            const juce::String& message)
+    {
+        if (safePrompt.getComponent() == nullptr)
             return;
 
-        juce::String usernameOrEmail;
-        juce::String email;
-        juce::String password;
-        juce::String displayName;
-
-        if (createAccount)
-        {
-            usernameOrEmail = prompt->getTextEditorContents("username").trim();
-            email = prompt->getTextEditorContents("email").trim();
-            displayName = prompt->getTextEditorContents("display_name").trim();
-            password = prompt->getTextEditorContents("password");
-            if (usernameOrEmail.isEmpty() || email.isEmpty() || password.length() < 10)
-            {
-                accountStatusLabel.setText(
-                    "Registration needs username, email and a 10+ character password.",
-                    juce::dontSendNotification);
-                return;
-            }
-        }
-        else
-        {
-            usernameOrEmail = prompt->getTextEditorContents("identifier").trim();
-            password = prompt->getTextEditorContents("password");
-            if (usernameOrEmail.isEmpty() || password.isEmpty())
-                return;
-        }
-
-        // Networking is asynchronous: the login/registration requests run on the
-        // ApiClient worker threads and every UI update below happens in a
-        // callback delivered on the message thread.
-        juce::Component::SafePointer<MainComponent> safeThis(this);
-        const int requestId = ++authRequestId;
-        const bool createNewAccount = createAccount;
-
-        auto signIn = [safeThis, requestId, createNewAccount, usernameOrEmail, password]()
+        // Defer the popup so it is added on top of the modal credentials window.
+        juce::MessageManager::callAsync([safeThis, safePrompt, title, message]()
         {
             auto* self = safeThis.getComponent();
-            if (self == nullptr || requestId != self->authRequestId)
+            auto* dialog = safePrompt.getComponent();
+            if (self == nullptr || dialog == nullptr)
                 return;
 
-            juce::DynamicObject::Ptr login = new juce::DynamicObject();
-            login->setProperty("identifier", usernameOrEmail);
-            login->setProperty("password", password);
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                title,
+                message,
+                "OK",
+                dialog);
+        });
+    };
 
-            self->apiClient.postJson("/auth/login", juce::var(login.get()), {}, 5000,
-                [safeThis, requestId, createNewAccount, usernameOrEmail](ApiClient::Response response)
+    auto signIn = [safeThis, safePrompt, createNewAccount, showError, setSubmitEnabled]
+                  (int attemptId, juce::String usernameOrEmail, juce::String password)
+    {
+        auto* self = safeThis.getComponent();
+        if (self == nullptr || attemptId != self->authRequestId)
+            return;
+
+        juce::DynamicObject::Ptr login = new juce::DynamicObject();
+        login->setProperty("identifier", usernameOrEmail);
+        login->setProperty("password", password);
+
+        self->apiClient.postJson("/auth/login", juce::var(login.get()), {}, 5000,
+            [safeThis, safePrompt, attemptId, createNewAccount, usernameOrEmail, showError, setSubmitEnabled]
+            (ApiClient::Response response)
+            {
+                auto* component = safeThis.getComponent();
+                if (component == nullptr || attemptId != component->authRequestId)
+                    return;
+
+                const auto accessToken =
+                    response.json.getProperty("access_token", juce::var()).toString();
+                if (accessToken.isEmpty())
                 {
-                    auto* component = safeThis.getComponent();
-                    if (component == nullptr || requestId != component->authRequestId)
-                        return;
+                    setSubmitEnabled(true);
 
-                    const auto accessToken =
-                        response.json.getProperty("access_token", juce::var()).toString();
-                    if (accessToken.isEmpty())
+                    if (response.statusCode == 401 || response.statusCode == 422)
                     {
                         component->accountStatusLabel.setText(
-                            "Sign-in failed. Check username/password or server.",
+                            "Incorrect email/username or password",
                             juce::dontSendNotification);
-
-                        if (response.statusCode == 401)
-                        {
-                            // Defer the dialog until the credentials window has fully
-                            // closed, for the same reason as the success alert below.
-                            juce::MessageManager::callAsync([safeThis]()
-                            {
-                                if (auto* self = safeThis.getComponent())
-                                    juce::AlertWindow::showMessageBoxAsync(
-                                        juce::MessageBoxIconType::WarningIcon,
-                                        "Sign-in failed",
-                                        "Incorrect username or password.",
-                                        "OK",
-                                        self);
-                            });
-                        }
-                        return;
+                        showError("Sign-in failed", "Incorrect email/username or password");
                     }
+                    else
+                    {
+                        component->accountStatusLabel.setText(
+                            "Sign-in failed. Check server connection.",
+                            juce::dontSendNotification);
+                        showError("Sign-in failed",
+                                  "Could not sign in. Check the server connection and try again.");
+                    }
+                    return;
+                }
 
-                    component->onlineAccessToken = accessToken;
-                    component->finishOnlineSignIn(createNewAccount, usernameOrEmail,
-                                                  accessToken, requestId);
-                });
-        };
+                component->onlineAccessToken = accessToken;
 
-        if (createNewAccount)
+                // The dialog closes only after a successful sign-in.
+                if (auto* dialog = safePrompt.getComponent())
+                    dialog->exitModalState(1);
+
+                component->finishOnlineSignIn(createNewAccount, usernameOrEmail,
+                                              accessToken, attemptId);
+            });
+    };
+
+    if (auto* submit = prompt->getButton(0))
+    {
+        submit->onClick = [safeThis, safePrompt, createNewAccount, signIn, showError, setSubmitEnabled]()
         {
+            auto* self = safeThis.getComponent();
+            auto* dialog = safePrompt.getComponent();
+            if (self == nullptr || dialog == nullptr)
+                return;
+
+            juce::String usernameOrEmail;
+            juce::String email;
+            juce::String password;
+            juce::String displayName;
+
+            if (createNewAccount)
+            {
+                usernameOrEmail = dialog->getTextEditorContents("username").trim();
+                email = dialog->getTextEditorContents("email").trim();
+                displayName = dialog->getTextEditorContents("display_name").trim();
+                password = dialog->getTextEditorContents("password");
+
+                if (usernameOrEmail.isEmpty() || email.isEmpty() || password.length() < 10)
+                {
+                    showError("Registration failed",
+                              "Fill in username, email and a password of at least 10 characters.");
+                    return;
+                }
+            }
+            else
+            {
+                usernameOrEmail = dialog->getTextEditorContents("identifier").trim();
+                password = dialog->getTextEditorContents("password");
+
+                if (usernameOrEmail.isEmpty() || password.isEmpty())
+                {
+                    self->accountStatusLabel.setText(
+                        "Incorrect email/username or password",
+                        juce::dontSendNotification);
+                    showError("Sign-in failed", "Incorrect email/username or password");
+                    return;
+                }
+            }
+
+            const int attemptId = ++self->authRequestId;
+            setSubmitEnabled(false);
+
+            if (! createNewAccount)
+            {
+                signIn(attemptId, usernameOrEmail, password);
+                return;
+            }
+
             juce::DynamicObject::Ptr registration = new juce::DynamicObject();
             registration->setProperty("username", usernameOrEmail);
             registration->setProperty("email", email);
@@ -1782,30 +1835,49 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
             if (displayName.isNotEmpty())
                 registration->setProperty("display_name", displayName);
 
-            apiClient.postJson("/auth/register", juce::var(registration.get()), {}, 5000,
-                [safeThis, requestId, signIn](ApiClient::Response response)
+            self->apiClient.postJson("/auth/register", juce::var(registration.get()), {}, 5000,
+                [safeThis, safePrompt, attemptId, usernameOrEmail, password,
+                 signIn, showError, setSubmitEnabled](ApiClient::Response response)
                 {
-                    auto* self = safeThis.getComponent();
-                    if (self == nullptr || requestId != self->authRequestId)
+                    auto* component = safeThis.getComponent();
+                    if (component == nullptr || attemptId != component->authRequestId)
                         return;
 
-                    if (!response.json.isObject())
+                    if (response.statusCode >= 200 && response.statusCode < 300)
                     {
-                        self->accountStatusLabel.setText(
-                            "Registration failed. Check server and account details.",
-                            juce::dontSendNotification);
+                        signIn(attemptId, usernameOrEmail, password);
                         return;
                     }
 
-                    // Register returns a user profile; immediately sign in to receive a token.
-                    signIn();
+                    setSubmitEnabled(true);
+
+                    if (response.statusCode == 409)
+                    {
+                        component->accountStatusLabel.setText(
+                            "Username or email is already registered.",
+                            juce::dontSendNotification);
+                        showError("Registration failed",
+                                  "Username or email is already registered.");
+                    }
+                    else
+                    {
+                        component->accountStatusLabel.setText(
+                            "Registration failed. Check server and account details.",
+                            juce::dontSendNotification);
+                        showError("Registration failed",
+                                  "Registration failed. Check the server connection and account details.");
+                    }
                 });
-        }
-        else
+        };
+    }
+
+    prompt->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis](int result)
         {
-            signIn();
-        }
-    }), true);
+            if (result != 1)
+                if (auto* self = safeThis.getComponent())
+                    ++self->authRequestId;
+        }), true);
 }
 
 void MainComponent::finishOnlineSignIn(bool createAccount,
