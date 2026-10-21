@@ -19,6 +19,11 @@
 
 Если задача затрагивает `GuitarBattleServer/`, не решайте её в сессии `juce-dev`: переключитесь на `server-dev` или делегируйте ему. Если меняется и клиент, и сервер — используйте `api-sync`.
 
+## Ассеты
+
+- `GuitarBattle/Sounds/` и `GuitarBattle/Songs/` хранятся в Git LFS. После клонирования выполните `git lfs install` и `git lfs pull`.
+- Не добавляйте аудиофайлы (`.wav`, `.flac`, `.mp3`, `.zip`) из этих каталогов в обычный Git: для них настроены LFS-фильтры в корневом `.gitattributes`.
+
 ## Сборка клиента
 
 ```powershell
