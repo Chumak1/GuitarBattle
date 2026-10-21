@@ -7,7 +7,7 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 
 ## База
 
-- Клиент: `http://localhost:8000/api/v1` (захардкожен в `MainComponent.cpp`).
+- Клиент: `http://localhost:8000/api/v1` — единая константа `ApiClient::baseUrl` в `Source/Network/ApiClient.h`; скачивание ассетов идёт от `ApiClient::serverOrigin`.
 - Сервер: `GuitarBattleServer/app/api/v1/`.
 - Формат: JSON UTF-8.
 - Авторизация: `Authorization: Bearer <access_token>`.
@@ -33,14 +33,19 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 
 ## Где искать в клиенте
 
+`Source/Network/ApiClient.h` — единственное место HTTP-запросов (`get`, `post`, `getJson`,
+`postJson`, `download`, `downloadToFile`, `runAsync`). Запросы выполняются на
+`juce::ThreadPool` внутри `ApiClient`, результат приходит в UI через
+`juce::MessageManager::callAsync`; синхронных вызовов из обработчиков кнопок нет.
+
 `Source/MainComponent.cpp`:
 
-- `authenticateOnlineAccount` — register/login/me.
+- `authenticateOnlineAccount` / `finishOnlineSignIn` — register/login/me.
 - `startOnlineGameSession` — создание сессии.
 - `submitOnlineGameResult` — отправка результата.
 - `refreshGlobalLeaderboard` — глобальный рейтинг.
 - `loadFirstOnlineCatalogSong` — каталог, скачивание MIDI/MP3.
-- Поиск по `juce::URL`, `createInputStream`, `postJson`.
+- Поиск по `apiClient.`, `ApiClient::get`, `ApiClient::post`.
 
 ## Чек-лист изменения API
 
