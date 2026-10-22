@@ -47,3 +47,26 @@ class GameHistoryItem(BaseModel):
     score_points: int | None
     accuracy_percent: float | None
     max_combo: int | None
+
+
+class SongBestScore(BaseModel):
+    """The signed-in player's best result for one published song."""
+
+    song_id: UUID
+    song_slug: str
+    song_title: str
+    artist: str | None = None
+    best_score: int = 0
+    best_accuracy: float | None = None
+    best_max_combo: int | None = None
+    attempts: int = 0
+    last_played_at: datetime | None = None
+
+
+class PlayerRatingResponse(BaseModel):
+    """Personal rating built from the best score on every published song."""
+
+    rating_points: int
+    games_played: int
+    songs_played: int
+    items: list[SongBestScore]

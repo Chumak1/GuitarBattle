@@ -217,6 +217,147 @@ def test_global_and_song_leaderboards(
     assert items[0]["song_slug"] == published_song["slug"]
 
 
+def _play_song(client, headers, song_id, score_points):
+    """Finish one full session for ``song_id`` with the given points."""
+    session = _create_session(client, headers, song_id)
+    response = _finish_session(client, headers, session["id"], score_points=score_points)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _global_items(client):
+    response = client.get(f"{helpers.API}/leaderboard/global")
+    assert response.status_code == 200, response.text
+    return {item["username"]: item for item in response.json()["items"]}
+
+
+def test_global_rating_counts_only_best_attempt_per_song(
+    db_client, user_account, published_song
+):
+    headers = user_account["headers"]
+    for points in (1200, 900, 1200, 700):
+        _play_song(db_client, headers, published_song["id"], points)
+
+    player = _global_items(db_client)[user_account["username"]]
+    assert player["rating_points"] == 1200
+    assert player["games_played"] == 1
+
+
+def test_global_rating_updates_when_song_record_is_beaten(
+    db_client, user_account, published_song
+):
+    headers = user_account["headers"]
+    _play_song(db_client, headers, published_song["id"], 800)
+    _play_song(db_client, headers, published_song["id"], 300)
+    assert _global_items(db_client)[user_account["username"]]["rating_points"] == 800
+
+    _play_song(db_client, headers, published_song["id"], 1500)
+    player = _global_items(db_client)[user_account["username"]]
+    assert player["rating_points"] == 1500
+    assert player["games_played"] == 1
+
+
+def test_global_rating_sums_best_score_of_each_song(
+    db_client, user_account, published_song, second_published_song
+):
+    headers = user_account["headers"]
+    _play_song(db_client, headers, published_song["id"], 1000)
+    _play_song(db_client, headers, published_song["id"], 600)
+    _play_song(db_client, headers, second_published_song["id"], 400)
+    _play_song(db_client, headers, second_published_song["id"], 1500)
+
+    player = _global_items(db_client)[user_account["username"]]
+    assert player["rating_points"] == 2500
+    assert player["games_played"] == 2
+
+
+def test_global_rating_keeps_users_and_songs_independent(
+    db_client, user_account, second_user, published_song, second_published_song
+):
+    first_headers = user_account["headers"]
+    _play_song(db_client, first_headers, published_song["id"], 900)
+    _play_song(db_client, first_headers, second_published_song["id"], 700)
+    _play_song(db_client, first_headers, published_song["id"], 500)
+
+    second_headers = second_user["headers"]
+    _play_song(db_client, second_headers, published_song["id"], 1200)
+    _play_song(db_client, second_headers, second_published_song["id"], 100)
+    _play_song(db_client, second_headers, second_published_song["id"], 1400)
+
+    players = _global_items(db_client)
+    assert players[user_account["username"]]["rating_points"] == 1600
+    assert players[user_account["username"]]["games_played"] == 2
+    assert players[second_user["username"]]["rating_points"] == 2600
+    assert players[second_user["username"]]["games_played"] == 2
+
+    board = db_client.get(f"{helpers.API}/leaderboard/global").json()["items"]
+    assert [item["username"] for item in board] == [
+        second_user["username"],
+        user_account["username"],
+    ]
+    assert [item["rank"] for item in board] == [1, 2]
+
+
+def test_best_scores_returns_per_song_best_and_rating(
+    db_client, user_account, published_song, second_published_song
+):
+    headers = user_account["headers"]
+    _play_song(db_client, headers, published_song["id"], 1200)
+    _play_song(db_client, headers, published_song["id"], 900)
+    _play_song(db_client, headers, second_published_song["id"], 500)
+
+    response = db_client.get(f"{helpers.API}/games/best-scores", headers=headers)
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["rating_points"] == 1700
+    assert body["songs_played"] == 2
+    assert body["games_played"] == 3
+
+    by_slug = {item["song_slug"]: item for item in body["items"]}
+    first = by_slug[published_song["slug"]]
+    assert first["best_score"] == 1200
+    assert first["attempts"] == 2
+    assert first["best_accuracy"] == pytest.approx(VALID_SCORE["accuracy_percent"])
+    assert first["best_max_combo"] == VALID_SCORE["max_combo"]
+
+    second = by_slug[second_published_song["slug"]]
+    assert second["best_score"] == 500
+    assert second["attempts"] == 1
+
+    # The personal rating matches the public global leaderboard entry.
+    global_board = db_client.get(f"{helpers.API}/leaderboard/global").json()
+    entry = next(
+        item
+        for item in global_board["items"]
+        if item["username"] == user_account["username"]
+    )
+    assert entry["rating_points"] == body["rating_points"]
+
+
+def test_best_scores_requires_auth(db_client):
+    response = db_client.get(f"{helpers.API}/games/best-scores")
+    assert response.status_code == 401
+
+
+def test_best_scores_are_isolated_per_user(
+    db_client, user_account, second_user, published_song
+):
+    _play_song(db_client, user_account["headers"], published_song["id"], 1200)
+    _play_song(db_client, second_user["headers"], published_song["id"], 400)
+
+    first = db_client.get(
+        f"{helpers.API}/games/best-scores", headers=user_account["headers"]
+    ).json()
+    second = db_client.get(
+        f"{helpers.API}/games/best-scores", headers=second_user["headers"]
+    ).json()
+
+    assert first["rating_points"] == 1200
+    assert second["rating_points"] == 400
+    assert first["items"][0]["best_score"] == 1200
+    assert second["items"][0]["best_score"] == 400
+
+
 @pytest.mark.parametrize("params", [{"limit": 0}, {"limit": 101}, {"offset": -1}])
 def test_leaderboard_validates_pagination(db_client, params):
     response = db_client.get(f"{helpers.API}/leaderboard/global", params=params)
