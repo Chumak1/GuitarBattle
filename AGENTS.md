@@ -50,7 +50,8 @@ curl.exe -s http://localhost:8000/health/ready
 - `.env` содержит секреты. Не читать, не печатать, не коммитить.
 - Никогда не выполнять `docker compose down -v` — это удаляет БД и загруженные файлы.
 - Документация API: `http://localhost:8000/docs` (при `APP_ENV=production` отключена).
-- Тестов пока нет: `tests/` содержит только README.
+- Тесты: `tests/` (pytest, отдельная PostgreSQL-БД на `127.0.0.1:55432`); полный прогон: `& "D:\GuitarBattle\GuitarBattleServer\.venv-test\Scripts\python.exe" -m pytest -q`.
+- SMTP: `SMTP_*` в `.env`; в development без SMTP код пишется в лог `api`, в production регистрация возвращает 503. Секреты и коды не логировать.
 
 ## Жёсткие правила
 
@@ -59,7 +60,7 @@ curl.exe -s http://localhost:8000/health/ready
 3. **Проектные файлы.** Источник истины — `GuitarBattle/GuitarBattle.jucer`. После добавления/удаления файлов обновляйте `.jucer` и пересобирайте VS-проект. Не правьте `.vcxproj` вручную без синхронизации с `.jucer`.
 4. **Include-cpp.** `MainComponent.cpp` включает `Generation/MidiMelodyGenerator.cpp` и `Generation/SongArrangement.cpp`, потому что их нет в `.jucer`. Не добавляйте эти файлы в проект, пока не удалили соответствующие `#include`.
 5. **`PitchDetectionThread.h`** — заголовок с реализацией, включён в `MainComponent.cpp`; не добавляйте его в `.jucer` как отдельный compile unit.
-6. **API-контракт.** Базовый URL `http://localhost:8000/api/v1` сейчас захардкожен в `MainComponent.cpp`. При изменении API обновляйте обе стороны и skill `api-contract`.
+6. **API-контракт.** Production-базовый URL `https://fretfight.online/api/v1` захардкожен в `Source/Network/ApiClient.h` (`ApiClient::baseUrl`), ассеты скачиваются от `ApiClient::serverOrigin`. Наружу открыты только 80/443 через Caddy; FastAPI слушает `127.0.0.1:8000`. При изменении API обновляйте обе стороны и skill `api-contract`.
 7. **Секреты.** Не коммитить `.env`, токены, пароли, `Backup Server/`, `GuitarBattle/Backup/`, `Builds/**/x64`, `Source.zip`.
 8. **Не трогать без задачи:** `competitions.py` и миграцию `0004` (не подключены к роутеру), архивы в `Backup*`, сгенерированные файлы в `Builds`.
 

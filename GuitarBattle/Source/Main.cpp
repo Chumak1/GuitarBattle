@@ -8,6 +8,7 @@
 
 #include <JuceHeader.h>
 #include "MainComponent.h"
+#include "UI/GameStyle.h"
 
 //==============================================================================
 class GuitarBattleApplication  : public juce::JUCEApplication
@@ -66,6 +67,8 @@ public:
         {
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent(), true);
+            setBackgroundColour (UiColors::background);
+            setResizeLimits (900, 800, 1920, 1200);
 
            #if JUCE_IOS || JUCE_ANDROID
             setFullScreen (true);

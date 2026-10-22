@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "Gameplay/GameplayStats.h"
 #include <array>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -16,6 +17,7 @@
 #include "Gameplay/GameSession.h"
 #include "Generation/MidiMelodyGenerator.h"
 #include "Network/ApiClient.h"
+#include "UI/GameStyle.h"
 
 class MainComponent;
 class PitchDetectionThread;
@@ -25,6 +27,21 @@ class MainOverlayComponent : public juce::Component
 {
 public:
     explicit MainOverlayComponent(MainComponent& ownerToUse) : owner(ownerToUse)
+    {
+        setInterceptsMouseClicks(false, false);
+    }
+    void paint(juce::Graphics& g) override;
+private:
+    MainComponent& owner;
+};
+
+// Transparent, non-intercepting layer above every control for pause and
+// count-in cards. It must be added after the controls so modal content is not
+// hidden behind the HUD or mixer.
+class MainModalOverlayComponent : public juce::Component
+{
+public:
+    explicit MainModalOverlayComponent(MainComponent& ownerToUse) : owner(ownerToUse)
     {
         setInterceptsMouseClicks(false, false);
     }
@@ -63,10 +80,12 @@ public:
 
     void paint(juce::Graphics& g) override;
     void paintOverlay(juce::Graphics& g);
+    void paintModalOverlay(juce::Graphics& g);
 
     void resized() override;
 
     friend class MainOverlayComponent;
+    friend class MainModalOverlayComponent;
     friend class PitchDetectionThread;
 
 private:
@@ -103,11 +122,16 @@ private:
     double tunerCents = 0.0;
 
 
+    // Shared dark navy/gold theme. Declared before the child controls so it
+    // outlives every component that inherits it.
+    GameLookAndFeel gameLookAndFeel;
+
     //==========================================================================
     // Decoded JPEG frame sequence avoids JUCE VideoComponent's native Windows
     // playback window, which would otherwise cover all JUCE controls.
     juce::Image backgroundFrame; // static background frame; animation disabled
     MainOverlayComponent overlayComponent{ *this };
+    MainModalOverlayComponent modalOverlayComponent{ *this };
 
     // UI
 
@@ -115,13 +139,15 @@ private:
     juce::Label gameSongTitleLabel;
 
     juce::TextButton songPridumayButton{ "1 Power metal" };
-    juce::TextButton onlineCatalogButton{ "LOAD ONLINE SONG" };
+    juce::TextButton onlineCatalogButton{ "REFRESH CATALOG" };
     juce::Label onlineCatalogStatusLabel;
     juce::Label leaderboardTitleLabel;
     juce::Label leaderboardLabel;
     juce::TextButton refreshLeaderboardButton{ "REFRESH RATING" };
     juce::TextButton accountLoginButton{ "LOGIN" };
     juce::TextButton accountRegisterButton{ "REGISTER" };
+    juce::TextButton verifyEmailButton{ "VERIFY EMAIL" };
+    juce::TextButton forgotPasswordButton{ "FORGOT PASSWORD?" };
     juce::Label accountStatusLabel;
     juce::Label loginScreenTitleLabel;
     juce::Label currentUserLabel;
@@ -140,6 +166,11 @@ private:
     int onlineSessionRequestId = 0;
     void refreshGlobalLeaderboard();
     void authenticateOnlineAccount(bool createAccount);
+    void showEmailVerificationDialog(const juce::String& email,
+                                     const juce::String& fallbackName,
+                                     bool accountCreated);
+    void recoverOnlineAccountPassword();
+    void showPasswordResetDialog(const juce::String& email);
     void finishOnlineSignIn(bool createAccount,
                             const juce::String& fallbackName,
                             const juce::String& accessToken,
@@ -165,6 +196,10 @@ private:
     struct SongEntry
     {
         juce::String title;
+        // Server slug for songs cached under %APPDATA%/GuitarBattle/OnlineSongs;
+        // empty for the folders scanned from Songs/.
+        juce::String slug;
+        juce::String artist;
         juce::File folder;
         juce::File soloMidi;
         juce::File drums;
@@ -176,9 +211,74 @@ private:
     juce::File songsRoot;
     std::vector<SongEntry> songLibrary;
     SongEntry selectedSong;
+    // Slug of the loaded song; empty for local folders and the daily challenge.
+    juce::String selectedSongSlug;
     void scanSongLibrary();
-    void loadFirstOnlineCatalogSong();
     bool loadSongAudio(const SongEntry& song);
+
+    //==========================================================================
+    // Song-select catalogue: the local Songs/ folders plus every published
+    // online song. Online rows do not carry audio files - they are downloaded
+    // on demand when the player presses START SONG.
+
+    struct CatalogSong
+    {
+        juce::String title;
+        juce::String slug;      // empty for local songs
+        juce::String serverId;  // server UUID, used to open a game session
+        juce::String artist;
+        double bpm = 120.0;
+        int version = 0;
+        bool online = false;
+        bool downloaded = false; // assets present in the local cache
+    };
+
+    // List model for the song list. Lives in this header so no new compile
+    // unit has to be registered in GuitarBattle.jucer.
+    struct SongListModel : public juce::ListBoxModel
+    {
+        explicit SongListModel(MainComponent& ownerToUse) : owner(ownerToUse) {}
+
+        int getNumRows() override;
+
+        void paintListBoxItem(int rowNumber,
+                              juce::Graphics& g,
+                              int width,
+                              int height,
+                              bool rowIsSelected) override;
+
+        void listBoxItemClicked(int rowNumber, const juce::MouseEvent&) override;
+
+        // Keyboard navigation and click selection both keep the highlighted
+        // catalogue row in sync with selectedCatalogIndex.
+        void selectedRowsChanged(int lastRowSelected) override;
+
+        void returnKeyPressed(int rowNumber) override;
+
+        MainComponent& owner;
+    };
+
+    std::vector<CatalogSong> catalogSongs;
+    SongListModel songListModel { *this };
+    juce::ListBox songListBox { "Song catalogue", &songListModel };
+    int selectedCatalogIndex = 0;
+
+    // Best scores reported by /games/best-scores, keyed by song slug. They are
+    // kept in memory only: after a sign-out the locally saved values remain.
+    std::map<juce::String, int> remoteBestScores;
+    int bestScoresRequestId = 0;
+
+    void refreshOnlineCatalog();
+    void refreshOnlineBestScores();
+    void rebuildCatalogRows(const juce::var& serverItems);
+    void updateCatalogRows();
+    void selectCatalogSong(int index);
+    void startSelectedSong();
+    void downloadOnlineSong(const juce::String& slug,
+                            const juce::String& serverId,
+                            bool startAfterDownload);
+    SongEntry* findOnlineLibraryEntry(const juce::String& slug);
+    int getBestScoreForSong(const juce::String& slug, const juce::String& title);
     juce::File findSongAsset(const juce::File& folder, const juce::StringArray& stems,
                              const juce::StringArray& extensions) const;
 

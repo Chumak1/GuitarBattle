@@ -30,10 +30,10 @@ public:
     /** Server root, used for asset downloads whose URL is relative to the origin
         (the API returns e.g. "/media/songs/.../track.mp3").
     */
-    static constexpr const char* serverOrigin = "http://localhost:8000";
+    static constexpr const char* serverOrigin = "https://fretfight.online";
 
     /** REST API root: every JSON endpoint lives below this prefix. */
-    static constexpr const char* baseUrl = "http://localhost:8000/api/v1";
+    static constexpr const char* baseUrl = "https://fretfight.online/api/v1";
 
     //==========================================================================
     /** Result of an HTTP request. */

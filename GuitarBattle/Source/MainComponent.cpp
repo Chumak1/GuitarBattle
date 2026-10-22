@@ -1,4 +1,4 @@
-﻿#include "MainComponent.h"
+#include "MainComponent.h"
 
 // Keep this implementation compiled by the existing Source-only Visual Studio project.
 // If MidiMelodyGenerator.cpp is later registered as a separate Projucer source file,
@@ -27,7 +27,7 @@ static juce::AudioBuffer<float> makePitchPreservingTimeStretch(
 //==============================================================================
 // Branded audio settings panel used by the Audio Settings dialog.
 // Keeps JUCE's native device selector and its existing deviceManager bindings,
-// while placing it inside the app's light blue/orange visual system.
+// while placing it inside the app's dark navy/gold visual system.
 class AudioSettingsPanel final : public juce::Component
 {
 public:
@@ -37,8 +37,7 @@ public:
         setSize(760, 560);
         addAndMakeVisible(selector);
 
-        // JUCE's native selector can inherit white label text from the app theme.
-        // Explicitly use dark text on its light controls.
+        // Keep the native selector readable on the dark theme.
         std::function<void(juce::Component&)> applyReadableAudioColours;
         applyReadableAudioColours = [&applyReadableAudioColours](juce::Component& component)
         {
@@ -50,7 +49,7 @@ public:
                 combo->setColour(juce::ComboBox::textColourId, UiColors::text);
                 combo->setColour(juce::ComboBox::backgroundColourId, UiColors::card);
                 combo->setColour(juce::ComboBox::outlineColourId, UiColors::border);
-                combo->setColour(juce::ComboBox::arrowColourId, UiColors::blueDark);
+                combo->setColour(juce::ComboBox::arrowColourId, UiColors::accent);
             }
 
             if (auto* button = dynamic_cast<juce::Button*>(&component))
@@ -67,29 +66,29 @@ public:
         g.fillAll(UiColors::background);
 
         auto bounds = getLocalBounds().toFloat();
-        g.setColour(UiColors::card);
-        g.fillRoundedRectangle(bounds.reduced(12.0f), 18.0f);
-        g.setColour(UiColors::border);
-        g.drawRoundedRectangle(bounds.reduced(12.0f), 18.0f, 1.2f);
+        GameUi::drawCard(g, bounds.reduced(12.0f), 20.0f, true);
 
-        g.setColour(UiColors::blue);
-        g.fillRoundedRectangle(juce::Rectangle<float>(30.0f, 29.0f, 5.0f, 34.0f), 2.5f);
+        g.setColour(UiColors::accent);
+        g.fillRoundedRectangle(juce::Rectangle<float>(30.0f, 29.0f, 5.0f, 36.0f), 2.5f);
 
         g.setColour(UiColors::text);
-        g.setFont(juce::FontOptions().withHeight(25.0f).withStyle("Bold"));
-        g.drawText("AUDIO SETTINGS", 48, 26, getWidth() - 80, 34,
+        g.setFont(GameUi::heading(25.0f));
+        g.drawText("AUDIO SETTINGS", 48, 26, getWidth() - 160, 34,
                    juce::Justification::centredLeft);
 
-        g.setColour(UiColors::secondaryText);
-        g.setFont(juce::FontOptions().withHeight(13.0f));
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(13.0f));
         g.drawText("Choose your guitar input and configure audio performance.",
                    48, 59, getWidth() - 80, 24, juce::Justification::centredLeft);
 
-        g.setColour(UiColors::orange);
-        g.fillRoundedRectangle(juce::Rectangle<float>(getWidth() - 57.0f, 35.0f, 10.0f, 10.0f), 5.0f);
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(getWidth() - 134.0f, 31.0f, 96.0f, 22.0f),
+                         "AUDIO I/O",
+                         UiColors::green,
+                         true);
 
         g.setColour(UiColors::border);
-        g.drawLine(30.0f, 94.0f, static_cast<float>(getWidth() - 30), 94.0f, 1.0f);
+        g.drawLine(30.0f, 96.0f, static_cast<float>(getWidth() - 30), 96.0f, 1.0f);
     }
 
     void resized() override
@@ -108,6 +107,11 @@ private:
 MainComponent::MainComponent()
     : overlayComponent(*this)
 {
+    // Apply the admin-panel visual language to every JUCE control, including
+    // alert windows, dialog boxes and popup menus.
+    juce::LookAndFeel::setDefaultLookAndFeel(&gameLookAndFeel);
+    setLookAndFeel(&gameLookAndFeel);
+
     pitchThread = std::make_unique<PitchDetectionThread>(*this);
     // Configure persistent settings before loading songs or querying best scores.
     juce::PropertiesFile::Options options;
@@ -140,33 +144,29 @@ MainComponent::MainComponent()
     // Tuner UI
 
     tunerTitleLabel.setText(
-        "TUNER",
+        "LIVE INPUT",
         juce::dontSendNotification);
 
     tunerTitleLabel.setFont(
-        juce::FontOptions()
-        .withHeight(28.0f)
-        .withStyle("Bold"));
+        GameUi::eyebrow(11.0f));
 
     tunerTitleLabel.setColour(
         juce::Label::textColourId,
-        UiColors::text);
+        UiColors::accent);
 
     tunerTitleLabel.setJustificationType(
-        juce::Justification::centred);
+        juce::Justification::centredLeft);
 
     tunerNoteLabel.setText(
         "---",
         juce::dontSendNotification);
 
     tunerNoteLabel.setFont(
-        juce::FontOptions()
-        .withHeight(64.0f)
-        .withStyle("Bold"));
+        GameUi::heading(72.0f));
 
     tunerNoteLabel.setColour(
         juce::Label::textColourId,
-        UiColors::blue);
+        UiColors::accent);
 
     tunerNoteLabel.setJustificationType(
         juce::Justification::centred);
@@ -176,12 +176,11 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     tunerFrequencyLabel.setFont(
-        juce::FontOptions()
-        .withHeight(20.0f));
+        GameUi::font(18.0f, true));
 
     tunerFrequencyLabel.setColour(
         juce::Label::textColourId,
-        UiColors::secondaryText);
+        UiColors::muted);
 
     tunerFrequencyLabel.setJustificationType(
         juce::Justification::centred);
@@ -191,9 +190,7 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     tunerStringLabel.setFont(
-        juce::FontOptions()
-        .withHeight(22.0f)
-        .withStyle("Bold"));
+        GameUi::font(19.0f, true));
 
     tunerStringLabel.setColour(
         juce::Label::textColourId,
@@ -207,9 +204,7 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     tunerCentsLabel.setFont(
-        juce::FontOptions()
-        .withHeight(22.0f)
-        .withStyle("Bold"));
+        GameUi::font(19.0f, true));
 
     tunerCentsLabel.setColour(
         juce::Label::textColourId,
@@ -223,13 +218,11 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     tunerStatusLabel.setFont(
-        juce::FontOptions()
-        .withHeight(24.0f)
-        .withStyle("Bold"));
+        GameUi::font(13.5f, true, 0.8f));
 
     tunerStatusLabel.setColour(
         juce::Label::textColourId,
-        UiColors::blue);
+        UiColors::accent);
 
     tunerStatusLabel.setJustificationType(
         juce::Justification::centred);
@@ -242,11 +235,17 @@ MainComponent::MainComponent()
     addAndMakeVisible(tunerStatusLabel);
 
     tunerStartButton.setEnabled(false);
+    tunerStartButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
+    tunerStartButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
+    tunerStartButton.setColour(juce::TextButton::textColourOffId, UiColors::onAccent);
+    tunerStartButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
 
     addAndMakeVisible(tunerStartButton);
 
-    tunerSkipButton.setColour(juce::TextButton::buttonColourId, UiColors::orange);
+    tunerSkipButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    tunerSkipButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
     tunerSkipButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    tunerSkipButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
     addAndMakeVisible(tunerSkipButton);
     tunerSkipButton.onClick = [this]
     {
@@ -412,54 +411,43 @@ MainComponent::MainComponent()
 
     gameStartButton.setColour(
         juce::TextButton::buttonColourId,
-        UiColors::blue);
-    gameStartButton.setColour(juce::TextButton::buttonColourId, UiColors::blue);
-    gameStartButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        UiColors::accent);
+    gameStartButton.setColour(
+        juce::TextButton::buttonOnColourId,
+        UiColors::accentStrong);
+    gameStartButton.setColour(
+        juce::TextButton::textColourOffId,
+        UiColors::onAccent);
+    gameStartButton.setColour(
+        juce::TextButton::textColourOnId,
+        UiColors::onAccent);
     gameStartButton.setLookAndFeel(&getLookAndFeel());
 
-    gameStartButton.setColour(
-        juce::TextButton::textColourOffId,
-        juce::Colours::white);
-
-    gameStartButton.setColour(
-        juce::TextButton::buttonOnColourId,
-        UiColors::blueDark);
-
-    gameStartButton.setColour(
-        juce::TextButton::textColourOnId,
-        juce::Colours::white);
-
     pauseButton.setColour(
         juce::TextButton::buttonColourId,
-        UiColors::blueLight);
-
-    pauseButton.setColour(
-        juce::TextButton::textColourOffId,
-        UiColors::blueDark);
-
+        UiColors::surface2);
     pauseButton.setColour(
         juce::TextButton::buttonOnColourId,
-        juce::Colour::fromString("FFDBEAFE"));
-
+        UiColors::accent);
+    pauseButton.setColour(
+        juce::TextButton::textColourOffId,
+        UiColors::text);
     pauseButton.setColour(
         juce::TextButton::textColourOnId,
-        UiColors::blueDark);
+        UiColors::onAccent);
 
     menuButton.setColour(
         juce::TextButton::buttonColourId,
-        UiColors::card);
-
-    menuButton.setColour(
-        juce::TextButton::textColourOffId,
-        UiColors::secondaryText);
-
+        juce::Colours::transparentBlack);
     menuButton.setColour(
         juce::TextButton::buttonOnColourId,
-        UiColors::blueLight);
-
+        UiColors::surface2);
+    menuButton.setColour(
+        juce::TextButton::textColourOffId,
+        UiColors::muted);
     menuButton.setColour(
         juce::TextButton::textColourOnId,
-        UiColors::blueDark);
+        UiColors::text);
 
     // Consistent typography across the primary gameplay controls.
     for (auto* button : { &gameStartButton, &pauseButton, &menuButton,
@@ -473,23 +461,31 @@ MainComponent::MainComponent()
 
     // Compact stompbox-style distortion pedal controls.
     distortionButton.setClickingTogglesState(false);
-    distortionButton.setColour(juce::TextButton::buttonColourId, juce::Colour::fromRGB(190, 32, 42));
-    distortionButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
-    distortionButton.setColour(juce::TextButton::buttonOnColourId, juce::Colour::fromRGB(225, 45, 52));
-    distortionButton.setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+    distortionButton.setColour(juce::TextButton::buttonColourId,
+                               UiColors::red.darker(0.58f));
+    distortionButton.setColour(juce::TextButton::buttonOnColourId,
+                               UiColors::red);
+    distortionButton.setColour(juce::TextButton::textColourOffId,
+                               UiColors::text);
+    distortionButton.setColour(juce::TextButton::textColourOnId,
+                               UiColors::background);
     distortionButton.setTooltip("Switch the distortion pedal on or off.");
     addAndMakeVisible(distortionButton);
-    midiBackingButton.setColour(juce::TextButton::buttonColourId, UiColors::blue);
-    midiBackingButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    midiBackingButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    midiBackingButton.setColour(juce::TextButton::buttonOnColourId,
+                                UiColors::surface2.interpolatedWith(UiColors::green, 0.20f));
+    midiBackingButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    midiBackingButton.setColour(juce::TextButton::textColourOnId, UiColors::background);
+    midiBackingButton.setToggleState(true, juce::dontSendNotification);
+    midiBackingButton.setButtonText("SOLO GUITAR ON");
     midiBackingButton.setTooltip("Toggle the MIDI solo-guitar part generated by GuitarBattle.");
     addAndMakeVisible(midiBackingButton);
     midiBackingButton.onClick = [this]
     {
         const bool enabled = !midiBackingEnabled.load(std::memory_order_relaxed);
         midiBackingEnabled.store(enabled, std::memory_order_relaxed);
-        midiBackingButton.setButtonText(enabled ? "SOLO GUITAR MIDI ON" : "SOLO GUITAR MIDI OFF");
-        midiBackingButton.setColour(juce::TextButton::buttonColourId,
-                                    enabled ? UiColors::blue : UiColors::secondaryText);
+        midiBackingButton.setButtonText(enabled ? "SOLO GUITAR ON" : "SOLO GUITAR OFF");
+        midiBackingButton.setToggleState(enabled, juce::dontSendNotification);
     };
     midiBackingVolumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     midiBackingVolumeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 20);
@@ -511,8 +507,12 @@ MainComponent::MainComponent()
     midiBackingVolumeLabel.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
     addAndMakeVisible(midiBackingVolumeLabel);
 
-    midiRhythmGuitarButton.setColour(juce::TextButton::buttonColourId, UiColors::blue);
-    midiRhythmGuitarButton.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+    midiRhythmGuitarButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    midiRhythmGuitarButton.setColour(juce::TextButton::buttonOnColourId,
+                                     UiColors::surface2.interpolatedWith(UiColors::green, 0.20f));
+    midiRhythmGuitarButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    midiRhythmGuitarButton.setColour(juce::TextButton::textColourOnId, UiColors::background);
+    midiRhythmGuitarButton.setToggleState(true, juce::dontSendNotification);
     midiRhythmGuitarButton.setTooltip("Toggle the rhythm-guitar WAV stem.");
     addAndMakeVisible(midiRhythmGuitarButton);
     midiRhythmGuitarButton.onClick = [this]
@@ -520,8 +520,7 @@ MainComponent::MainComponent()
         const bool enabled = !midiRhythmGuitarEnabled.load(std::memory_order_relaxed);
         midiRhythmGuitarEnabled.store(enabled, std::memory_order_relaxed);
         midiRhythmGuitarButton.setButtonText(enabled ? "RHYTHM GUITAR ON" : "RHYTHM GUITAR OFF");
-        midiRhythmGuitarButton.setColour(juce::TextButton::buttonColourId,
-            enabled ? UiColors::blue : UiColors::secondaryText);
+        midiRhythmGuitarButton.setToggleState(enabled, juce::dontSendNotification);
     };
     midiRhythmGuitarVolumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     midiRhythmGuitarVolumeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 18);
@@ -545,8 +544,12 @@ MainComponent::MainComponent()
                                       std::atomic<float>& volume, const juce::String& name,
                                       float initialVolume)
     {
-        button.setColour(juce::TextButton::buttonColourId, UiColors::blue);
-        button.setColour(juce::TextButton::textColourOffId, juce::Colours::white);
+        button.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+        button.setColour(juce::TextButton::buttonOnColourId,
+                         UiColors::surface2.interpolatedWith(UiColors::green, 0.20f));
+        button.setColour(juce::TextButton::textColourOffId, UiColors::text);
+        button.setColour(juce::TextButton::textColourOnId, UiColors::background);
+        button.setToggleState(true, juce::dontSendNotification);
         button.setTooltip("Toggle the " + name + " audio channel.");
         addAndMakeVisible(button);
         auto* buttonPtr = &button;
@@ -556,8 +559,7 @@ MainComponent::MainComponent()
             const bool next = !enabledPtr->load(std::memory_order_relaxed);
             enabledPtr->store(next, std::memory_order_relaxed);
             buttonPtr->setButtonText(name + (next ? " ON" : " OFF"));
-            buttonPtr->setColour(juce::TextButton::buttonColourId,
-                                 next ? UiColors::blue : UiColors::secondaryText);
+            buttonPtr->setToggleState(next, juce::dontSendNotification);
         };
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
         slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 18);
@@ -594,10 +596,7 @@ MainComponent::MainComponent()
         const bool enabled = !distortionEnabled.load(std::memory_order_relaxed);
         distortionEnabled.store(enabled, std::memory_order_relaxed);
         distortionButton.setButtonText(enabled ? "DISTORTION  ON" : "DISTORTION  OFF");
-        distortionButton.setColour(juce::TextButton::buttonColourId,
-                                   enabled ? juce::Colour::fromRGB(225, 45, 52) : juce::Colour::fromRGB(190, 32, 42));
-        distortionButton.setColour(juce::TextButton::textColourOffId,
-                                   juce::Colours::white);
+        distortionButton.setToggleState(enabled, juce::dontSendNotification);
     };
 
     auto setupPedalKnob = [this](juce::Slider& knob, juce::Label& label,
@@ -608,9 +607,13 @@ MainComponent::MainComponent()
         knob.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 48, 15);
         knob.setRange(minimum, maximum, 0.01);
         knob.setValue(initial, juce::dontSendNotification);
-        knob.setColour(juce::Slider::rotarySliderFillColourId, juce::Colour::fromRGB(245, 65, 65));
-        knob.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colour::fromRGB(90, 18, 24));
-        knob.setColour(juce::Slider::thumbColourId, juce::Colour::fromRGB(255, 210, 210));
+        knob.setColour(juce::Slider::rotarySliderFillColourId, UiColors::red);
+        knob.setColour(juce::Slider::rotarySliderOutlineColourId,
+                       UiColors::red.darker(0.72f));
+        knob.setColour(juce::Slider::thumbColourId, UiColors::text);
+        knob.setColour(juce::Slider::textBoxTextColourId, UiColors::text);
+        knob.setColour(juce::Slider::textBoxBackgroundColourId, UiColors::surface2);
+        knob.setColour(juce::Slider::textBoxOutlineColourId, UiColors::border);
         addAndMakeVisible(knob);
         label.setText(name, juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centred);
@@ -669,29 +672,32 @@ MainComponent::MainComponent()
     if (!songsRoot.isDirectory())
         songsRoot = juce::File::getCurrentWorkingDirectory().getChildFile("Songs");
     scanSongLibrary();
+    songPridumayButton.setButtonText("START SONG");
     if (!songLibrary.empty())
     {
-        songPridumayButton.setButtonText(songLibrary.front().title);
         loadSongMidi(songLibrary.front().title);
     }
     else
         DBG("SONG LIBRARY EMPTY: expected song folders under " + songsRoot.getFullPathName());
 
+    // Build the song-select catalogue rows from the local library. Published
+    // online songs are appended asynchronously by refreshOnlineCatalog(), so the
+    // message thread never waits for the network here.
+    rebuildCatalogRows(juce::var());
+
     //==========================================================================
     // Pitch label
 
     pitchLabel.setText(
-        "Pitch: ---",
+        "x0",
         juce::dontSendNotification);
 
     pitchLabel.setFont(
-        juce::FontOptions()
-        .withHeight(42.0f)
-        .withStyle("Bold"));
+        GameUi::heading(32.0f));
 
     pitchLabel.setColour(
         juce::Label::textColourId,
-        UiColors::text);
+        UiColors::accent);
 
     pitchLabel.setJustificationType(
         juce::Justification::centred);
@@ -707,13 +713,11 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     beatLabel.setFont(
-        juce::FontOptions()
-        .withHeight(16.0f)
-        .withStyle("Bold"));
+        GameUi::font(14.0f, true));
 
     beatLabel.setColour(
         juce::Label::textColourId,
-        UiColors::secondaryText);
+        UiColors::text);
 
     beatLabel.setJustificationType(
         juce::Justification::centred);
@@ -729,13 +733,11 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     barBeatLabel.setFont(
-        juce::FontOptions()
-        .withHeight(16.0f)
-        .withStyle("Bold"));
+        GameUi::font(14.0f, true));
 
     barBeatLabel.setColour(
         juce::Label::textColourId,
-        UiColors::secondaryText);
+        UiColors::text);
 
     barBeatLabel.setJustificationType(
         juce::Justification::centred);
@@ -751,13 +753,11 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     bpmLabel.setFont(
-        juce::FontOptions()
-        .withHeight(13.0f)
-        .withStyle("Bold"));
+        GameUi::font(13.0f, true));
 
     bpmLabel.setColour(
         juce::Label::textColourId,
-        UiColors::secondaryText);
+        UiColors::accent);
 
     bpmLabel.setJustificationType(
         juce::Justification::centred);
@@ -853,89 +853,115 @@ MainComponent::MainComponent()
     {
         button->setColour(
             juce::TextButton::buttonColourId,
-            UiColors::blueLight);
+            UiColors::surface2);
 
         button->setColour(
             juce::TextButton::buttonOnColourId,
-            juce::Colour::fromString(
-                "FFDBEAFE"));
+            UiColors::accent);
 
         button->setColour(
             juce::TextButton::textColourOffId,
-            UiColors::blueDark);
+            UiColors::muted);
 
         button->setColour(
             juce::TextButton::textColourOnId,
-            UiColors::blueDark);
+            UiColors::onAccent);
     }
 
     //==========================================================================
     // Song select
 
-    songTitleLabel.setText("", juce::dontSendNotification);
-    songTitleLabel.setFont(juce::FontOptions().withHeight(27.0f).withStyle("Bold"));
+    songTitleLabel.setText("Choose your next challenge", juce::dontSendNotification);
+    songTitleLabel.setFont(GameUi::heading(32.0f));
     songTitleLabel.setColour(juce::Label::textColourId, UiColors::text);
-    songTitleLabel.setJustificationType(juce::Justification::centred);
+    songTitleLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(songTitleLabel);
 
-    // Current song title shown in the centre of the gameplay header.
+    // Current song title shown in the gameplay header.
     gameSongTitleLabel.setText(juce::String::fromUTF8("\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB4\xD1\x83\xD0\xBC\xD0\xB0\xD0\xB9 \xD1\x81\xD0\xB2\xD0\xB5\xD1\x82\xD0\xBB\xD1\x8B\xD0\xB9 \xD0\xBC\xD0\xB8\xD1\x80"), juce::dontSendNotification);
-    gameSongTitleLabel.setFont(juce::FontOptions().withHeight(22.0f).withStyle("Bold"));
+    gameSongTitleLabel.setFont(GameUi::heading(23.0f));
     gameSongTitleLabel.setColour(juce::Label::textColourId, UiColors::text);
-    gameSongTitleLabel.setJustificationType(juce::Justification::centred);
+    gameSongTitleLabel.setJustificationType(juce::Justification::centredLeft);
     gameSongTitleLabel.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(gameSongTitleLabel);
 
+    songPridumayButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
+    songPridumayButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
+    songPridumayButton.setColour(juce::TextButton::textColourOffId, UiColors::onAccent);
+    songPridumayButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
     addAndMakeVisible(songPridumayButton);
-    onlineCatalogButton.setColour(juce::TextButton::buttonColourId, UiColors::blue);
+    onlineCatalogButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    onlineCatalogButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
     onlineCatalogButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    onlineCatalogButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
     addAndMakeVisible(onlineCatalogButton);
-    onlineCatalogStatusLabel.setFont(juce::FontOptions().withHeight(15.0f));
-    onlineCatalogStatusLabel.setColour(juce::Label::textColourId, UiColors::secondaryText);
-    onlineCatalogStatusLabel.setJustificationType(juce::Justification::centred);
+    onlineCatalogStatusLabel.setFont(GameUi::font(12.0f));
+    onlineCatalogStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
+    onlineCatalogStatusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(onlineCatalogStatusLabel);
 
-    leaderboardTitleLabel.setText("GLOBAL PLAYER RATING", juce::dontSendNotification);
-    leaderboardTitleLabel.setFont(juce::FontOptions().withHeight(22.0f).withStyle("Bold"));
+    // Catalogue list: one row per playable song with the player's best score.
+    // Rows are painted by SongListModel in the shared navy/gold style; the card
+    // behind the list already provides the rounded surface.
+    songListBox.setRowHeight(56);
+    songListBox.setColour(juce::ListBox::backgroundColourId, juce::Colours::transparentBlack);
+    songListBox.setColour(juce::ListBox::outlineColourId, juce::Colours::transparentBlack);
+    songListBox.setOutlineThickness(0);
+    songListBox.setModel(&songListModel);
+    addAndMakeVisible(songListBox);
+
+    leaderboardTitleLabel.setText("GLOBAL RATING", juce::dontSendNotification);
+    leaderboardTitleLabel.setFont(GameUi::heading(19.0f));
     leaderboardTitleLabel.setColour(juce::Label::textColourId, UiColors::text);
-    leaderboardTitleLabel.setJustificationType(juce::Justification::centred);
+    leaderboardTitleLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(leaderboardTitleLabel);
 
-    leaderboardLabel.setText("Press REFRESH RATING to load players from the server.", juce::dontSendNotification);
-    leaderboardLabel.setFont(juce::FontOptions().withHeight(16.0f));
-    leaderboardLabel.setColour(juce::Label::textColourId, UiColors::secondaryText);
+    leaderboardLabel.setText({}, juce::dontSendNotification);
+    leaderboardLabel.setFont(GameUi::font(13.0f));
+    leaderboardLabel.setColour(juce::Label::textColourId, UiColors::muted);
     leaderboardLabel.setJustificationType(juce::Justification::topLeft);
     leaderboardLabel.setMinimumHorizontalScale(0.8f);
     addAndMakeVisible(leaderboardLabel);
 
-    refreshLeaderboardButton.setColour(juce::TextButton::buttonColourId, UiColors::blue);
+    refreshLeaderboardButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    refreshLeaderboardButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
     refreshLeaderboardButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    refreshLeaderboardButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
     refreshLeaderboardButton.onClick = [this] { refreshGlobalLeaderboard(); };
+    refreshLeaderboardButton.setButtonText("REFRESH");
     addAndMakeVisible(refreshLeaderboardButton);
 
-    accountStatusLabel.setText("Not signed in. Sign in to submit scores.", juce::dontSendNotification);
-    accountStatusLabel.setFont(juce::FontOptions().withHeight(13.0f));
-    accountStatusLabel.setColour(juce::Label::textColourId, UiColors::secondaryText);
+    accountStatusLabel.setText("Sign in or create an account. Email confirmation is required.",
+                               juce::dontSendNotification);
+    accountStatusLabel.setFont(GameUi::font(12.0f));
+    accountStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
     accountStatusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(accountStatusLabel);
 
-    loginScreenTitleLabel.setText("GUITARBATTLE", juce::dontSendNotification);
-    loginScreenTitleLabel.setFont(juce::FontOptions().withHeight(34.0f).withStyle("Bold"));
+    loginScreenTitleLabel.setText("WELCOME BACK", juce::dontSendNotification);
+    loginScreenTitleLabel.setFont(GameUi::heading(36.0f));
     loginScreenTitleLabel.setColour(juce::Label::textColourId, UiColors::text);
     loginScreenTitleLabel.setJustificationType(juce::Justification::centred);
     addAndMakeVisible(loginScreenTitleLabel);
 
-    currentUserLabel.setFont(juce::FontOptions().withHeight(14.0f).withStyle("Bold"));
+    currentUserLabel.setFont(GameUi::font(13.0f, true));
     currentUserLabel.setColour(juce::Label::textColourId, UiColors::text);
-    currentUserLabel.setJustificationType(juce::Justification::centredLeft);
+    currentUserLabel.setJustificationType(juce::Justification::centredRight);
     addAndMakeVisible(currentUserLabel);
 
-    logoutButton.setColour(juce::TextButton::buttonColourId, UiColors::blue);
-    logoutButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    logoutButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+    logoutButton.setColour(juce::TextButton::buttonOnColourId, UiColors::surface2);
+    logoutButton.setColour(juce::TextButton::textColourOffId, UiColors::muted);
+    logoutButton.setColour(juce::TextButton::textColourOnId, UiColors::text);
     logoutButton.onClick = [this]
     {
         // Invalidate a sign-in chain that may still be waiting for the server.
         ++authRequestId;
+        // Server-reported best scores belong to the signed-in account; the
+        // locally saved values stay available after signing out.
+        ++bestScoresRequestId;
+        remoteBestScores.clear();
+        updateCatalogRows();
         onlineAccessToken.clear();
         onlineGameSessionUuid.clear();
         currentUsername.clear();
@@ -948,14 +974,36 @@ MainComponent::MainComponent()
     };
     addAndMakeVisible(logoutButton);
 
-    for (auto* button : { &accountLoginButton, &accountRegisterButton })
+    accountLoginButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
+    accountLoginButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
+    accountLoginButton.setColour(juce::TextButton::textColourOffId, UiColors::onAccent);
+    accountLoginButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    accountLoginButton.setButtonText("SIGN IN");
+    accountRegisterButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    accountRegisterButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
+    accountRegisterButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    accountRegisterButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    accountRegisterButton.setButtonText("CREATE ACCOUNT");
+
+    for (auto* button : { &verifyEmailButton, &forgotPasswordButton })
     {
-        button->setColour(juce::TextButton::buttonColourId, UiColors::blue);
-        button->setColour(juce::TextButton::textColourOffId, UiColors::text);
-        addAndMakeVisible(*button);
+        button->setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
+        button->setColour(juce::TextButton::buttonOnColourId, UiColors::surface2);
+        button->setColour(juce::TextButton::textColourOffId, UiColors::muted);
+        button->setColour(juce::TextButton::textColourOnId, UiColors::text);
     }
+
+    for (auto* button : { &accountLoginButton, &accountRegisterButton,
+                          &verifyEmailButton, &forgotPasswordButton })
+        addAndMakeVisible(*button);
+
     accountLoginButton.onClick = [this] { authenticateOnlineAccount(false); };
     accountRegisterButton.onClick = [this] { authenticateOnlineAccount(true); };
+    verifyEmailButton.onClick = [this]
+    {
+        showEmailVerificationDialog({}, {}, false);
+    };
+    forgotPasswordButton.onClick = [this] { recoverOnlineAccountPassword(); };
 
     addAndMakeVisible(songMistButton);
     addAndMakeVisible(songChordsButton);
@@ -977,16 +1025,12 @@ MainComponent::MainComponent()
     addAndMakeVisible(melodyStyleCombo);
     addAndMakeVisible(generateMelodyButton);
     addAndMakeVisible(newGenerationButton);
-    for (auto* button : { &songPridumayButton, &songMistButton, &songChordsButton, &aiSoloButton, &oldGeneratorArchiveButton, &generateMelodyButton, &newGenerationButton })
+    for (auto* button : { &songMistButton, &songChordsButton, &aiSoloButton, &oldGeneratorArchiveButton, &generateMelodyButton, &newGenerationButton })
     {
-        button->setColour(juce::TextButton::buttonColourId, UiColors::blueLight);
         button->setColour(juce::TextButton::buttonColourId, UiColors::card);
         button->setColour(juce::TextButton::textColourOffId, UiColors::text);
-        button->setColour(juce::TextButton::buttonOnColourId, UiColors::blue);
-        button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
-        button->setColour(juce::TextButton::textColourOffId, UiColors::blueDark);
-        button->setColour(juce::TextButton::buttonOnColourId, UiColors::orange);
-        button->setColour(juce::TextButton::textColourOnId, juce::Colours::white);
+        button->setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
+        button->setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
     }
     addAndMakeVisible(songPridumayBestLabel);
     addAndMakeVisible(songMistBestLabel);
@@ -995,33 +1039,37 @@ MainComponent::MainComponent()
 
     auto configureBestLabel = [](juce::Label& label)
     {
-        label.setFont(juce::FontOptions().withHeight(16.0f));
-        label.setColour(juce::Label::textColourId, UiColors::secondaryText);
-        label.setJustificationType(juce::Justification::centred);
+        label.setFont(GameUi::eyebrow(10.0f));
+        label.setColour(juce::Label::textColourId, UiColors::muted);
+        label.setJustificationType(juce::Justification::centredLeft);
         label.setInterceptsMouseClicks(false, false);
     };
     configureBestLabel(songPridumayBestLabel);
     configureBestLabel(songMistBestLabel);
     configureBestLabel(songChordsBestLabel);
     configureBestLabel(dailyChallengeBestLabel);
+    songPridumayBestLabel.setColour(juce::Label::textColourId, UiColors::accent);
     updateSongBestScoreLabels();
 
     songPridumayButton.onClick = [this]
     {
-        if (!songLibrary.empty() && loadSongMidi(songLibrary.front().title))
-            beginTuningForSelectedSong();
+        // Loads the highlighted catalogue row; online assets are downloaded on
+        // demand by downloadOnlineSong() on an ApiClient worker thread.
+        startSelectedSong();
     };
 
     onlineCatalogButton.onClick = [this]
     {
-        onlineCatalogButton.setEnabled(false);
-        onlineCatalogStatusLabel.setText("Connecting to GuitarBattle server...", juce::dontSendNotification);
-        // Catalogue lookup and the file downloads run on the ApiClient worker
-        // threads; the button is re-enabled and the status text updated when the
-        // result arrives on the message thread. Local gameplay/audio callbacks do
-        // not perform network I/O.
-        loadFirstOnlineCatalogSong();
+        // Re-reads the published catalogue (and the personal best scores when
+        // signed in). The request runs on an ApiClient worker thread; this
+        // handler never blocks the message thread.
+        refreshOnlineCatalog();
     };
+
+    // Pulse the catalogue as soon as the client starts so the song list is
+    // populated before the player signs in. Failures leave the local songs in
+    // place, exactly like the previous single-song behaviour.
+    refreshOnlineCatalog();
 
     songMistButton.onClick = [] {};
     songChordsButton.onClick = [] {};
@@ -1061,16 +1109,14 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     gameSessionLabel.setFont(
-        juce::FontOptions()
-        .withHeight(30.0f)
-        .withStyle("Bold"));
+        GameUi::heading(46.0f));
 
     gameSessionLabel.setColour(
         juce::Label::textColourId,
-        UiColors::text);
+        UiColors::accent);
 
     gameSessionLabel.setJustificationType(
-        juce::Justification::centred);
+        juce::Justification::centredRight);
 
     addAndMakeVisible(
         gameSessionLabel);
@@ -1083,13 +1129,11 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     hitLabel.setFont(
-        juce::FontOptions()
-        .withHeight(24.0f)
-        .withStyle("Bold"));
+        GameUi::heading(27.0f));
 
     hitLabel.setColour(
         juce::Label::textColourId,
-        UiColors::blue);
+        UiColors::accent);
 
     hitLabel.setJustificationType(
         juce::Justification::centred);
@@ -1105,13 +1149,11 @@ MainComponent::MainComponent()
         juce::dontSendNotification);
 
     targetNoteLabel.setFont(
-        juce::FontOptions()
-        .withHeight(34.0f)
-        .withStyle("Bold"));
+        GameUi::heading(34.0f));
 
     targetNoteLabel.setColour(
         juce::Label::textColourId,
-        UiColors::blueDark);
+        UiColors::accent);
 
     targetNoteLabel.setJustificationType(
         juce::Justification::centred);
@@ -1123,23 +1165,23 @@ MainComponent::MainComponent()
     // Audio settings
 
     audioSettingsButton.setButtonText(
-        "Audio Settings");
+        "AUDIO");
 
     audioSettingsButton.setColour(
         juce::TextButton::buttonColourId,
-        UiColors::card);
-
-    audioSettingsButton.setColour(
-        juce::TextButton::textColourOffId,
-        UiColors::secondaryText);
+        UiColors::surface2);
 
     audioSettingsButton.setColour(
         juce::TextButton::buttonOnColourId,
-        UiColors::blueLight);
+        UiColors::accent);
+
+    audioSettingsButton.setColour(
+        juce::TextButton::textColourOffId,
+        UiColors::text);
 
     audioSettingsButton.setColour(
         juce::TextButton::textColourOnId,
-        UiColors::blueDark);
+        UiColors::onAccent);
 
     addAndMakeVisible(
         audioSettingsButton);
@@ -1238,6 +1280,11 @@ MainComponent::MainComponent()
     // Start pitch thread
 
     pitchThread->startThread();
+
+    // Added last so pause/count-in cards paint above the HUD and mixer. The
+    // component is transparent and does not intercept mouse input.
+    addAndMakeVisible(modalOverlayComponent);
+    modalOverlayComponent.toFront(false);
 
     resized();
     repaint();
@@ -1371,6 +1418,10 @@ void MainComponent::timerCallback()
         juce::String(
             currentBeatInBar + 1),
         juce::dontSendNotification);
+
+    pitchLabel.setText(
+        "x" + juce::String(gameplayStats.getCombo()),
+        juce::dontSendNotification);
 }
 
 //==============================================================================
@@ -1382,7 +1433,7 @@ void MainComponent::showHitFeedback(const juce::String& text, int type)
     // Called on the message thread (all pitch-thread callers use callAsync).
     feedbackType = type;
     feedbackStartMs = juce::Time::getMillisecondCounter();
-    feedbackBaseFontSize = 20.0f;
+    feedbackBaseFontSize = 27.0f;
     hitLabel.setText(text, juce::dontSendNotification);
     updateHitFeedbackAnimation();
     repaint();
@@ -1444,6 +1495,9 @@ MainComponent::~MainComponent()
     }
 
     shutdownAudio();
+
+    setLookAndFeel(nullptr);
+    juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
 }
 
 //==============================================================================
@@ -1665,7 +1719,7 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
     auto* prompt = new juce::AlertWindow(
         createAccount ? "Create GuitarBattle account" : "Sign in to GuitarBattle",
         createAccount
-            ? "Username and email are required. Password must be at least 10 characters."
+            ? "Username, email and password are required. We will send a 6-digit confirmation code to your email."
             : "Enter your username/email and password.",
         juce::AlertWindow::NoIcon);
 
@@ -1747,7 +1801,16 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
                 {
                     setSubmitEnabled(true);
 
-                    if (response.statusCode == 401 || response.statusCode == 422)
+                    if (response.statusCode == 403)
+                    {
+                        component->accountStatusLabel.setText(
+                            "Email is not verified. Enter the code or resend it.",
+                            juce::dontSendNotification);
+                        showError("Email not verified",
+                                  "Confirm your email before signing in. "
+                                  "Use VERIFY EMAIL on the welcome screen to enter or resend the code.");
+                    }
+                    else if (response.statusCode == 401 || response.statusCode == 422)
                     {
                         component->accountStatusLabel.setText(
                             "Incorrect email/username or password",
@@ -1803,6 +1866,12 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
                               "Fill in username, email and a password of at least 10 characters.");
                     return;
                 }
+
+                if (! email.containsChar('@') || ! email.containsChar('.'))
+                {
+                    showError("Registration failed", "Enter a valid email address.");
+                    return;
+                }
             }
             else
             {
@@ -1836,8 +1905,8 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
                 registration->setProperty("display_name", displayName);
 
             self->apiClient.postJson("/auth/register", juce::var(registration.get()), {}, 5000,
-                [safeThis, safePrompt, attemptId, usernameOrEmail, password,
-                 signIn, showError, setSubmitEnabled](ApiClient::Response response)
+                [safeThis, safePrompt, attemptId, usernameOrEmail, email,
+                 showError, setSubmitEnabled](ApiClient::Response response)
                 {
                     auto* component = safeThis.getComponent();
                     if (component == nullptr || attemptId != component->authRequestId)
@@ -1845,7 +1914,20 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
 
                     if (response.statusCode >= 200 && response.statusCode < 300)
                     {
-                        signIn(attemptId, usernameOrEmail, password);
+                        component->accountStatusLabel.setText(
+                            "Account created. Enter the code sent to " + email + ".",
+                            juce::dontSendNotification);
+
+                        if (auto* dialog = safePrompt.getComponent())
+                            dialog->exitModalState(1);
+
+                        // The modal window must be fully dismissed before the
+                        // verification dialog is opened on top of it.
+                        juce::MessageManager::callAsync([safeThis, email, usernameOrEmail]()
+                        {
+                            if (auto* self = safeThis.getComponent())
+                                self->showEmailVerificationDialog(email, usernameOrEmail, true);
+                        });
                         return;
                     }
 
@@ -1857,7 +1939,26 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
                             "Username or email is already registered.",
                             juce::dontSendNotification);
                         showError("Registration failed",
-                                  "Username or email is already registered.");
+                                  "Username or email is already registered. "
+                                  "If you created this account earlier, use VERIFY EMAIL to confirm it.");
+                    }
+                    else if (response.statusCode == 503)
+                    {
+                        component->accountStatusLabel.setText(
+                            "Could not send the verification email. Try again later.",
+                            juce::dontSendNotification);
+                        showError("Registration failed",
+                                  "The account was not created because the verification email "
+                                  "could not be sent. Try again later.");
+                    }
+                    else if (response.statusCode == 422)
+                    {
+                        component->accountStatusLabel.setText(
+                            "Registration details were rejected.",
+                            juce::dontSendNotification);
+                        showError("Registration failed",
+                                  "Check the email address, username, and password "
+                                  "(at least 10 characters).");
                     }
                     else
                     {
@@ -1870,6 +1971,471 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
                 });
         };
     }
+
+    prompt->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis](int result)
+        {
+            if (result != 1)
+                if (auto* self = safeThis.getComponent())
+                    ++self->authRequestId;
+        }), true);
+}
+
+void MainComponent::showEmailVerificationDialog(const juce::String& email,
+                                                const juce::String& fallbackName,
+                                                bool accountCreated)
+{
+    const auto normalizedEmail = email.trim().toLowerCase();
+    auto* prompt = new juce::AlertWindow(
+        "Verify your email",
+        normalizedEmail.isNotEmpty()
+            ? "Enter the 6-digit code sent to " + normalizedEmail + "."
+            : "Enter your email and the 6-digit code. Use RESEND CODE if you need a new one.",
+        juce::AlertWindow::NoIcon);
+
+    prompt->addTextEditor("email", normalizedEmail, "Email");
+    prompt->addTextEditor("code", "", "6-digit confirmation code");
+    prompt->addButton("VERIFY", 1);
+    prompt->addButton("RESEND CODE", 2);
+    prompt->addButton("CANCEL", 0);
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::Component::SafePointer<juce::AlertWindow> safePrompt(prompt);
+    const int attemptId = ++authRequestId;
+
+    auto setSubmitEnabled = [safePrompt](bool shouldBeEnabled)
+    {
+        if (auto* dialog = safePrompt.getComponent())
+            if (auto* submit = dialog->getButton(0))
+                submit->setEnabled(shouldBeEnabled);
+    };
+
+    auto showError = [safeThis, safePrompt](const juce::String& title,
+                                            const juce::String& message)
+    {
+        if (safePrompt.getComponent() == nullptr)
+            return;
+
+        juce::MessageManager::callAsync([safeThis, safePrompt, title, message]()
+        {
+            auto* self = safeThis.getComponent();
+            auto* dialog = safePrompt.getComponent();
+            if (self == nullptr || dialog == nullptr)
+                return;
+
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                title,
+                message,
+                "OK",
+                dialog);
+        });
+    };
+
+    auto verify = [safeThis, safePrompt, attemptId, fallbackName, accountCreated,
+                   setSubmitEnabled, showError]()
+    {
+        auto* self = safeThis.getComponent();
+        auto* dialog = safePrompt.getComponent();
+        if (self == nullptr || dialog == nullptr || attemptId != self->authRequestId)
+            return;
+
+        const auto emailAddress = dialog->getTextEditorContents("email").trim().toLowerCase();
+        const auto code = dialog->getTextEditorContents("code").trim();
+
+        if (emailAddress.isEmpty() || ! emailAddress.containsChar('@'))
+        {
+            showError("Verification failed", "Enter the email address used for registration.");
+            return;
+        }
+
+        if (code.length() != 6 || ! code.containsOnly("0123456789"))
+        {
+            showError("Verification failed", "Enter the 6-digit code from the email.");
+            return;
+        }
+
+        juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+        payload->setProperty("email", emailAddress);
+        payload->setProperty("code", code);
+
+        setSubmitEnabled(false);
+
+        self->apiClient.postJson("/auth/verify-email", juce::var(payload.get()), {}, 5000,
+            [safeThis, safePrompt, attemptId, fallbackName, accountCreated,
+             emailAddress, setSubmitEnabled, showError](ApiClient::Response response)
+            {
+                auto* component = safeThis.getComponent();
+                if (component == nullptr || attemptId != component->authRequestId)
+                    return;
+
+                const auto accessToken =
+                    response.json.getProperty("access_token", juce::var()).toString();
+                if (accessToken.isNotEmpty())
+                {
+                    component->onlineAccessToken = accessToken;
+                    if (auto* dialog = safePrompt.getComponent())
+                        dialog->exitModalState(1);
+
+                    component->finishOnlineSignIn(
+                        accountCreated,
+                        fallbackName.isNotEmpty() ? fallbackName : emailAddress,
+                        accessToken,
+                        attemptId);
+                    return;
+                }
+
+                setSubmitEnabled(true);
+                component->accountStatusLabel.setText(
+                    "Verification failed. Check the code and try again.",
+                    juce::dontSendNotification);
+
+                const auto detail =
+                    response.json.getProperty("detail", juce::var()).toString();
+                if (response.statusCode == 400 || response.statusCode == 422)
+                {
+                    showError("Verification failed",
+                              detail.isNotEmpty()
+                                  ? detail
+                                  : "The code is invalid or expired. Request a new code and try again.");
+                }
+                else
+                {
+                    showError("Verification failed",
+                              "Could not verify the email. Check the server connection and try again.");
+                }
+            });
+    };
+
+    auto resend = [safeThis, safePrompt, attemptId, showError]()
+    {
+        auto* self = safeThis.getComponent();
+        auto* dialog = safePrompt.getComponent();
+        if (self == nullptr || dialog == nullptr || attemptId != self->authRequestId)
+            return;
+
+        const auto emailAddress = dialog->getTextEditorContents("email").trim().toLowerCase();
+        if (emailAddress.isEmpty() || ! emailAddress.containsChar('@'))
+        {
+            showError("Resend failed", "Enter the email address used for registration.");
+            return;
+        }
+
+        juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+        payload->setProperty("email", emailAddress);
+
+        self->apiClient.postJson("/auth/resend-verification", juce::var(payload.get()), {}, 5000,
+            [safeThis, safePrompt, attemptId, emailAddress, showError](ApiClient::Response response)
+            {
+                auto* component = safeThis.getComponent();
+                if (component == nullptr || attemptId != component->authRequestId)
+                    return;
+
+                if (response.statusCode >= 200 && response.statusCode < 300)
+                {
+                    component->accountStatusLabel.setText(
+                        "A new code was sent to " + emailAddress + ".",
+                        juce::dontSendNotification);
+                    showError("Code sent",
+                              "If this account needs verification, a new code is on its way to "
+                                  + emailAddress + ".");
+                }
+                else
+                {
+                    showError("Resend failed",
+                              "Could not request a new code. Check the server connection and try again.");
+                }
+            });
+    };
+
+    if (auto* verifyButton = prompt->getButton(0))
+        verifyButton->onClick = verify;
+    if (auto* resendButton = prompt->getButton(1))
+        resendButton->onClick = resend;
+
+    prompt->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis](int result)
+        {
+            if (result != 1)
+                if (auto* self = safeThis.getComponent())
+                    ++self->authRequestId;
+        }), true);
+}
+
+void MainComponent::recoverOnlineAccountPassword()
+{
+    auto* prompt = new juce::AlertWindow(
+        "Reset your password",
+        "Enter the email address linked to your account. "
+        "We will send a 6-digit password reset code.",
+        juce::AlertWindow::NoIcon);
+
+    prompt->addTextEditor("email", "", "Email");
+    prompt->addButton("SEND CODE", 1);
+    prompt->addButton("CANCEL", 0);
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::Component::SafePointer<juce::AlertWindow> safePrompt(prompt);
+    const int attemptId = ++authRequestId;
+
+    auto setSubmitEnabled = [safePrompt](bool shouldBeEnabled)
+    {
+        if (auto* dialog = safePrompt.getComponent())
+            if (auto* submit = dialog->getButton(0))
+                submit->setEnabled(shouldBeEnabled);
+    };
+
+    auto showError = [safeThis, safePrompt](const juce::String& title,
+                                            const juce::String& message)
+    {
+        if (safePrompt.getComponent() == nullptr)
+            return;
+
+        juce::MessageManager::callAsync([safeThis, safePrompt, title, message]()
+        {
+            auto* self = safeThis.getComponent();
+            auto* dialog = safePrompt.getComponent();
+            if (self == nullptr || dialog == nullptr)
+                return;
+
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                title,
+                message,
+                "OK",
+                dialog);
+        });
+    };
+
+    if (auto* submit = prompt->getButton(0))
+    {
+        submit->onClick = [safeThis, safePrompt, attemptId, setSubmitEnabled, showError]()
+        {
+            auto* self = safeThis.getComponent();
+            auto* dialog = safePrompt.getComponent();
+            if (self == nullptr || dialog == nullptr || attemptId != self->authRequestId)
+                return;
+
+            const auto emailAddress = dialog->getTextEditorContents("email").trim().toLowerCase();
+            if (emailAddress.isEmpty() || ! emailAddress.containsChar('@'))
+            {
+                showError("Reset failed", "Enter the email address linked to your account.");
+                return;
+            }
+
+            juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+            payload->setProperty("email", emailAddress);
+
+            setSubmitEnabled(false);
+
+            self->apiClient.postJson("/auth/forgot-password", juce::var(payload.get()), {}, 5000,
+                [safeThis, safePrompt, attemptId, emailAddress,
+                 setSubmitEnabled, showError](ApiClient::Response response)
+                {
+                    auto* component = safeThis.getComponent();
+                    if (component == nullptr || attemptId != component->authRequestId)
+                        return;
+
+                    if (response.statusCode >= 200 && response.statusCode < 300)
+                    {
+                        component->accountStatusLabel.setText(
+                            "If the account exists, a reset code was sent to " + emailAddress + ".",
+                            juce::dontSendNotification);
+
+                        if (auto* dialog = safePrompt.getComponent())
+                            dialog->exitModalState(1);
+
+                        juce::MessageManager::callAsync([safeThis, emailAddress]()
+                        {
+                            if (auto* self = safeThis.getComponent())
+                                self->showPasswordResetDialog(emailAddress);
+                        });
+                    }
+                    else
+                    {
+                        setSubmitEnabled(true);
+                        showError("Reset failed",
+                                  "Could not request a reset code. Check the server connection and try again.");
+                    }
+                });
+        };
+    }
+
+    prompt->enterModalState(true,
+        juce::ModalCallbackFunction::create([safeThis](int result)
+        {
+            if (result != 1)
+                if (auto* self = safeThis.getComponent())
+                    ++self->authRequestId;
+        }), true);
+}
+
+void MainComponent::showPasswordResetDialog(const juce::String& email)
+{
+    const auto normalizedEmail = email.trim().toLowerCase();
+    auto* prompt = new juce::AlertWindow(
+        "Choose a new password",
+        "Enter the 6-digit code sent to " + normalizedEmail
+            + " and choose a new password of at least 10 characters.",
+        juce::AlertWindow::NoIcon);
+
+    prompt->addTextEditor("code", "", "6-digit reset code");
+    prompt->addTextEditor("new_password", "", "New password (10+ characters)", true);
+    prompt->addTextEditor("confirm_password", "", "Repeat new password", true);
+    prompt->addButton("RESET PASSWORD", 1);
+    prompt->addButton("RESEND CODE", 2);
+    prompt->addButton("CANCEL", 0);
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::Component::SafePointer<juce::AlertWindow> safePrompt(prompt);
+    const int attemptId = ++authRequestId;
+
+    auto setSubmitEnabled = [safePrompt](bool shouldBeEnabled)
+    {
+        if (auto* dialog = safePrompt.getComponent())
+            if (auto* submit = dialog->getButton(0))
+                submit->setEnabled(shouldBeEnabled);
+    };
+
+    auto showError = [safeThis, safePrompt](const juce::String& title,
+                                            const juce::String& message)
+    {
+        if (safePrompt.getComponent() == nullptr)
+            return;
+
+        juce::MessageManager::callAsync([safeThis, safePrompt, title, message]()
+        {
+            auto* self = safeThis.getComponent();
+            auto* dialog = safePrompt.getComponent();
+            if (self == nullptr || dialog == nullptr)
+                return;
+
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::WarningIcon,
+                title,
+                message,
+                "OK",
+                dialog);
+        });
+    };
+
+    auto reset = [safeThis, safePrompt, attemptId, normalizedEmail,
+                  setSubmitEnabled, showError]()
+    {
+        auto* self = safeThis.getComponent();
+        auto* dialog = safePrompt.getComponent();
+        if (self == nullptr || dialog == nullptr || attemptId != self->authRequestId)
+            return;
+
+        const auto code = dialog->getTextEditorContents("code").trim();
+        const auto newPassword = dialog->getTextEditorContents("new_password");
+        const auto confirmPassword = dialog->getTextEditorContents("confirm_password");
+
+        if (code.length() != 6 || ! code.containsOnly("0123456789"))
+        {
+            showError("Reset failed", "Enter the 6-digit code from the email.");
+            return;
+        }
+
+        if (newPassword.length() < 10)
+        {
+            showError("Reset failed", "The new password must be at least 10 characters.");
+            return;
+        }
+
+        if (newPassword != confirmPassword)
+        {
+            showError("Reset failed", "The new passwords do not match.");
+            return;
+        }
+
+        juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+        payload->setProperty("email", normalizedEmail);
+        payload->setProperty("code", code);
+        payload->setProperty("new_password", newPassword);
+
+        setSubmitEnabled(false);
+
+        self->apiClient.postJson("/auth/reset-password", juce::var(payload.get()), {}, 5000,
+            [safeThis, safePrompt, attemptId, normalizedEmail,
+             setSubmitEnabled, showError](ApiClient::Response response)
+            {
+                auto* component = safeThis.getComponent();
+                if (component == nullptr || attemptId != component->authRequestId)
+                    return;
+
+                const auto accessToken =
+                    response.json.getProperty("access_token", juce::var()).toString();
+                if (accessToken.isNotEmpty())
+                {
+                    component->onlineAccessToken = accessToken;
+                    if (auto* dialog = safePrompt.getComponent())
+                        dialog->exitModalState(1);
+
+                    component->finishOnlineSignIn(false, normalizedEmail, accessToken, attemptId);
+                    return;
+                }
+
+                setSubmitEnabled(true);
+                component->accountStatusLabel.setText(
+                    "Password reset failed. Check the code and try again.",
+                    juce::dontSendNotification);
+
+                const auto detail =
+                    response.json.getProperty("detail", juce::var()).toString();
+                if (response.statusCode == 400 || response.statusCode == 422)
+                {
+                    showError("Reset failed",
+                              detail.isNotEmpty()
+                                  ? detail
+                                  : "The code is invalid or expired. Request a new code and try again.");
+                }
+                else
+                {
+                    showError("Reset failed",
+                              "Could not reset the password. Check the server connection and try again.");
+                }
+            });
+    };
+
+    auto resend = [safeThis, safePrompt, attemptId, normalizedEmail, showError]()
+    {
+        auto* self = safeThis.getComponent();
+        auto* dialog = safePrompt.getComponent();
+        if (self == nullptr || dialog == nullptr || attemptId != self->authRequestId)
+            return;
+
+        juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+        payload->setProperty("email", normalizedEmail);
+
+        self->apiClient.postJson("/auth/forgot-password", juce::var(payload.get()), {}, 5000,
+            [safeThis, safePrompt, attemptId, normalizedEmail, showError](ApiClient::Response response)
+            {
+                auto* component = safeThis.getComponent();
+                if (component == nullptr || attemptId != component->authRequestId)
+                    return;
+
+                if (response.statusCode >= 200 && response.statusCode < 300)
+                {
+                    component->accountStatusLabel.setText(
+                        "A new reset code was sent to " + normalizedEmail + ".",
+                        juce::dontSendNotification);
+                    showError("Code sent",
+                              "If the account exists, a new reset code is on its way to "
+                                  + normalizedEmail + ".");
+                }
+                else
+                {
+                    showError("Resend failed",
+                              "Could not request a new code. Check the server connection and try again.");
+                }
+            });
+    };
+
+    if (auto* resetButton = prompt->getButton(0))
+        resetButton->onClick = reset;
+    if (auto* resendButton = prompt->getButton(1))
+        resendButton->onClick = resend;
 
     prompt->enterModalState(true,
         juce::ModalCallbackFunction::create([safeThis](int result)
@@ -1910,7 +2476,7 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             }
 
             self->currentUsername = username;
-            self->currentUserLabel.setText("Signed in: " + self->currentUsername, juce::dontSendNotification);
+            self->currentUserLabel.setText(self->currentUsername, juce::dontSendNotification);
             self->showAuthScreen = false;
             self->resized();
             self->repaint();
@@ -1934,6 +2500,8 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
                         component);
             });
             self->refreshGlobalLeaderboard();
+            // Personal best scores require the freshly obtained token.
+            self->refreshOnlineBestScores();
         });
 }
 
@@ -2016,6 +2584,8 @@ void MainComponent::submitOnlineGameResult()
                 self->accountStatusLabel.setText("Online score submitted. Refreshing global rating...",
                                                  juce::dontSendNotification);
                 self->refreshGlobalLeaderboard();
+                // Pick up the new personal best for this song right away.
+                self->refreshOnlineBestScores();
             }
             else
             {
@@ -2073,7 +2643,7 @@ void MainComponent::refreshGlobalLeaderboard()
                     name = item.getProperty("username", juce::var()).toString();
                 const auto points = item.getProperty("rating_points", juce::var()).toString();
                 const auto games = item.getProperty("games_played", juce::var()).toString();
-                text << rank << ".  " << name << "   —   " << points << " pts"
+                text << rank << ".  " << name << "   -   " << points << " pts"
                      << "   (" << games << " games)" << juce::newLine;
             }
             self->leaderboardLabel.setText(text, juce::dontSendNotification);
@@ -2082,12 +2652,14 @@ void MainComponent::refreshGlobalLeaderboard()
 
 namespace
 {
-    // Collected by the background thread of loadFirstOnlineCatalogSong() and
-    // applied to the song library on the message thread.
+    // Collected by the background thread of downloadOnlineSong() and applied to
+    // the song library on the message thread.
     struct OnlineCatalogDownload
     {
         bool ok = false;
         juce::String title;
+        juce::String slug;
+        juce::String artist;
         juce::String songId;
         double bpm = 120.0;
         int version = 0;
@@ -2101,48 +2673,393 @@ namespace
         juce::File guitarFile;
         juce::File othersFile;
     };
+
+    juce::File onlineSongsCacheRoot()
+    {
+        return juce::File::getSpecialLocation(juce::File::userApplicationDataDirectory)
+            .getChildFile("GuitarBattle")
+            .getChildFile("OnlineSongs");
+    }
 }
 
-void MainComponent::loadFirstOnlineCatalogSong()
+//==============================================================================
+// Song-select catalogue
+//==============================================================================
+
+int MainComponent::SongListModel::getNumRows()
+{
+    return static_cast<int>(owner.catalogSongs.size());
+}
+
+void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
+                                                    juce::Graphics& g,
+                                                    int width,
+                                                    int height,
+                                                    bool rowIsSelected)
+{
+    if (! juce::isPositiveAndBelow(rowNumber,
+                                   static_cast<int>(owner.catalogSongs.size())))
+        return;
+
+    const auto& song = owner.catalogSongs[static_cast<size_t>(rowNumber)];
+    const auto row = juce::Rectangle<int>(0, 0, width, height).reduced(2, 3);
+
+    g.setColour(rowIsSelected ? UiColors::accent.withAlpha(0.16f)
+                              : UiColors::surface2.withAlpha(0.55f));
+    g.fillRoundedRectangle(row.toFloat(), 12.0f);
+    g.setColour(rowIsSelected ? UiColors::accent.withAlpha(0.55f) : UiColors::border);
+    g.drawRoundedRectangle(row.toFloat().reduced(0.5f), 12.0f, 1.0f);
+
+    if (rowIsSelected)
+    {
+        const juce::Rectangle<int> selectionBar(row.getX() + 2, row.getY() + 11,
+                                                4, juce::jmax(4, row.getHeight() - 22));
+        g.setColour(UiColors::accent);
+        g.fillRoundedRectangle(selectionBar.toFloat(), 2.0f);
+    }
+
+    // The best score sits on the right; the metadata column shrinks with the card.
+    const int bestWidth = juce::jlimit(84, 152, width / 3);
+    const auto bestArea = row.withTrimmedRight(14).removeFromRight(bestWidth);
+    auto textArea = row.withTrimmedLeft(16).withTrimmedRight(bestWidth + 22);
+
+    juce::StringArray meta;
+    if (song.artist.isNotEmpty())
+        meta.add(song.artist);
+    meta.add(juce::String(juce::roundToInt(song.bpm)) + " BPM");
+    meta.add(song.online ? (song.downloaded ? "ONLINE / CACHED" : "ONLINE")
+                         : "LOCAL");
+
+    g.setColour(UiColors::text);
+    g.setFont(GameUi::font(14.0f, true));
+    g.drawFittedText(song.title,
+                     textArea.removeFromTop(juce::jmax(18, height * 3 / 5)).toNearestInt(),
+                     juce::Justification::centredLeft, 1, 0.8f);
+
+    g.setColour(UiColors::muted);
+    g.setFont(GameUi::font(10.5f));
+    g.drawFittedText(meta.joinIntoString("   |   "),
+                     textArea.toNearestInt(),
+                     juce::Justification::centredLeft, 1, 0.7f);
+
+    const int best = owner.getBestScoreForSong(song.slug, song.title);
+
+    // Fitted text with a horizontal-scale floor: never truncate the digits.
+    g.setColour(best > 0 ? UiColors::accent : UiColors::muted.withAlpha(0.55f));
+    g.setFont(GameUi::font(10.0f, true, 0.55f));
+    g.drawFittedText(best > 0 ? "BEST: " + juce::String(best) : juce::String("NO SCORE"),
+                     bestArea, juce::Justification::centredRight, 1, 0.65f);
+}
+
+void MainComponent::SongListModel::listBoxItemClicked(int rowNumber, const juce::MouseEvent&)
+{
+    // Selecting a row only highlights it; START SONG performs the download.
+    owner.selectCatalogSong(rowNumber);
+}
+
+void MainComponent::SongListModel::selectedRowsChanged(int lastRowSelected)
+{
+    // Guard against the re-entry caused by selectCatalogSong() selecting the row.
+    if (lastRowSelected >= 0 && lastRowSelected != owner.selectedCatalogIndex)
+        owner.selectCatalogSong(lastRowSelected);
+}
+
+void MainComponent::SongListModel::returnKeyPressed(int rowNumber)
+{
+    owner.selectCatalogSong(rowNumber);
+    owner.startSelectedSong();
+}
+
+void MainComponent::updateCatalogRows()
+{
+    songListBox.updateContent();
+    songListBox.repaint();
+    updateSongBestScoreLabels();
+}
+
+void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
+{
+    // Remember the highlighted row so a catalogue refresh keeps the selection.
+    juce::String previousSlug;
+    juce::String previousTitle;
+    if (juce::isPositiveAndBelow(selectedCatalogIndex,
+                                 static_cast<int>(catalogSongs.size())))
+    {
+        previousSlug = catalogSongs[static_cast<size_t>(selectedCatalogIndex)].slug;
+        previousTitle = catalogSongs[static_cast<size_t>(selectedCatalogIndex)].title;
+    }
+
+    std::vector<CatalogSong> rows;
+
+    // Local folders first, so the built-in "1 Power metal" track stays at hand
+    // even when the catalogue request fails.
+    for (const auto& entry : songLibrary)
+    {
+        if (entry.slug.isNotEmpty())
+            continue; // cached online songs are represented by the server list
+
+        CatalogSong row;
+        row.title = entry.title;
+        row.bpm = entry.bpm;
+        row.online = false;
+        row.downloaded = true;
+        rows.push_back(row);
+    }
+
+    if (const auto* items = serverItems.getArray())
+    {
+        const auto cacheRoot = onlineSongsCacheRoot();
+
+        for (const auto& item : *items)
+        {
+            const auto slug = item.getProperty("slug", juce::var()).toString();
+            if (slug.isEmpty())
+                continue;
+
+            CatalogSong row;
+            row.slug = slug;
+            row.serverId = item.getProperty("id", juce::var()).toString();
+            row.title = item.getProperty("title", juce::var()).toString();
+            if (row.title.isEmpty())
+                row.title = slug;
+            row.artist = item.getProperty("artist", juce::var()).toString();
+            row.bpm = static_cast<double>(item.getProperty("bpm", 120));
+            row.version = static_cast<int>(item.getProperty("version", 0));
+            row.online = true;
+            row.downloaded = findOnlineLibraryEntry(slug) != nullptr
+                || cacheRoot.getChildFile(slug).getChildFile("version.txt").existsAsFile();
+            rows.push_back(row);
+        }
+    }
+
+    if (rows.empty())
+    {
+        // Offline fallback: keep the local library usable as before.
+        for (const auto& entry : songLibrary)
+        {
+            CatalogSong row;
+            row.title = entry.title;
+            row.bpm = entry.bpm;
+            rows.push_back(row);
+        }
+    }
+
+    catalogSongs = std::move(rows);
+
+    int newIndex = 0;
+    for (int i = 0; i < static_cast<int>(catalogSongs.size()); ++i)
+    {
+        const auto& row = catalogSongs[static_cast<size_t>(i)];
+        if ((previousSlug.isNotEmpty() && row.slug == previousSlug)
+            || (previousSlug.isEmpty() && previousTitle.isNotEmpty()
+                && row.title == previousTitle))
+        {
+            newIndex = i;
+            break;
+        }
+    }
+
+    selectedCatalogIndex = catalogSongs.empty()
+        ? 0 : juce::jlimit(0, static_cast<int>(catalogSongs.size()) - 1, newIndex);
+
+    updateCatalogRows();
+
+    if (!catalogSongs.empty())
+        selectCatalogSong(selectedCatalogIndex);
+}
+
+void MainComponent::refreshOnlineCatalog()
+{
+    onlineCatalogButton.setEnabled(false);
+    onlineCatalogStatusLabel.setText("Loading song catalogue...", juce::dontSendNotification);
+
+    // The request runs on an ApiClient worker thread; only this callback touches
+    // components. A failure keeps the local songs in the catalogue.
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    apiClient.getJson("/songs?limit=100&offset=0", {}, 6000,
+        [safeThis](ApiClient::Response response)
+        {
+            auto* self = safeThis.getComponent();
+            if (self == nullptr)
+                return;
+
+            self->onlineCatalogButton.setEnabled(true);
+
+            if (!response.transportOk || !response.json.isObject())
+            {
+                self->onlineCatalogStatusLabel.setText(
+                    "Server unavailable. Showing local songs. Press REFRESH CATALOG to retry.",
+                    juce::dontSendNotification);
+                return;
+            }
+
+            const auto itemsValue = response.json.getProperty("items", juce::var());
+            const auto* items = itemsValue.getArray();
+            const int onlineCount = items != nullptr ? items->size() : 0;
+
+            self->rebuildCatalogRows(itemsValue);
+
+            if (onlineCount <= 0)
+            {
+                self->onlineCatalogStatusLabel.setText(
+                    "No published songs yet. Local songs are still available.",
+                    juce::dontSendNotification);
+            }
+            else
+            {
+                self->onlineCatalogStatusLabel.setText(
+                    juce::String(onlineCount) + " online song"
+                        + (onlineCount == 1 ? "" : "s")
+                        + " in the catalogue. Select a track and press START SONG.",
+                    juce::dontSendNotification);
+            }
+
+            // Personal bests need the token, so they are only fetched when the
+            // player is signed in.
+            self->refreshOnlineBestScores();
+
+            self->resized();
+            self->repaint();
+        });
+}
+
+void MainComponent::refreshOnlineBestScores()
+{
+    if (onlineAccessToken.isEmpty())
+        return;
+
+    const int requestId = ++bestScoresRequestId;
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    apiClient.getJson("/games/best-scores", onlineAccessToken, 6000,
+        [safeThis, requestId](ApiClient::Response response)
+        {
+            auto* self = safeThis.getComponent();
+            if (self == nullptr || requestId != self->bestScoresRequestId)
+                return;
+
+            if (!response.transportOk || !response.json.isObject())
+                return;
+
+            const auto itemsValue = response.json.getProperty("items", juce::var());
+            const auto* items = itemsValue.getArray();
+            if (items == nullptr)
+                return;
+
+            for (const auto& item : *items)
+            {
+                const auto slug = item.getProperty("song_slug", juce::var()).toString();
+                const auto score = static_cast<int>(item.getProperty("best_score", 0));
+                if (slug.isEmpty() || score <= 0)
+                    continue;
+
+                auto& stored = self->remoteBestScores[slug];
+                stored = juce::jmax(stored, score);
+            }
+
+            self->updateCatalogRows();
+            self->repaint();
+        });
+}
+
+MainComponent::SongEntry* MainComponent::findOnlineLibraryEntry(const juce::String& slug)
+{
+    if (slug.isEmpty())
+        return nullptr;
+
+    const auto found = std::find_if(songLibrary.begin(), songLibrary.end(),
+        [&slug](const SongEntry& entry) { return entry.slug == slug; });
+
+    return found == songLibrary.end() ? nullptr : &(*found);
+}
+
+int MainComponent::getBestScoreForSong(const juce::String& slug, const juce::String& title)
+{
+    // Local settings use the slug for online songs and the folder name for
+    // local ones; the title key keeps scores saved by older client versions.
+    int best = getBestScore(title);
+
+    if (slug.isNotEmpty())
+    {
+        best = juce::jmax(best, getBestScore(slug));
+
+        const auto remote = remoteBestScores.find(slug);
+        if (remote != remoteBestScores.end())
+            best = juce::jmax(best, remote->second);
+    }
+
+    return best;
+}
+
+void MainComponent::selectCatalogSong(int index)
+{
+    if (! juce::isPositiveAndBelow(index, static_cast<int>(catalogSongs.size())))
+        return;
+
+    selectedCatalogIndex = index;
+    const auto& song = catalogSongs[static_cast<size_t>(index)];
+
+    // The game session is opened for online songs only (see startOnlineGameSession).
+    onlineSongUuid = song.online ? song.serverId : juce::String();
+    onlineGameSessionUuid.clear();
+
+    // Selecting a row only highlights it: audio files and MIDI are loaded when
+    // START SONG is pressed, so clicking through the list stays instant.
+    updateSongBestScoreLabels();
+    songListBox.selectRow(index);
+    resized();
+    repaint();
+}
+
+void MainComponent::startSelectedSong()
+{
+    if (catalogSongs.empty())
+    {
+        // Same fallback as before the catalogue existed.
+        if (!songLibrary.empty() && loadSongMidi(songLibrary.front().title))
+            beginTuningForSelectedSong();
+        return;
+    }
+
+    selectedCatalogIndex = juce::jlimit(0, static_cast<int>(catalogSongs.size()) - 1,
+                                        selectedCatalogIndex);
+    const auto& song = catalogSongs[static_cast<size_t>(selectedCatalogIndex)];
+
+    if (!song.online)
+    {
+        if (loadSongMidi(song.title))
+            beginTuningForSelectedSong();
+        return;
+    }
+
+    // Cached online songs are playable without any network traffic.
+    if (auto* entry = findOnlineLibraryEntry(song.slug))
+    {
+        onlineSongUuid = song.serverId;
+        if (loadSongMidi(entry->title))
+        {
+            beginTuningForSelectedSong();
+            return;
+        }
+    }
+
+    // Assets are downloaded on demand, never for the whole catalogue at once.
+    songPridumayButton.setEnabled(false);
+    downloadOnlineSong(song.slug, song.serverId, true);
+}
+
+void MainComponent::downloadOnlineSong(const juce::String& slug,
+                                       const juce::String& serverId,
+                                       bool startAfterDownload)
 {
     juce::Component::SafePointer<MainComponent> safeThis(this);
     auto download = std::make_shared<OnlineCatalogDownload>();
 
-    // Catalogue lookup and file downloads run on the ApiClient worker threads.
+    // Detail lookup and file downloads run on the ApiClient worker threads.
     // Only the message-thread callback below touches components, the song library
     // or the gameplay state.
-    auto backgroundWork = [download]()
+    auto backgroundWork = [download, slug, serverId]()
     {
-        const auto listResponse = ApiClient::get("/songs?limit=20&offset=0", {}, 5000);
-        if (!listResponse.transportOk)
-        {
-            DBG("ONLINE CATALOG: could not connect to " + juce::String(ApiClient::baseUrl));
-            return;
-        }
-
-        const auto listJson = listResponse.json;
-        if (!listJson.isObject())
-            return;
-
-        const auto itemsValue = listJson.getProperty("items", juce::var());
-        const auto* items = itemsValue.getArray();
-        if (items == nullptr || items->isEmpty())
-        {
-            DBG("ONLINE CATALOG: server listed no published songs");
-            return;
-        }
-
-        // Prefer the known test song if it is in the public catalogue; otherwise
-        // load the first item returned by the server.
-        juce::var selected = items->getReference(0);
-        for (const auto& item : *items)
-            if (item.getProperty("slug", juce::var()).toString() == "pridumay-svetly-mir")
-            {
-                selected = item;
-                break;
-            }
-
-        const auto slug = selected.getProperty("slug", juce::var()).toString();
         if (slug.isEmpty())
             return;
 
@@ -2328,7 +3245,11 @@ void MainComponent::loadFirstOnlineCatalogSong()
             return;
 
         download->title = title;
+        download->slug = slug;
+        download->artist = detail.getProperty("artist", juce::var()).toString();
         download->songId = detail.getProperty("id", juce::var()).toString();
+        if (download->songId.isEmpty())
+            download->songId = serverId;
         download->bpm = static_cast<double>(detail.getProperty("bpm", 120));
         download->version = serverVersion;
         download->usedCache = usedCache;
@@ -2342,31 +3263,27 @@ void MainComponent::loadFirstOnlineCatalogSong()
         DBG("ONLINE CATALOG: loaded " + title + " (version " + juce::String(serverVersion) + ")");
     };
 
-    apiClient.runAsync(std::move(backgroundWork), [safeThis, download]()
+    apiClient.runAsync(std::move(backgroundWork), [safeThis, download, startAfterDownload]()
     {
         auto* self = safeThis.getComponent();
         if (self == nullptr)
             return;
 
+        self->songPridumayButton.setEnabled(true);
+
         bool loaded = false;
 
         if (download->ok)
         {
-            self->onlineSongUuid = download->songId;
-            self->onlineGameSessionUuid.clear();
+            // Reuse the cached library entry created by an earlier download.
+            auto* found = self->findOnlineLibraryEntry(download->slug);
 
-            // Reuse cached entries on subsequent button presses.
-            auto found = std::find_if(self->songLibrary.begin(), self->songLibrary.end(),
-                [&download](const SongEntry& entry)
-                {
-                    return entry.title == download->title
-                        && entry.folder.getParentDirectory().getFileName() == "OnlineSongs";
-                });
-
-            if (found == self->songLibrary.end())
+            if (found == nullptr)
             {
                 SongEntry entry;
                 entry.title = download->title;
+                entry.slug = download->slug;
+                entry.artist = download->artist;
                 entry.folder = download->songFolder;
                 entry.soloMidi = download->midiFile;
                 entry.drums = download->drumsFile;
@@ -2378,6 +3295,8 @@ void MainComponent::loadFirstOnlineCatalogSong()
             }
             else
             {
+                found->title = download->title;
+                found->artist = download->artist;
                 found->folder = download->songFolder;
                 found->soloMidi = download->midiFile;
                 found->drums = download->drumsFile;
@@ -2387,25 +3306,46 @@ void MainComponent::loadFirstOnlineCatalogSong()
                 found->bpm = download->bpm;
             }
 
-            self->onlineCatalogStatusLabel.setText("Downloaded: " + download->title,
-                                                   juce::dontSendNotification);
-
-            if (self->gameState != MainComponent::GameState::SongSelect)
+            // Mark the catalogue row as cached so the list reflects the state.
+            for (auto& row : self->catalogSongs)
             {
-                // A game started while the download was running: keep the song
-                // cached and leave the active session untouched.
-                self->onlineCatalogButton.setEnabled(true);
-                self->resized();
-                self->repaint();
-                return;
+                if (! row.online || row.slug != download->slug)
+                    continue;
+
+                row.serverId = download->songId;
+                row.title = download->title;
+                row.bpm = download->bpm;
+                row.version = download->version;
+                row.downloaded = true;
             }
 
-            loaded = self->loadSongMidi(download->title);
+            self->updateCatalogRows();
+
+            if (startAfterDownload
+                && self->gameState == MainComponent::GameState::SongSelect)
+            {
+                // Open the online session for exactly this song.
+                self->onlineSongUuid = download->songId;
+                self->onlineGameSessionUuid.clear();
+                loaded = self->loadSongMidi(download->title);
+
+                // Keep the highlight on the song that was actually loaded, even
+                // if the player clicked another row while the download ran.
+                if (loaded)
+                {
+                    for (int i = 0; i < static_cast<int>(self->catalogSongs.size()); ++i)
+                        if (self->catalogSongs[static_cast<size_t>(i)].slug == download->slug)
+                        {
+                            self->selectCatalogSong(i);
+                            break;
+                        }
+                }
+            }
         }
 
-        self->onlineCatalogButton.setEnabled(true);
-
-        juce::String statusText = "Could not load online song. Check that GuitarBattleServer is running.";
+        juce::String statusText = download->ok
+            ? "Downloaded: " + download->title
+            : juce::String("Could not download the selected song. Check the connection and try again.");
         if (loaded)
         {
             statusText = "Online song loaded";
@@ -2416,7 +3356,7 @@ void MainComponent::loadFirstOnlineCatalogSong()
                 statusText << " [MIDI only]";
             else if (download->missingRoles.isNotEmpty())
                 statusText << " [missing: " << download->missingRoles << "]";
-            statusText << ". Press the local song button to switch back.";
+            statusText << ". Select another track or press START SONG to replay.";
         }
 
         self->onlineCatalogStatusLabel.setText(statusText, juce::dontSendNotification);
@@ -2511,12 +3451,14 @@ bool MainComponent::loadSongMidi(const juce::String& songId)
     }
 
     selectedSong = *found;
-    if (found->folder.getParentDirectory().getFileName() != "OnlineSongs")
+    if (found->slug.isEmpty())
     {
+        // Local folder or generated challenge: no online session can be opened.
         onlineSongUuid.clear();
         onlineGameSessionUuid.clear();
     }
     selectedSongId = found->title;
+    selectedSongSlug = found->slug;
     dailyChallengeLoaded.store(false, std::memory_order_relaxed);
     gameSongTitleLabel.setText(found->title, juce::dontSendNotification);
 
@@ -2785,6 +3727,7 @@ bool MainComponent::loadGeneratedMelody()
     }
 
     selectedSongId = "daily_challenge_monday";
+    selectedSongSlug.clear();
     dailyChallengeLoaded.store(true, std::memory_order_relaxed);
     gameSongTitleLabel.setText("Daily Challenge Monday", juce::dontSendNotification);
 
@@ -2851,7 +3794,11 @@ void MainComponent::saveBestScoreForSelectedSong(int score)
 {
     if (auto* settings = appProperties.getUserSettings())
     {
-        const auto key = juce::String("BestScore_") + selectedSongId;
+        // Online songs are keyed by slug, local ones by folder name. The title
+        // key written by older client versions is still read as a fallback in
+        // getBestScoreForSong().
+        const auto key = juce::String("BestScore_")
+            + (selectedSongSlug.isNotEmpty() ? selectedSongSlug : selectedSongId);
         const int previous = settings->getIntValue(key, 0);
         if (score > previous)
         {
@@ -2864,12 +3811,24 @@ void MainComponent::saveBestScoreForSelectedSong(int score)
 
 void MainComponent::updateSongBestScoreLabels()
 {
-    songPridumayBestLabel.setText("BEST: " + juce::String(getBestScore(selectedSongId)), juce::dontSendNotification);
+    juce::String selectedBestText = "BEST: " + juce::String(getBestScore(selectedSongId));
+
+    if (juce::isPositiveAndBelow(selectedCatalogIndex,
+                                 static_cast<int>(catalogSongs.size())))
+    {
+        const auto& row = catalogSongs[static_cast<size_t>(selectedCatalogIndex)];
+        selectedBestText = "BEST: " + juce::String(getBestScoreForSong(row.slug, row.title));
+    }
+
+    songPridumayBestLabel.setText(selectedBestText, juce::dontSendNotification);
     songMistBestLabel.setText(juce::String(), juce::dontSendNotification);
     songChordsBestLabel.setText(juce::String(), juce::dontSendNotification);
     dailyChallengeBestLabel.setText(
         "BEST: " + juce::String(getBestScore("daily_challenge_monday")),
         juce::dontSendNotification);
+
+    // Row text is resolved at paint time; a repaint is enough to show a new best.
+    songListBox.repaint();
 }
 
 void MainComponent::setTargetFromMidiIndex(
@@ -3020,8 +3979,8 @@ void MainComponent::advanceTarget()
             {
                 saveBestScoreForSelectedSong(gameplayStats.getScore());
                 submitOnlineGameResult();
-                gameStartButton.setButtonText("RETRY");
-                menuButton.setButtonText("BACK");
+                gameStartButton.setButtonText("PLAY AGAIN");
+                menuButton.setButtonText("MAIN MENU");
 
                 hitLabel.setText(
                     "FINISHED",
@@ -4446,80 +5405,62 @@ void MainComponent::releaseResources()
 
 void MainComponent::paint(juce::Graphics& g)
 {
+    const auto area = getLocalBounds().toFloat();
     g.fillAll(UiColors::background);
 
-    if (!backgroundFrame.isValid())
-        return;
-
-    // Fill the entire window while preserving aspect ratio: crop the sides or
-    // top/bottom as needed instead of letterboxing or stretching the video.
-    const auto dest = getLocalBounds().toFloat();
-    const float imageW = static_cast<float>(backgroundFrame.getWidth());
-    const float imageH = static_cast<float>(backgroundFrame.getHeight());
-    const float destW = dest.getWidth();
-    const float destH = dest.getHeight();
-    if (imageW <= 0.0f || imageH <= 0.0f || destW <= 0.0f || destH <= 0.0f)
-        return;
-
-    const float imageAspect = imageW / imageH;
-    const float destAspect = destW / destH;
-    float sourceX = 0.0f, sourceY = 0.0f, sourceW = imageW, sourceH = imageH;
-    if (imageAspect > destAspect)
+    // Keep the old cinematic still as an almost invisible texture; the dark
+    // gradient does the actual work and keeps every screen on-brand.
+    if (backgroundFrame.isValid() && area.getWidth() > 0.0f && area.getHeight() > 0.0f)
     {
-        sourceW = imageH * destAspect;
-        sourceX = (imageW - sourceW) * 0.5f;
-    }
-    else if (imageAspect < destAspect)
-    {
-        sourceH = imageW / destAspect;
-        sourceY = (imageH - sourceH) * 0.5f;
-    }
+        const float imageW = static_cast<float>(backgroundFrame.getWidth());
+        const float imageH = static_cast<float>(backgroundFrame.getHeight());
+        const float destW = area.getWidth();
+        const float destH = area.getHeight();
+        const float imageAspect = imageW / imageH;
+        const float destAspect = destW / destH;
+        float sourceX = 0.0f, sourceY = 0.0f, sourceW = imageW, sourceH = imageH;
 
-    g.drawImage(backgroundFrame,
-        0, 0, getWidth(), getHeight(),
-        juce::roundToInt(sourceX), juce::roundToInt(sourceY),
-        juce::roundToInt(sourceW), juce::roundToInt(sourceH));
+        if (imageAspect > destAspect)
+        {
+            sourceW = imageH * destAspect;
+            sourceX = (imageW - sourceW) * 0.5f;
+        }
+        else if (imageAspect < destAspect)
+        {
+            sourceH = imageW / destAspect;
+            sourceY = (imageH - sourceH) * 0.5f;
+        }
 
-    // Keep the still background subtle under the light blue/orange theme.
-    g.setColour(juce::Colour::fromString("DDF8FAFF"));
-    g.fillAll();
-
-    if (gameState == GameState::Playing)
-    {
-        const int pedalWidth = 252;
-        const int pedalX = (getWidth() - pedalWidth) / 2;
-        const int pedalTop = 204 + 200 + 28;
-        auto pedal = juce::Rectangle<float>((float) pedalX, (float) pedalTop,
-                                            (float) pedalWidth, 142.0f);
-        g.setColour(juce::Colour::fromRGB(170, 22, 32));
-        g.fillRoundedRectangle(pedal, 12.0f);
-        g.setColour(juce::Colour::fromRGB(245, 95, 95));
-        g.drawRoundedRectangle(pedal, 12.0f, 2.0f);
-        g.setColour(juce::Colours::white);
-        g.setFont(juce::FontOptions(15.0f, juce::Font::bold));
-        g.drawText("DISTORTION", pedal.toNearestInt().withTrimmedBottom(112),
-                   juce::Justification::centred, false);
-
-        // A separate mixer panel sits directly below the distortion pedal.
-        const int mixerWidth = juce::jmax(320, getWidth() - 48);
-        const int mixerTop = pedalTop + 142 + 14;
-        auto mixer = juce::Rectangle<float>(
-            static_cast<float>((getWidth() - mixerWidth) / 2),
-            static_cast<float>(mixerTop),
-            static_cast<float>(mixerWidth), 190.0f);
-        g.setColour(UiColors::card);
-        g.fillRoundedRectangle(mixer, 12.0f);
-        g.setColour(UiColors::border);
-        g.drawRoundedRectangle(mixer, 12.0f, 1.5f);
-        g.setColour(UiColors::blue);
-        g.fillRoundedRectangle(juce::Rectangle<float>(
-            mixer.getX() + 14.0f, mixer.getY() + 13.0f, 4.0f, 20.0f), 2.0f);
-        g.setColour(UiColors::text);
-        g.setFont(juce::FontOptions().withHeight(15.0f).withStyle("Bold"));
-        g.drawText(juce::String::fromUTF8("\xD0\x9C\xD0\x98\xD0\x9A\xD0\xA8\xD0\x95\xD0\xA0"), mixer.toNearestInt().withTrimmedBottom(158).withTrimmedLeft(26),
-                   juce::Justification::centredLeft, false);
+        g.setOpacity(0.075f);
+        g.drawImage(backgroundFrame,
+                    0, 0, getWidth(), getHeight(),
+                    juce::roundToInt(sourceX), juce::roundToInt(sourceY),
+                    juce::roundToInt(sourceW), juce::roundToInt(sourceH));
+        g.setOpacity(1.0f);
     }
 
+    auto drawGlow = [&g, &area](float centreX, float centreY, float radius,
+                                juce::Colour colour)
+    {
+        juce::ColourGradient glow(colour, centreX, centreY,
+                                  colour.withAlpha(0.0f),
+                                  centreX, centreY + radius, true);
+        g.setGradientFill(glow);
+        g.fillRect(area);
+    };
+
+    drawGlow(area.getWidth() * 0.10f, -area.getHeight() * 0.08f,
+             area.getHeight() * 0.78f, UiColors::accent.withAlpha(0.115f));
+    drawGlow(area.getWidth() * 0.94f, area.getHeight() * 0.03f,
+             area.getHeight() * 0.62f, UiColors::blue.withAlpha(0.065f));
+    drawGlow(area.getWidth() * 0.50f, area.getHeight() * 1.08f,
+             area.getHeight() * 0.48f, UiColors::green.withAlpha(0.035f));
+
+    juce::ColourGradient vignette(
+        juce::Colours::transparentBlack, 0.0f, area.getHeight() * 0.44f,
+        UiColors::bgSoft.withAlpha(0.82f), 0.0f, area.getHeight(), false);
+    g.setGradientFill(vignette);
+    g.fillRect(area);
 }
 
 void MainOverlayComponent::paint(juce::Graphics& g)
@@ -4529,143 +5470,578 @@ void MainOverlayComponent::paint(juce::Graphics& g)
 
 void MainComponent::paintOverlay(juce::Graphics& g)
 {
-    // Transparent overlay: the looping video is the base layer. UI cards and
-    // labels are drawn here so they remain visible above the video.
+    const float width = static_cast<float>(getWidth());
+    const float height = static_cast<float>(getHeight());
+
+    if (width <= 0.0f || height <= 0.0f)
+        return;
+
+    auto drawBrand = [&g](float x, float y, bool withBadge)
+    {
+        g.setColour(UiColors::accent);
+        g.fillRoundedRectangle(x, y, 32.0f, 32.0f, 10.0f);
+        g.setColour(UiColors::onAccent);
+        g.setFont(GameUi::heading(14.0f));
+        g.drawText("GB", juce::Rectangle<float>(x, y, 32.0f, 32.0f),
+                   juce::Justification::centred, false);
+
+        g.setColour(UiColors::text);
+        g.setFont(GameUi::heading(16.0f));
+        g.drawText("GUITARBATTLE",
+                   juce::Rectangle<float>(x + 44.0f, y + 1.0f, 190.0f, 30.0f),
+                   juce::Justification::centredLeft, false);
+
+        if (withBadge)
+            GameUi::drawPill(g,
+                             juce::Rectangle<float>(x + 184.0f, y + 7.0f, 82.0f, 18.0f),
+                             "PLAYER",
+                             UiColors::accent,
+                             false);
+    };
+
+    //==========================================================================
+    // Authentication / landing screen
+    //==========================================================================
+
+    if (gameState == GameState::SongSelect && showAuthScreen)
+    {
+        drawBrand(32.0f, 26.0f, true);
+
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(width - 194.0f, 31.0f, 162.0f, 22.0f),
+                         "DESKTOP CLIENT",
+                         UiColors::muted,
+                         false);
+
+        const float cardWidth = juce::jmin(560.0f, width - 48.0f);
+        const float cardHeight = 400.0f;
+        const float cardX = (width - cardWidth) * 0.5f;
+        const float cardY = juce::jmax(150.0f, (height - cardHeight) * 0.5f);
+        const juce::Rectangle<float> card(cardX, cardY, cardWidth, cardHeight);
+
+        GameUi::drawCard(g, card, 24.0f, true);
+        g.setColour(UiColors::accent);
+        g.fillRoundedRectangle(cardX + 24.0f, cardY, 78.0f, 3.0f, 1.5f);
+
+        const float iconSize = 58.0f;
+        const juce::Rectangle<float> icon(cardX + (cardWidth - iconSize) * 0.5f,
+                                          cardY + 34.0f, iconSize, iconSize);
+        g.setColour(UiColors::accent.withAlpha(0.08f));
+        g.fillEllipse(icon.expanded(8.0f));
+        g.setColour(UiColors::surface2);
+        g.fillEllipse(icon);
+        g.setColour(UiColors::accent.withAlpha(0.55f));
+        g.drawEllipse(icon, 1.2f);
+        g.setColour(UiColors::accent);
+        g.setFont(GameUi::heading(20.0f));
+        g.drawText("GB", icon, juce::Justification::centred, false);
+
+        g.setColour(UiColors::accent);
+        g.setFont(GameUi::eyebrow(10.0f));
+        g.drawText("PLAYER ACCESS",
+                   juce::Rectangle<float>(cardX, cardY + 101.0f, cardWidth, 17.0f),
+                   juce::Justification::centred, false);
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(13.0f));
+        g.drawText("Sign in to sync your scores, unlock online songs and track your global rating.",
+                   juce::Rectangle<float>(cardX + 44.0f, cardY + 168.0f,
+                                          cardWidth - 88.0f, 36.0f),
+                   juce::Justification::centred, true);
+
+        g.setColour(UiColors::surface2.withAlpha(0.55f));
+        g.fillRoundedRectangle(cardX + 42.0f, cardY + 202.0f,
+                               cardWidth - 84.0f, 40.0f, 12.0f);
+        g.setColour(UiColors::border);
+        g.drawRoundedRectangle(cardX + 42.0f, cardY + 202.0f,
+                               cardWidth - 84.0f, 40.0f, 12.0f, 1.0f);
+
+        GameUi::drawDivider(g, cardX + 42.0f, cardX + cardWidth - 42.0f,
+                            cardY + 258.0f);
+
+        const float pillY = cardY + cardHeight + 20.0f;
+        if (pillY + 26.0f < height - 20.0f)
+        {
+            const float total = 160.0f + 132.0f + 152.0f + 20.0f;
+            float x = (width - total) * 0.5f;
+            GameUi::drawPill(g, { x, pillY, 160.0f, 26.0f },
+                             "REAL-TIME PITCH", UiColors::green, false);
+            x += 170.0f;
+            GameUi::drawPill(g, { x, pillY, 132.0f, 26.0f },
+                             "TABLATURE", UiColors::accent, false);
+            x += 142.0f;
+            GameUi::drawPill(g, { x, pillY, 152.0f, 26.0f },
+                             "GLOBAL RATING", UiColors::blue, false);
+        }
+
+        return;
+    }
 
     //==========================================================================
     // Song select
+    //==========================================================================
 
     if (gameState == GameState::SongSelect)
     {
-        g.setColour(
-            UiColors::text);
+        const juce::Rectangle<float> nav(24.0f, 20.0f, width - 48.0f, 78.0f);
+        GameUi::drawCard(g, nav, 18.0f);
+        drawBrand(44.0f, 40.0f, true);
 
-        g.setFont(
-            juce::FontOptions()
-            .withHeight(28.0f)
-            .withStyle("Bold"));
-
-        g.drawText(
-            "CHOOSE YOUR NEXT CHALLENGE",
-            100,
-            88,
-            getWidth() - 200,
-            42,
-            juce::Justification::centred);
-
-        // Song cards: restrained white surfaces and thin blue outline.
-        const int cardWidth = juce::jmin(660, getWidth() - 96);
-        const int cardX = (getWidth() - cardWidth) / 2;
-        for (const int cardY : { 196 })
+        if (currentUsername.isNotEmpty())
         {
-            const juce::Rectangle<float> card(static_cast<float>(cardX),
-                static_cast<float>(cardY), static_cast<float>(cardWidth), 92.0f);
-            g.setColour(UiColors::card);
-            g.fillRoundedRectangle(card, 16.0f);
-            g.setColour(UiColors::border);
-            g.drawRoundedRectangle(card, 16.0f, 1.2f);
+            const float avatarSize = 30.0f;
+            const juce::Rectangle<float> avatar(width - 404.0f, 42.0f,
+                                                avatarSize, avatarSize);
+            g.setColour(UiColors::accent.withAlpha(0.16f));
+            g.fillEllipse(avatar);
+            g.setColour(UiColors::accent.withAlpha(0.55f));
+            g.drawEllipse(avatar, 1.0f);
+            g.setColour(UiColors::accent);
+            g.setFont(GameUi::heading(13.0f));
+            g.drawText(currentUsername.substring(0, 1).toUpperCase(),
+                       avatar, juce::Justification::centred, false);
+
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::eyebrow(8.0f));
+            g.drawText("SIGNED IN AS",
+                       juce::Rectangle<float>(width - 362.0f, 35.0f, 160.0f, 13.0f),
+                       juce::Justification::centredLeft, false);
         }
+
+        const float contentY = 228.0f;
+        const float availableH = juce::jmax(320.0f, height - 68.0f - 20.0f - contentY);
+        const float contentH = juce::jmin(560.0f, availableH);
+        const float footerY = contentY + contentH + 20.0f;
+        const float contentW = width - 96.0f;
+        const float gap = 20.0f;
+        const float leftW = contentW * 0.56f;
+        const float rightX = 48.0f + leftW + gap;
+        const float rightW = contentW - leftW - gap;
+
+        GameUi::drawEyebrow(g, "SONG LIBRARY",
+                            juce::Rectangle<float>(48.0f, 121.0f, 360.0f, 16.0f));
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(13.0f));
+        g.drawText("Pick a track, tune up and make every note count.",
+                   juce::Rectangle<float>(48.0f, 188.0f, width - 96.0f, 24.0f),
+                   juce::Justification::centredLeft, false);
+
+        const juce::Rectangle<float> leftCard(48.0f, contentY, leftW, contentH);
+        const juce::Rectangle<float> rightCard(rightX, contentY, rightW, contentH);
+        GameUi::drawCard(g, leftCard, 20.0f, true);
+        GameUi::drawCard(g, rightCard, 20.0f);
+
+        // Album artwork placeholder, made from the same brand mark as the nav.
+        const juce::Rectangle<float> art(leftCard.getX() + 24.0f,
+                                         leftCard.getY() + 24.0f,
+                                         118.0f, 118.0f);
+        juce::ColourGradient artGradient(
+            UiColors::accentStrong, art.getX(), art.getY(),
+            UiColors::accent.darker(0.45f), art.getRight(), art.getBottom(),
+            false);
+        g.setGradientFill(artGradient);
+        g.fillRoundedRectangle(art, 18.0f);
+        g.setColour(UiColors::onAccent.withAlpha(0.12f));
+        g.drawRoundedRectangle(art.reduced(1.0f), 18.0f, 1.0f);
+        g.setColour(UiColors::onAccent);
+        g.setFont(GameUi::heading(40.0f));
+        g.drawText("GB", art, juce::Justification::centred, false);
+
+        // The header shows whichever catalogue row is highlighted, so the card
+        // always previews the song START SONG will load.
+        const CatalogSong* headerSong = juce::isPositiveAndBelow(
+            selectedCatalogIndex, static_cast<int>(catalogSongs.size()))
+            ? &catalogSongs[static_cast<size_t>(selectedCatalogIndex)]
+            : nullptr;
+
+        const juce::String headerTitle = headerSong != nullptr
+            ? headerSong->title
+            : (songLibrary.empty() ? juce::String("1 Power metal")
+                                   : songLibrary.front().title);
+        const juce::String headerKind = headerSong != nullptr && headerSong->online
+            ? juce::String("ONLINE SONG")
+            : juce::String("LOCAL SONG");
+        const double headerBpm = headerSong != nullptr ? headerSong->bpm : baseBpm;
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(8.5f, true, 0.9f));
+        g.drawText(headerKind + "  /  " + juce::String(juce::roundToInt(headerBpm)) + " BPM",
+                   juce::Rectangle<float>(art.getRight() + 20.0f,
+                                          leftCard.getY() + 28.0f,
+                                          leftW - 170.0f, 16.0f),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::text);
+        g.setFont(GameUi::heading(26.0f));
+        g.drawText(headerTitle,
+                   juce::Rectangle<float>(art.getRight() + 20.0f,
+                                          leftCard.getY() + 44.0f,
+                                          leftW - 170.0f, 34.0f),
+                   juce::Justification::centredLeft, true);
+
+        GameUi::drawDivider(g, leftCard.getX() + 24.0f,
+                            leftCard.getRight() - 24.0f,
+                            leftCard.getY() + 164.0f);
+
+        // Catalogue heading: the ListBox below paints the rows themselves.
+        GameUi::drawEyebrow(g, "SONG CATALOG",
+                            juce::Rectangle<float>(leftCard.getX() + 24.0f,
+                                                   leftCard.getY() + 170.0f,
+                                                   leftW - 48.0f, 14.0f));
+        g.setColour(UiColors::muted.withAlpha(0.8f));
+        g.setFont(GameUi::font(9.0f, true));
+        g.drawText(juce::String(static_cast<int>(catalogSongs.size())) + " TRACKS",
+                   juce::Rectangle<float>(leftCard.getX() + 24.0f,
+                                          leftCard.getY() + 170.0f,
+                                          leftW - 48.0f, 14.0f),
+                   juce::Justification::centredRight, false);
+
+        g.setColour(UiColors::accent.withAlpha(0.75f));
+        g.setFont(GameUi::eyebrow(9.0f));
+        g.drawText("GLOBAL LEADERBOARD",
+                   juce::Rectangle<float>(rightCard.getX() + 24.0f,
+                                          rightCard.getY() + 24.0f,
+                                          rightW - 48.0f, 16.0f),
+                   juce::Justification::centredLeft, false);
+        GameUi::drawDivider(g, rightCard.getX() + 24.0f,
+                            rightCard.getRight() - 24.0f,
+                            rightCard.getY() + 104.0f);
+
+        if (leaderboardLabel.getText().isEmpty())
+        {
+            const float centreX = rightCard.getCentreX();
+            const float iconY = rightCard.getCentreY() - 34.0f;
+            g.setColour(UiColors::accent.withAlpha(0.08f));
+            g.fillEllipse(centreX - 44.0f, iconY - 44.0f, 88.0f, 88.0f);
+            g.setColour(UiColors::accent.withAlpha(0.32f));
+            g.drawEllipse(centreX - 44.0f, iconY - 44.0f, 88.0f, 88.0f, 1.0f);
+
+            g.setColour(UiColors::accent.withAlpha(0.82f));
+            g.fillRoundedRectangle(centreX - 24.0f, iconY + 4.0f, 13.0f, 24.0f, 3.0f);
+            g.fillRoundedRectangle(centreX - 7.0f, iconY - 8.0f, 13.0f, 36.0f, 3.0f);
+            g.fillRoundedRectangle(centreX + 10.0f, iconY - 20.0f, 13.0f, 48.0f, 3.0f);
+
+            g.setColour(UiColors::text);
+            g.setFont(GameUi::font(13.0f, true));
+            g.drawText("NO SCORES YET",
+                       juce::Rectangle<float>(centreX - 160.0f, iconY + 62.0f,
+                                              320.0f, 20.0f),
+                       juce::Justification::centred, false);
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::font(11.0f));
+            g.drawText("Press REFRESH to load the global rating.",
+                       juce::Rectangle<float>(centreX - 180.0f, iconY + 84.0f,
+                                              360.0f, 18.0f),
+                       juce::Justification::centred, false);
+        }
+
+        // Footer status strip.
+        const juce::Rectangle<float> footer(24.0f, footerY, width - 48.0f, 44.0f);
+        g.setColour(UiColors::surface.withAlpha(0.62f));
+        g.fillRoundedRectangle(footer, 14.0f);
+        g.setColour(UiColors::border);
+        g.drawRoundedRectangle(footer, 14.0f, 1.0f);
+        g.setColour(currentUsername.isNotEmpty() ? UiColors::green : UiColors::accent);
+        g.fillEllipse(footer.getX() + 18.0f, footer.getY() + 18.0f, 7.0f, 7.0f);
 
         return;
     }
 
     //==========================================================================
     // Tuner
+    //==========================================================================
 
     if (gameState == GameState::Tuner)
     {
-        const float w = static_cast<float>(getWidth());
-        const float h = static_cast<float>(getHeight());
-        auto drawGlass = [&g](juce::Rectangle<float> r)
-        {
-            g.setColour(juce::Colour::fromString("080F172A"));
-            g.fillRoundedRectangle(r.translated(0.0f, 4.0f), 20.0f);
-            g.setColour(juce::Colour::fromString("F7FFFFFF"));
-            g.fillRoundedRectangle(r, 20.0f);
-            g.setColour(juce::Colour::fromString("553B82F6"));
-            g.drawRoundedRectangle(r, 20.0f, 1.2f);
-            g.setColour(juce::Colour::fromString("20FFFFFF"));
-            g.drawLine(r.getX() + 18.0f, r.getY() + 2.0f, r.getRight() - 18.0f, r.getY() + 2.0f, 1.0f);
-        };
-        const float margin = 42.0f, gap = 22.0f, panelY = 122.0f;
-        const float panelH = juce::jmax(300.0f, h - 255.0f);
-        const float leftW = (w - margin * 2.0f - gap) * 0.43f;
-        const float rightX = margin + leftW + gap;
-        const float rightW = w - margin - rightX;
-        drawGlass({ margin, panelY, leftW, panelH });
-        drawGlass({ rightX, panelY, rightW, panelH });
-        // Simple string labels: each label turns green once that string is tuned.
-        g.setColour(UiColors::orange.withAlpha(0.85f));
-        g.setFont(juce::FontOptions().withHeight(13.0f).withStyle("Bold"));
-        g.drawText("STRINGS", juce::roundToInt(margin + 18.0f), juce::roundToInt(panelY + 22.0f),
-                   juce::roundToInt(leftW - 36.0f), 22, juce::Justification::centred);
+        drawBrand(42.0f, 24.0f, true);
+        const int tunedMaskTop = tuner.getTunedMask();
+        int tunedCountTop = 0;
+        for (int i = 0; i < 6; ++i)
+            tunedCountTop += (tunedMaskTop & (1 << i)) != 0 ? 1 : 0;
+        const bool allTunedTop = tunedCountTop == 6;
 
-        g.setColour(UiColors::secondaryText);
-        g.setFont(juce::FontOptions().withHeight(11.0f));
-        g.drawText("Standard tuning: E A D G B E",
-                   juce::roundToInt(margin + 18.0f), juce::roundToInt(panelY + 43.0f),
-                   juce::roundToInt(leftW - 36.0f), 18, juce::Justification::centredLeft);
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(width - 178.0f, 29.0f, 136.0f, 22.0f),
+                         allTunedTop ? juce::String("READY")
+                                     : "TUNING " + juce::String(tunedCountTop) + "/6",
+                         allTunedTop ? UiColors::green : UiColors::accent,
+                         allTunedTop);
+
+        GameUi::drawEyebrow(g, "PRE-FLIGHT CHECK",
+                            juce::Rectangle<float>(42.0f, 82.0f, 360.0f, 16.0f));
+        g.setColour(UiColors::text);
+        g.setFont(GameUi::heading(34.0f));
+        g.drawText("Tune your guitar",
+                   juce::Rectangle<float>(42.0f, 100.0f, width - 84.0f, 44.0f),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(13.0f));
+        g.drawText("Standard tuning E A D G B E. Play each string and wait for the green light.",
+                   juce::Rectangle<float>(42.0f, 148.0f, width - 84.0f, 24.0f),
+                   juce::Justification::centredLeft, false);
+
+        const float margin = 42.0f;
+        const float gap = 20.0f;
+        const float panelY = 190.0f;
+        const float panelH = juce::jmin(560.0f,
+                                        juce::jmax(380.0f, height - 190.0f - 120.0f));
+        const float leftW = (width - 84.0f - gap) * 0.44f;
+        const float rightX = margin + leftW + gap;
+        const float rightW = width - margin - rightX;
+        const juce::Rectangle<float> leftPanel(margin, panelY, leftW, panelH);
+        const juce::Rectangle<float> rightPanel(rightX, panelY, rightW, panelH);
+        GameUi::drawCard(g, leftPanel, 20.0f);
+        GameUi::drawCard(g, rightPanel, 20.0f, true);
+
+        g.setColour(UiColors::accent);
+        g.setFont(GameUi::eyebrow(10.0f));
+        g.drawText("STRINGS",
+                   juce::Rectangle<float>(leftPanel.getX() + 24.0f,
+                                          leftPanel.getY() + 24.0f,
+                                          leftW - 48.0f, 16.0f),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(11.0f));
+        g.drawText("STANDARD TUNING  /  E  A  D  G  B  E",
+                   juce::Rectangle<float>(leftPanel.getX() + 24.0f,
+                                          leftPanel.getY() + 44.0f,
+                                          leftW - 48.0f, 18.0f),
+                   juce::Justification::centredLeft, false);
 
         const char* stringNames[6] = { "E", "A", "D", "G", "B", "E" };
         const char* stringNumbers[6] = { "6", "5", "4", "3", "2", "1" };
         const int tunedMask = tuner.getTunedMask();
-        const float labelGap = 8.0f;
-        const float labelMargin = 18.0f;
-        const float labelWidth = (leftW - labelMargin * 2.0f - labelGap * 5.0f) / 6.0f;
-        const float labelY = panelY + panelH * 0.43f;
+        const float tileGap = 12.0f;
+        const float tileW = (leftW - 48.0f - tileGap * 2.0f) / 3.0f;
+        const float tileH = 112.0f;
 
         for (int i = 0; i < 6; ++i)
         {
-            const float x = margin + labelMargin + static_cast<float>(i) * (labelWidth + labelGap);
+            const int column = i % 3;
+            const int row = i / 3;
+            const float x = leftPanel.getX() + 24.0f
+                + static_cast<float>(column) * (tileW + tileGap);
+            const float y = leftPanel.getY() + 82.0f
+                + static_cast<float>(row) * (tileH + tileGap);
             const bool tuned = (tunedMask & (1 << i)) != 0;
-            const auto labelColour = tuned
-                ? UiColors::green
-                : UiColors::blue;
+            const auto colour = tuned ? UiColors::green : UiColors::accent;
 
-            g.setColour(labelColour.withAlpha(tuned ? 0.18f : 0.08f));
-            g.fillRoundedRectangle(x, labelY, labelWidth, 66.0f, 10.0f);
-            g.setColour(labelColour.withAlpha(0.75f));
-            g.drawRoundedRectangle(x, labelY, labelWidth, 66.0f, 10.0f, 1.2f);
-            g.setColour(labelColour);
-            g.setFont(juce::FontOptions().withHeight(25.0f).withStyle("Bold"));
-            g.drawText(stringNames[i], static_cast<int>(x), static_cast<int>(labelY + 5.0f),
-                       static_cast<int>(labelWidth), 32, juce::Justification::centred);
-            g.setColour(tuned ? UiColors::green : UiColors::secondaryText);
-            g.setFont(juce::FontOptions().withHeight(11.0f));
-            g.drawText(stringNumbers[i], static_cast<int>(x), static_cast<int>(labelY + 38.0f),
-                       static_cast<int>(labelWidth), 18, juce::Justification::centred);
+            g.setColour(tuned ? UiColors::green.withAlpha(0.10f)
+                              : UiColors::surface2.withAlpha(0.72f));
+            g.fillRoundedRectangle(x, y, tileW, tileH, 14.0f);
+            g.setColour(colour.withAlpha(tuned ? 0.46f : 0.22f));
+            g.drawRoundedRectangle(x, y, tileW, tileH, 14.0f, 1.0f);
+
+            g.setColour(colour);
+            g.setFont(GameUi::heading(34.0f));
+            g.drawText(stringNames[i],
+                       juce::Rectangle<float>(x, y + 10.0f, tileW, 40.0f),
+                       juce::Justification::centred, false);
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::eyebrow(8.5f));
+            g.drawText("STRING " + juce::String(stringNumbers[i]),
+                       juce::Rectangle<float>(x, y + 52.0f, tileW, 16.0f),
+                       juce::Justification::centred, false);
+            GameUi::drawPill(g,
+                             juce::Rectangle<float>(x + 10.0f, y + 77.0f,
+                                                    tileW - 20.0f, 20.0f),
+                             tuned ? "IN TUNE" : "WAITING",
+                             colour,
+                             tuned);
         }
 
-        g.setColour(UiColors::secondaryText);
-        g.setFont(juce::FontOptions().withHeight(12.0f));
-        g.drawText("Play each string to check tuning", juce::roundToInt(margin + 12.0f),
-                   juce::roundToInt(panelY + panelH - 48.0f), juce::roundToInt(leftW - 24.0f),
-                   24, juce::Justification::centred);
-        // The unreliable tuner gauge is intentionally hidden for now.
-        g.setColour(
-            UiColors::text);
+        if (panelH > 470.0f && panelH <= 520.0f)
+        {
+            g.setColour(UiColors::muted.withAlpha(0.72f));
+            g.setFont(GameUi::font(11.0f));
+            g.drawText("Play each string clearly and let the note ring.",
+                       juce::Rectangle<float>(leftPanel.getX() + 24.0f,
+                                              leftPanel.getBottom() - 48.0f,
+                                              leftW - 48.0f, 22.0f),
+                       juce::Justification::centred, false);
+        }
 
-        g.setFont(
-            juce::FontOptions()
-            .withHeight(28.0f)
-            .withStyle("Bold"));
+        if (panelH > 470.0f)
+        {
+            GameUi::drawDivider(g, leftPanel.getX() + 24.0f,
+                                leftPanel.getRight() - 24.0f,
+                                leftPanel.getY() + 352.0f);
+            GameUi::drawEyebrow(g, "REFERENCE PITCH",
+                                juce::Rectangle<float>(leftPanel.getX() + 24.0f,
+                                                       leftPanel.getY() + 368.0f,
+                                                       leftW - 48.0f, 14.0f),
+                                UiColors::muted);
 
-        g.drawText(
-            "Tune your guitar",
-            100,
-            50,
-            getWidth() - 200,
-            40,
-            juce::Justification::centred);
+            const char* references[6]
+            {
+                "6   E2   82.4 Hz", "5   A2  110.0 Hz", "4   D3  146.8 Hz",
+                "3   G3  196.0 Hz", "2   B3  246.9 Hz", "1   E4  329.6 Hz"
+            };
+            const float refGap = 10.0f;
+            const float refW = (leftW - 48.0f - refGap * 2.0f) / 3.0f;
+
+            for (int i = 0; i < 6; ++i)
+            {
+                const int column = i % 3;
+                const int row = i / 3;
+                const float x = leftPanel.getX() + 24.0f
+                    + static_cast<float>(column) * (refW + refGap);
+                const float y = leftPanel.getY() + 396.0f
+                    + static_cast<float>(row) * 24.0f;
+                g.setColour(UiColors::accent.withAlpha(0.72f));
+                g.fillEllipse(x, y + 5.0f, 4.0f, 4.0f);
+                g.setColour(UiColors::muted);
+                g.setFont(GameUi::font(10.5f));
+                g.drawText(references[i],
+                           juce::Rectangle<float>(x + 10.0f, y, refW - 10.0f, 16.0f),
+                           juce::Justification::centredLeft, false);
+            }
+        }
+
+        if (panelH > 520.0f)
+        {
+            const bool allReady = tuner.areAllStringsTuned();
+            int tunedCount = 0;
+            for (int i = 0; i < 6; ++i)
+                tunedCount += (tunedMask & (1 << i)) != 0 ? 1 : 0;
+
+            const auto readyColour = allReady ? UiColors::green : UiColors::accent;
+            const juce::Rectangle<float> readyCard(
+                leftPanel.getX() + 24.0f, leftPanel.getY() + 474.0f,
+                leftW - 48.0f, 72.0f);
+            g.setColour(UiColors::surface2.withAlpha(0.56f));
+            g.fillRoundedRectangle(readyCard, 14.0f);
+            g.setColour(readyColour.withAlpha(0.42f));
+            g.drawRoundedRectangle(readyCard, 14.0f, 1.0f);
+
+            const juce::Rectangle<float> readyIcon(
+                readyCard.getX() + 16.0f, readyCard.getCentreY() - 15.0f,
+                30.0f, 30.0f);
+            g.setColour(readyColour.withAlpha(0.16f));
+            g.fillEllipse(readyIcon);
+            g.setColour(readyColour);
+            g.setFont(GameUi::font(9.5f, true));
+            g.drawText(allReady ? juce::String("OK") : juce::String(tunedCount),
+                       readyIcon.toNearestInt(), juce::Justification::centred, false);
+
+            g.setColour(UiColors::text);
+            g.setFont(GameUi::font(12.5f, true));
+            g.drawText(allReady ? juce::String("ALL STRINGS READY")
+                                : juce::String(tunedCount) + " / 6 STRINGS READY",
+                       juce::Rectangle<float>(readyCard.getX() + 58.0f,
+                                              readyCard.getY() + 14.0f,
+                                              readyCard.getWidth() - 72.0f, 18.0f),
+                       juce::Justification::centredLeft, false);
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::font(10.5f));
+            g.drawText(allReady ? "All six strings are in tune."
+                                : "Keep tuning the remaining strings.",
+                       juce::Rectangle<float>(readyCard.getX() + 58.0f,
+                                              readyCard.getY() + 38.0f,
+                                              readyCard.getWidth() - 72.0f, 16.0f),
+                       juce::Justification::centredLeft, false);
+        }
+
+        // Large input dial. The note itself is a real Label above this paint.
+        const float dialRadius = juce::jmin(88.0f, rightW * 0.21f);
+        const float dialX = rightPanel.getCentreX();
+        const float dialY = rightPanel.getY() + 196.0f;
+        g.setColour(UiColors::accent.withAlpha(0.035f));
+        g.fillEllipse(dialX - dialRadius - 16.0f, dialY - dialRadius - 16.0f,
+                      (dialRadius + 16.0f) * 2.0f, (dialRadius + 16.0f) * 2.0f);
+        g.setColour(UiColors::surface2.withAlpha(0.78f));
+        g.fillEllipse(dialX - dialRadius, dialY - dialRadius,
+                      dialRadius * 2.0f, dialRadius * 2.0f);
+        g.setColour(UiColors::borderStrong);
+        g.drawEllipse(dialX - dialRadius, dialY - dialRadius,
+                      dialRadius * 2.0f, dialRadius * 2.0f, 1.0f);
+        g.setColour(UiColors::accent.withAlpha(0.22f));
+        g.drawEllipse(dialX - dialRadius + 12.0f, dialY - dialRadius + 12.0f,
+                      (dialRadius - 12.0f) * 2.0f, (dialRadius - 12.0f) * 2.0f, 1.0f);
+
+        GameUi::drawDivider(g, rightPanel.getX() + 24.0f,
+                            rightPanel.getRight() - 24.0f,
+                            rightPanel.getY() + 352.0f);
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::eyebrow(8.5f));
+        g.drawText("DETECTED STRING",
+                   juce::Rectangle<float>(rightPanel.getX() + 24.0f,
+                                          rightPanel.getY() + 286.0f,
+                                          220.0f, 15.0f),
+                   juce::Justification::centredLeft, false);
+        g.drawText("OFFSET",
+                   juce::Rectangle<float>(rightPanel.getX() + 24.0f,
+                                          rightPanel.getY() + 318.0f,
+                                          150.0f, 15.0f),
+                   juce::Justification::centredLeft, false);
+
+        const auto statusColour = tuner.areAllStringsTuned()
+            ? UiColors::green : UiColors::accent;
+        g.setColour(statusColour.withAlpha(0.10f));
+        g.fillRoundedRectangle(rightPanel.getX() + 40.0f,
+                               rightPanel.getY() + 368.0f,
+                               rightW - 80.0f, 40.0f, 20.0f);
+        g.setColour(statusColour.withAlpha(0.38f));
+        g.drawRoundedRectangle(rightPanel.getX() + 40.0f,
+                               rightPanel.getY() + 368.0f,
+                               rightW - 80.0f, 40.0f, 20.0f, 1.0f);
+
+        if (panelH > 520.0f)
+        {
+            GameUi::drawDivider(g, rightPanel.getX() + 24.0f,
+                                rightPanel.getRight() - 24.0f,
+                                rightPanel.getY() + 432.0f);
+            GameUi::drawEyebrow(g, "QUICK TIPS",
+                                juce::Rectangle<float>(rightPanel.getX() + 24.0f,
+                                                       rightPanel.getY() + 448.0f,
+                                                       rightW - 48.0f, 14.0f),
+                                UiColors::muted);
+            g.setColour(UiColors::muted.withAlpha(0.82f));
+            g.setFont(GameUi::font(11.0f));
+            g.drawText("Pluck one string at a time.",
+                       juce::Rectangle<float>(rightPanel.getX() + 24.0f,
+                                              rightPanel.getY() + 468.0f,
+                                              rightW - 48.0f, 18.0f),
+                       juce::Justification::centredLeft, false);
+            g.drawText("Let the note ring before reading.",
+                       juce::Rectangle<float>(rightPanel.getX() + 24.0f,
+                                              rightPanel.getY() + 488.0f,
+                                              rightW - 48.0f, 18.0f),
+                       juce::Justification::centredLeft, false);
+        }
+
+        if (panelH > 500.0f)
+        {
+            g.setColour(UiColors::muted.withAlpha(0.65f));
+            g.setFont(GameUi::font(10.5f));
+            g.drawText("TIP  /  USE THE NECK PICKUP AND MUTE THE OTHER STRINGS",
+                       juce::Rectangle<float>(rightPanel.getX() + 24.0f,
+                                              rightPanel.getBottom() - 48.0f,
+                                              rightW - 48.0f, 22.0f),
+                       juce::Justification::centred, false);
+        }
 
         return;
     }
 
     //==========================================================================
-    // Results screen
+    // Results
+    //==========================================================================
 
     if (gameState == GameState::Finished)
     {
+        drawBrand(48.0f, 32.0f, true);
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(width - 154.0f, 36.0f, 106.0f, 22.0f),
+                         "RESULTS",
+                         UiColors::accent,
+                         true);
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(10.5f));
+        g.drawText("BEST ON THIS TRACK  " + juce::String(getBestScoreForSong(selectedSongSlug, selectedSongId)),
+                   juce::Rectangle<float>(width - 460.0f, 36.0f, 278.0f, 22.0f),
+                   juce::Justification::centredRight, false);
+
         const int score = gameplayStats.getScore();
         const int hits = gameplayStats.getHitCount();
         const int misses = gameplayStats.getMissCount();
@@ -4674,128 +6050,294 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             ? 100.0 * static_cast<double>(hits) / static_cast<double>(total)
             : 0.0;
 
-        auto card = juce::Rectangle<float>(
-            48.0f, 48.0f,
-            static_cast<float>(juce::jmax(320, getWidth() - 96)),
-            static_cast<float>(juce::jmax(360, getHeight() - 150)));
+        const juce::Rectangle<float> card(
+            48.0f, 82.0f, width - 96.0f,
+            juce::jmax(520.0f, height - 170.0f));
+        GameUi::drawCard(g, card, 24.0f, true);
 
-        g.setColour(juce::Colour(0x18000000));
-        g.fillRoundedRectangle(card.translated(0.0f, 4.0f), 22.0f);
-        g.setColour(UiColors::card);
-        g.fillRoundedRectangle(card, 22.0f);
-        g.setColour(UiColors::border);
-        g.drawRoundedRectangle(card, 22.0f, 1.2f);
-        // Subtle score highlight keeps the main result immediately readable.
-        auto scorePanel = juce::Rectangle<float>(
-            80.0f, 128.0f, static_cast<float>(juce::jmax(240, getWidth() - 160)), 126.0f);
-        g.setColour(UiColors::blueLight.withAlpha(0.55f));
-        g.fillRoundedRectangle(scorePanel, 18.0f);
-        g.setColour(UiColors::border);
-        g.drawRoundedRectangle(scorePanel, 18.0f, 1.0f);
-
+        GameUi::drawEyebrow(g, "SESSION COMPLETE",
+                            juce::Rectangle<float>(card.getX() + 32.0f,
+                                                   card.getY() + 26.0f,
+                                                   340.0f, 16.0f));
         g.setColour(UiColors::text);
-        g.setFont(juce::FontOptions().withHeight(34.0f).withStyle("Bold"));
-        g.drawText("SONG COMPLETE", 40, 76, getWidth() - 80, 48,
-                   juce::Justification::centred);
+        g.setFont(GameUi::heading(38.0f));
+        g.drawText("SONG COMPLETE",
+                   juce::Rectangle<float>(card.getX() + 32.0f,
+                                          card.getY() + 46.0f,
+                                          card.getWidth() - 64.0f, 48.0f),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(13.0f));
+        g.drawText("Here is how your run landed. Replay the track to push the score higher.",
+                   juce::Rectangle<float>(card.getX() + 32.0f,
+                                          card.getY() + 92.0f,
+                                          card.getWidth() - 64.0f, 22.0f),
+                   juce::Justification::centredLeft, false);
 
-        g.setColour(UiColors::blue);
-        g.setFont(juce::FontOptions().withHeight(54.0f).withStyle("Bold"));
-        g.drawText(juce::String(score), 60, 142, getWidth() - 120, 68,
-                   juce::Justification::centred);
+        const juce::Rectangle<float> scorePanel(
+            card.getX() + 32.0f, card.getY() + 132.0f,
+            card.getWidth() - 64.0f, 176.0f);
+        juce::ColourGradient scoreGradient(
+            UiColors::accentStrong, scorePanel.getX(), scorePanel.getY(),
+            UiColors::accent.darker(0.46f), scorePanel.getRight(), scorePanel.getBottom(),
+            false);
+        g.setGradientFill(scoreGradient);
+        g.fillRoundedRectangle(scorePanel, 20.0f);
+        g.setColour(juce::Colours::white.withAlpha(0.16f));
+        g.drawRoundedRectangle(scorePanel, 20.0f, 1.0f);
 
-        g.setColour(UiColors::secondaryText);
-        g.setFont(juce::FontOptions().withHeight(18.0f));
-        g.drawText("TOTAL SCORE", 60, 207, getWidth() - 120, 28,
-                   juce::Justification::centred);
+        g.setColour(UiColors::onAccent.withAlpha(0.72f));
+        g.setFont(GameUi::eyebrow(9.5f));
+        g.drawText("TOTAL SCORE",
+                   juce::Rectangle<float>(scorePanel.getX() + 24.0f,
+                                          scorePanel.getY() + 20.0f,
+                                          300.0f, 16.0f),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::onAccent);
+        g.setFont(GameUi::heading(72.0f));
+        g.drawText(juce::String(score),
+                   juce::Rectangle<float>(scorePanel.getX() + 24.0f,
+                                          scorePanel.getY() + 38.0f,
+                                          scorePanel.getWidth() - 48.0f, 92.0f),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::onAccent.withAlpha(0.70f));
+        g.setFont(GameUi::font(12.0f));
+        g.drawText("POINTS",
+                   juce::Rectangle<float>(scorePanel.getX() + 26.0f,
+                                          scorePanel.getY() + 134.0f,
+                                          180.0f, 20.0f),
+                   juce::Justification::centredLeft, false);
 
-        const int columnWidth = juce::jmax(100, (getWidth() - 100) / 3);
-        const int startX = (getWidth() - columnWidth * 3) / 2;
-        const int rowY = 270;
-        auto drawStat = [&g](const juce::String& value, const juce::String& caption,
-                             int x, int y, int w)
+        const int columnWidth = juce::jmax(120, (juce::roundToInt(card.getWidth()) - 88) / 3);
+        const float gridX = card.getX() + 32.0f;
+        const float gridY = card.getY() + 334.0f;
+        const std::array<juce::String, 6> values
         {
-            g.setColour(UiColors::text);
-            g.setFont(juce::FontOptions().withHeight(30.0f).withStyle("Bold"));
-            g.drawText(value, x, y, w, 38, juce::Justification::centred);
-            g.setColour(UiColors::secondaryText);
-            g.setFont(juce::FontOptions().withHeight(15.0f));
-            g.drawText(caption, x, y + 38, w, 25, juce::Justification::centred);
+            juce::String(juce::roundToInt(accuracy)) + "%",
+            juce::String(hits),
+            juce::String(misses),
+            juce::String(gameplayStats.getPerfectCount()),
+            juce::String(gameplayStats.getGreatCount()),
+            juce::String(gameplayStats.getGoodCount())
+        };
+        const std::array<juce::String, 6> captions
+        {
+            "ACCURACY", "HITS", "MISSES", "PERFECT", "GREAT", "GOOD"
         };
 
-        drawStat(juce::String(juce::roundToInt(accuracy)) + "%", "ACCURACY", startX, rowY, columnWidth);
-        drawStat(juce::String(hits), "HITS", startX + columnWidth, rowY, columnWidth);
-        drawStat(juce::String(misses), "MISSES", startX + columnWidth * 2, rowY, columnWidth);
+        for (int i = 0; i < 6; ++i)
+        {
+            const int column = i % 3;
+            const int row = i / 3;
+            const float x = gridX + static_cast<float>(column) * static_cast<float>(columnWidth);
+            const float y = gridY + static_cast<float>(row) * 94.0f;
+            const juce::Rectangle<float> tile(x, y, static_cast<float>(columnWidth) - 12.0f, 82.0f);
+            g.setColour(UiColors::surface2.withAlpha(0.72f));
+            g.fillRoundedRectangle(tile, 14.0f);
+            g.setColour(UiColors::border);
+            g.drawRoundedRectangle(tile, 14.0f, 1.0f);
 
-        g.setColour(UiColors::border);
-        g.drawLine(80.0f, 365.0f, static_cast<float>(getWidth() - 80), 365.0f, 1.0f);
+            auto valueColour = UiColors::text;
+            if (i == 2) valueColour = UiColors::red;
+            else if (i == 3) valueColour = UiColors::accent;
+            else if (i == 4) valueColour = UiColors::green;
+            else if (i == 5) valueColour = UiColors::info;
 
-        const int qualityY = 395;
-        drawStat(juce::String(gameplayStats.getPerfectCount()), "PERFECT", startX, qualityY, columnWidth);
-        drawStat(juce::String(gameplayStats.getGreatCount()), "GREAT", startX + columnWidth, qualityY, columnWidth);
-        drawStat(juce::String(gameplayStats.getGoodCount()), "GOOD", startX + columnWidth * 2, qualityY, columnWidth);
+            g.setColour(valueColour);
+            g.setFont(GameUi::heading(28.0f));
+            g.drawText(values[static_cast<size_t>(i)],
+                       juce::Rectangle<float>(tile.getX() + 16.0f,
+                                              tile.getY() + 8.0f,
+                                              tile.getWidth() - 32.0f, 38.0f),
+                       juce::Justification::centredLeft, false);
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::eyebrow(8.5f));
+            g.drawText(captions[static_cast<size_t>(i)],
+                       juce::Rectangle<float>(tile.getX() + 16.0f,
+                                              tile.getY() + 50.0f,
+                                              tile.getWidth() - 32.0f, 16.0f),
+                       juce::Justification::centredLeft, false);
+        }
 
-        g.setColour(UiColors::blue);
-        g.setFont(juce::FontOptions().withHeight(25.0f).withStyle("Bold"));
-        g.drawText("MAX COMBO  x" + juce::String(gameplayStats.getMaxCombo()),
-                   60, 475, getWidth() - 120, 36, juce::Justification::centred);
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(card.getX() + 32.0f,
+                                                card.getY() + 548.0f,
+                                                180.0f, 30.0f),
+                         "MAX COMBO  x" + juce::String(gameplayStats.getMaxCombo()),
+                         UiColors::accent,
+                         true);
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(card.getX() + 224.0f,
+                                                card.getY() + 548.0f,
+                                                210.0f, 30.0f),
+                         "COMBO BONUS  +" + juce::String(gameplayStats.getComboBonusPoints()),
+                         UiColors::green,
+                         false);
 
-        g.setColour(UiColors::secondaryText);
-        g.setFont(juce::FontOptions().withHeight(14.0f));
-        g.drawText("COMBO BONUS  +" + juce::String(gameplayStats.getComboBonusPoints()) + " pts",
-                   60, 510, getWidth() - 120, 24, juce::Justification::centred);
+        if (card.getHeight() > 720.0f)
+        {
+            const int perfect = gameplayStats.getPerfectCount();
+            const int great = gameplayStats.getGreatCount();
+            const int good = gameplayStats.getGoodCount();
+            const int judged = juce::jmax(1, perfect + great + good + misses);
+
+            GameUi::drawEyebrow(g, "JUDGEMENT BREAKDOWN",
+                                juce::Rectangle<float>(card.getX() + 32.0f,
+                                                       card.getY() + 596.0f,
+                                                       420.0f, 14.0f),
+                                UiColors::muted);
+
+            const juce::Rectangle<float> bar(card.getX() + 32.0f,
+                                             card.getY() + 620.0f,
+                                             card.getWidth() - 64.0f,
+                                             14.0f);
+            g.setColour(UiColors::surface2);
+            g.fillRoundedRectangle(bar, 7.0f);
+
+            {
+                juce::Graphics::ScopedSaveState saved(g);
+                juce::Path clip;
+                clip.addRoundedRectangle(bar, 7.0f);
+                g.reduceClipRegion(clip);
+
+                const std::array<int, 4> counts { perfect, great, good, misses };
+                const std::array<juce::Colour, 4> colours
+                {
+                    UiColors::accent, UiColors::green, UiColors::info, UiColors::red
+                };
+                float segmentX = bar.getX();
+
+                for (size_t i = 0; i < counts.size(); ++i)
+                {
+                    const float segmentW = bar.getWidth()
+                        * static_cast<float>(counts[i]) / static_cast<float>(judged);
+                    if (segmentW > 1.5f)
+                    {
+                        g.setColour(colours[i]);
+                        g.fillRect(segmentX, bar.getY(),
+                                   juce::jmax(0.0f, segmentW - 2.0f), bar.getHeight());
+                    }
+                    segmentX += segmentW;
+                }
+            }
+
+            const std::array<juce::String, 4> legend
+            {
+                "PERFECT  " + juce::String(perfect),
+                "GREAT  " + juce::String(great),
+                "GOOD  " + juce::String(good),
+                "MISS  " + juce::String(misses)
+            };
+            const std::array<juce::Colour, 4> legendColours
+            {
+                UiColors::accent, UiColors::green, UiColors::info, UiColors::red
+            };
+            const float legendWidth = (card.getWidth() - 64.0f) / 4.0f;
+
+            for (int i = 0; i < 4; ++i)
+            {
+                const float x = card.getX() + 32.0f
+                    + static_cast<float>(i) * legendWidth;
+                const float y = card.getY() + 649.0f;
+                g.setColour(legendColours[static_cast<size_t>(i)]);
+                g.fillEllipse(x, y + 4.0f, 7.0f, 7.0f);
+                g.setColour(UiColors::muted);
+                g.setFont(GameUi::font(10.5f));
+                g.drawText(legend[static_cast<size_t>(i)],
+                           juce::Rectangle<float>(x + 13.0f, y,
+                                                   legendWidth - 20.0f, 16.0f),
+                           juce::Justification::centredLeft, false);
+            }
+        }
+
         return;
     }
 
     //==========================================================================
-    // Game
+    // Gameplay
+    //==========================================================================
 
-    auto drawCard =
-        [&g](juce::Rectangle<float> area)
-        {
-            g.setColour(juce::Colour::fromString("183B82F6"));
+    const float topY = 20.0f;
+    const float topH = 88.0f;
+    const float hudY = 120.0f;
+    const float hudH = 96.0f;
+    const float bottomH = juce::jlimit(124.0f, 160.0f, height / 6.0f);
+    const float bottomY = height - 24.0f - bottomH;
+    const float studioH = juce::jlimit(176.0f, 218.0f, height / 4.0f);
+    const float studioY = bottomY - 14.0f - studioH;
+    const float tabY = hudY + hudH + 12.0f;
+    const float tabH = juce::jmax(150.0f, studioY - 12.0f - tabY);
 
-            g.fillRoundedRectangle(
-                area.translated(
-                    0.0f,
-                    3.0f),
-                16.0f);
+    const juce::Rectangle<float> topBar(24.0f, topY, width - 48.0f, topH);
+    GameUi::drawCard(g, topBar, 18.0f);
+    drawBrand(44.0f, 32.0f, false);
 
-            // Translucent glass fill with a subtle cool highlight.
-            g.setColour(UiColors::card);
+    g.setColour(UiColors::muted);
+    g.setFont(GameUi::eyebrow(8.0f));
+    g.drawText("NOW PLAYING",
+               juce::Rectangle<float>(210.0f, 31.0f, 260.0f, 12.0f),
+               juce::Justification::centredLeft, false);
 
-            g.fillRoundedRectangle(
-                area,
-                16.0f);
-
-            g.setColour(
-                UiColors::border);
-
-            g.drawRoundedRectangle(area, 16.0f, 1.25f);
-
-            auto highlight = area.reduced(1.5f);
-            g.setColour(juce::Colour::fromString("AAFFFFFF"));
-            g.drawLine(highlight.getX() + 18.0f, highlight.getY() + 1.0f,
-                       highlight.getRight() - 18.0f, highlight.getY() + 1.0f, 1.0f);
-        };
-
-    // Gameplay header and compact side panels.
-    drawCard(juce::Rectangle<float>(24.0f, 24.0f, static_cast<float>(getWidth() - 48), 72.0f));
-
-    // Pitch and target are deliberately compact, leaving the centre for song
-    // information and performance feedback.
-    drawCard(juce::Rectangle<float>(24.0f, 108.0f, 150.0f, 88.0f));
-    drawCard(juce::Rectangle<float>(static_cast<float>(getWidth() - 174), 108.0f, 150.0f, 88.0f));
-    drawCard(juce::Rectangle<float>(190.0f, 108.0f, static_cast<float>(juce::jmax(180, getWidth() - 380)), 88.0f));
-
-    // Score and current hit feedback share a compact panel below the tablature.
-    drawCard(juce::Rectangle<float>(24.0f, static_cast<float>(getHeight() - 142),
-                                   static_cast<float>(getWidth() - 48), 112.0f));
-
-    // Live accuracy counters under the song title.
+    // Tempo pills: BEAT / BAR / BPM.
+    auto drawTempoPill = [&g](juce::Rectangle<float> area,
+                              const juce::String& caption)
     {
-        const float statsX = 190.0f;
-        const float statsWidth = static_cast<float>(juce::jmax(180, getWidth() - 380));
-        const float cellWidth = statsWidth / 4.0f;
+        g.setColour(UiColors::surface2.withAlpha(0.72f));
+        g.fillRoundedRectangle(area, 9.0f);
+        g.setColour(UiColors::border);
+        g.drawRoundedRectangle(area, 9.0f, 1.0f);
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(8.0f, true));
+        g.drawText(caption,
+                   juce::Rectangle<float>(area.getX() + 9.0f, area.getY() + 3.0f,
+                                          36.0f, 14.0f),
+                   juce::Justification::centredLeft, false);
+    };
+
+    drawTempoPill({ 44.0f, 82.0f, 80.0f, 24.0f }, "BEAT");
+    drawTempoPill({ 132.0f, 82.0f, 72.0f, 24.0f }, "BAR");
+    drawTempoPill({ 212.0f, 82.0f, 88.0f, 24.0f }, "BPM");
+
+    const float leftW = 190.0f;
+    const float rightX = width - 214.0f;
+    const float rightW = 190.0f;
+    const float centreX = 226.0f;
+    const float centreW = width - 452.0f;
+    const juce::Rectangle<float> comboCard(24.0f, hudY, leftW, hudH);
+    const juce::Rectangle<float> statsCard(centreX, hudY, centreW, hudH);
+    const juce::Rectangle<float> targetCard(rightX, hudY, rightW, hudH);
+    GameUi::drawCard(g, comboCard, 16.0f);
+    GameUi::drawCard(g, statsCard, 16.0f);
+    GameUi::drawCard(g, targetCard, 16.0f);
+
+    GameUi::drawEyebrow(g, "COMBO",
+                        juce::Rectangle<float>(comboCard.getX() + 18.0f,
+                                               comboCard.getY() + 14.0f,
+                                               leftW - 36.0f, 15.0f));
+    g.setColour(UiColors::muted.withAlpha(0.65f));
+    g.setFont(GameUi::font(9.0f, true));
+    g.drawText("STREAK",
+               juce::Rectangle<float>(comboCard.getX() + 18.0f,
+                                      comboCard.getY() + 68.0f,
+                                      leftW - 36.0f, 14.0f),
+               juce::Justification::centred, false);
+
+    g.setColour(UiColors::accent);
+    g.setFont(GameUi::eyebrow(9.0f));
+    g.drawText("NEXT NOTE",
+               juce::Rectangle<float>(targetCard.getX() + 18.0f,
+                                      targetCard.getY() + 14.0f,
+                                      rightW - 30.0f, 15.0f),
+               juce::Justification::centredLeft, false);
+
+    GameUi::drawEyebrow(g, "LIVE PERFORMANCE",
+                        juce::Rectangle<float>(statsCard.getX() + 18.0f,
+                                               statsCard.getY() + 9.0f,
+                                               statsCard.getWidth() - 36.0f, 14.0f),
+                        UiColors::muted);
+
+    {
+        const float cellWidth = statsCard.getWidth() / 4.0f;
         const std::array<juce::String, 4> values
         {
             juce::String(gameplayStats.getMissCount()),
@@ -4804,94 +6346,303 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             juce::String(gameplayStats.getGoodCount())
         };
         const std::array<juce::String, 4> captions { "MISS", "PERFECT", "GREAT", "GOOD" };
+        const std::array<juce::Colour, 4> colours
+        {
+            UiColors::red, UiColors::accent, UiColors::green, UiColors::info
+        };
+
         for (int i = 0; i < 4; ++i)
         {
-            g.setColour(UiColors::text);
-            g.setFont(juce::FontOptions().withHeight(22.0f).withStyle("Bold"));
+            if (i > 0)
+            {
+                g.setColour(UiColors::border);
+                g.fillRect(statsCard.getX() + cellWidth * static_cast<float>(i),
+                           statsCard.getY() + 28.0f, 1.0f, 52.0f);
+            }
+            g.setColour(colours[static_cast<size_t>(i)]);
+            g.setFont(GameUi::heading(24.0f));
             g.drawText(values[static_cast<size_t>(i)],
-                       static_cast<int>(statsX + cellWidth * i), 119,
-                       static_cast<int>(cellWidth), 28, juce::Justification::centred);
-            g.setColour(UiColors::secondaryText);
-            g.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
+                       juce::Rectangle<float>(statsCard.getX() + cellWidth * static_cast<float>(i),
+                                              statsCard.getY() + 28.0f,
+                                              cellWidth, 34.0f),
+                       juce::Justification::centred, false);
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::eyebrow(8.0f));
             g.drawText(captions[static_cast<size_t>(i)],
-                       static_cast<int>(statsX + cellWidth * i), 151,
-                       static_cast<int>(cellWidth), 22, juce::Justification::centred);
+                       juce::Rectangle<float>(statsCard.getX() + cellWidth * static_cast<float>(i),
+                                              statsCard.getY() + 65.0f,
+                                              cellWidth, 14.0f),
+                       juce::Justification::centred, false);
         }
     }
 
-    // Small headings for the pitch/target side cards.
-    g.setColour(UiColors::secondaryText);
-    g.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
-    g.drawText("PITCH", 32, 112, 134, 18, juce::Justification::centred);
-    g.drawText("TARGET", getWidth() - 166, 112, 134, 18, juce::Justification::centred);
+    // Tablature sits on its own opaque surface; the shadow below it is painted here.
+    g.setColour(juce::Colours::black.withAlpha(0.25f));
+    g.fillRoundedRectangle(24.0f, tabY + 3.0f, width - 48.0f, tabH, 16.0f);
 
-    // Draw the whole COUNT IN card at the center of the entire game window.
-    // This is painted by the full-size overlay, not clipped to the tab area.
+    const float pedalW = juce::jmin(252.0f, width / 3.0f);
+    const juce::Rectangle<float> pedal(24.0f, studioY, pedalW, studioH);
+    const float mixerX = 24.0f + pedalW + 16.0f;
+    const juce::Rectangle<float> mixer(mixerX, studioY,
+                                       width - 24.0f - mixerX, studioH);
+
+    // Stompbox: red-tinted card with its own status badge.
+    g.setColour(juce::Colours::black.withAlpha(0.28f));
+    g.fillRoundedRectangle(pedal.translated(0.0f, 3.0f), 18.0f);
+    juce::ColourGradient pedalFill(
+        UiColors::surface2.interpolatedWith(UiColors::red, 0.10f),
+        pedal.getX(), pedal.getY(),
+        UiColors::surface.interpolatedWith(UiColors::red, 0.03f),
+        pedal.getX(), pedal.getBottom(), false);
+    g.setGradientFill(pedalFill);
+    g.fillRoundedRectangle(pedal, 18.0f);
+    g.setColour(UiColors::red.withAlpha(0.28f));
+    g.drawRoundedRectangle(pedal, 18.0f, 1.0f);
+    g.setColour(UiColors::red.withAlpha(0.55f));
+    g.fillRoundedRectangle(pedal.getX() + 22.0f,
+                           pedal.getY() + 20.0f, 4.0f, 26.0f, 2.0f);
+    g.setColour(UiColors::red);
+    g.setFont(GameUi::eyebrow(8.5f));
+    g.drawText("STOMPBOX",
+               juce::Rectangle<float>(pedal.getX() + 34.0f,
+                                      pedal.getY() + 18.0f,
+                                      pedalW - 58.0f, 14.0f),
+               juce::Justification::centredLeft, false);
+    g.setColour(UiColors::text);
+    g.setFont(GameUi::heading(19.0f));
+    g.drawText("DISTORTION",
+               juce::Rectangle<float>(pedal.getX() + 34.0f,
+                                      pedal.getY() + 33.0f,
+                                      pedalW - 58.0f, 24.0f),
+               juce::Justification::centredLeft, false);
+    GameUi::drawPill(g,
+                     juce::Rectangle<float>(pedal.getX() + 24.0f,
+                                            pedal.getY() + 62.0f,
+                                            88.0f, 20.0f),
+                     distortionEnabled.load(std::memory_order_relaxed)
+                         ? "ENGAGED" : "BYPASS",
+                     UiColors::red,
+                     distortionEnabled.load(std::memory_order_relaxed));
+
+    GameUi::drawCard(g, mixer, 18.0f);
+    GameUi::drawEyebrow(g, "MIXER",
+                        juce::Rectangle<float>(mixer.getX() + 22.0f,
+                                               mixer.getY() + 16.0f,
+                                               180.0f, 14.0f));
+    g.setColour(UiColors::text);
+    g.setFont(GameUi::heading(17.0f));
+    g.drawText("BACKING TRACK",
+               juce::Rectangle<float>(mixer.getX() + 22.0f,
+                                      mixer.getY() + 31.0f,
+                                      mixer.getWidth() - 190.0f, 22.0f),
+               juce::Justification::centredLeft, false);
+    GameUi::drawPill(g,
+                     juce::Rectangle<float>(mixer.getRight() - 122.0f,
+                                            mixer.getY() + 18.0f,
+                                            100.0f, 20.0f),
+                     "6 CHANNELS",
+                     UiColors::green,
+                     false);
+    GameUi::drawDivider(g, mixer.getX() + 22.0f,
+                        mixer.getRight() - 22.0f,
+                        mixer.getY() + 58.0f);
+
+    {
+        const float cellWidth = (mixer.getWidth() - 28.0f - 24.0f) / 3.0f;
+        for (int i = 1; i < 3; ++i)
+        {
+            const float dividerX = mixer.getX() + 14.0f
+                + static_cast<float>(i) * (cellWidth + 12.0f) - 6.0f;
+            g.setColour(UiColors::border);
+            g.fillRect(dividerX, mixer.getY() + 68.0f, 1.0f,
+                       mixer.getHeight() - 78.0f);
+        }
+    }
+
+    const juce::Rectangle<float> bottomCard(24.0f, bottomY, width - 48.0f, bottomH);
+    GameUi::drawCard(g, bottomCard, 18.0f, true);
+
+    const float judgementW = bottomCard.getWidth() * 0.40f;
+    const float accuracyX = bottomCard.getX() + judgementW;
+    const float scoreX = bottomCard.getX() + bottomCard.getWidth() * 0.66f;
+    GameUi::drawEyebrow(g, "JUDGEMENT",
+                        juce::Rectangle<float>(bottomCard.getX() + 24.0f,
+                                               bottomCard.getY() + 15.0f,
+                                               judgementW - 48.0f, 14.0f));
+    GameUi::drawEyebrow(g, "ACCURACY",
+                        juce::Rectangle<float>(accuracyX + 22.0f,
+                                               bottomCard.getY() + 15.0f,
+                                               160.0f, 14.0f),
+                        UiColors::muted);
+    GameUi::drawEyebrow(g, "SCORE",
+                        juce::Rectangle<float>(scoreX + 22.0f,
+                                               bottomCard.getY() + 15.0f,
+                                               120.0f, 14.0f));
+
+    const int hits = gameplayStats.getHitCount();
+    const int misses = gameplayStats.getMissCount();
+    const int total = hits + misses;
+    const double accuracy = total > 0
+        ? 100.0 * static_cast<double>(hits) / static_cast<double>(total)
+        : 0.0;
+    g.setColour(UiColors::text);
+    g.setFont(GameUi::heading(30.0f));
+    g.drawText(juce::String(juce::roundToInt(accuracy)) + "%",
+               juce::Rectangle<float>(accuracyX + 22.0f,
+                                      bottomCard.getY() + 34.0f,
+                                      160.0f, 38.0f),
+               juce::Justification::centredLeft, false);
+    g.setColour(UiColors::muted);
+    g.setFont(GameUi::font(9.5f));
+    g.drawText(juce::String(hits) + " / " + juce::String(total) + " NOTES",
+               juce::Rectangle<float>(accuracyX + 22.0f,
+                                      bottomCard.getY() + bottomH - 34.0f,
+                                      180.0f, 16.0f),
+               juce::Justification::centredLeft, false);
+
+    g.setColour(UiColors::border);
+    g.fillRect(accuracyX, bottomCard.getY() + 20.0f, 1.0f, bottomH - 40.0f);
+    g.fillRect(scoreX, bottomCard.getY() + 20.0f, 1.0f, bottomH - 40.0f);
+
+    g.setColour(UiColors::muted.withAlpha(0.72f));
+    g.setFont(GameUi::font(9.0f, true));
+    g.drawText("POINTS",
+               juce::Rectangle<float>(scoreX + 22.0f,
+                                      bottomCard.getY() + bottomH - 34.0f,
+                                      120.0f, 16.0f),
+               juce::Justification::centredRight, false);
+
+}
+
+//==============================================================================
+// Modal overlay (pause and count-in above every control)
+//==============================================================================
+
+void MainModalOverlayComponent::paint(juce::Graphics& g)
+{
+    owner.paintModalOverlay(g);
+}
+
+void MainComponent::paintModalOverlay(juce::Graphics& g)
+{
+    const float width = static_cast<float>(getWidth());
+    const float height = static_cast<float>(getHeight());
+
+    if (width <= 0.0f || height <= 0.0f)
+        return;
+
+    // Count-in card.
     if (gameState == GameState::Playing
         && countInActive.load(std::memory_order_acquire))
     {
-        const float cardWidth = 250.0f;
-        const float cardHeight = 190.0f;
+        const float cardWidth = 280.0f;
+        const float cardHeight = 220.0f;
         const juce::Rectangle<float> countCard(
-            (getWidth() - cardWidth) * 0.5f,
-            (getHeight() - cardHeight) * 0.5f,
+            (width - cardWidth) * 0.5f,
+            (height - cardHeight) * 0.5f,
             cardWidth, cardHeight);
 
-        g.setColour(juce::Colour::fromString("EFFFFFFF"));
-        g.fillRoundedRectangle(countCard, 22.0f);
-        g.setColour(juce::Colour::fromString("FF2563EB"));
-        g.drawRoundedRectangle(countCard, 22.0f, 2.5f);
-        g.setColour(UiColors::blue);
-        g.setFont(juce::FontOptions().withHeight(19.0f).withStyle("Bold"));
-        g.drawText("COUNT IN", countCard.toNearestInt().withY((int)countCard.getY() + 20).withHeight(30),
+        g.setColour(UiColors::background.withAlpha(0.32f));
+        g.fillAll();
+
+        GameUi::drawCard(g, countCard, 24.0f, true);
+        g.setColour(UiColors::accent);
+        g.fillRoundedRectangle(countCard.getX() + 24.0f, countCard.getY(),
+                               78.0f, 3.0f, 1.5f);
+        g.setColour(UiColors::accent);
+        g.setFont(GameUi::eyebrow(10.0f));
+        g.drawText("GET READY",
+                   juce::Rectangle<float>(countCard.getX(), countCard.getY() + 28.0f,
+                                          cardWidth, 18.0f),
                    juce::Justification::centred, false);
+
         const int count = juce::jmax(1, countInRemaining.load(std::memory_order_relaxed));
-        g.setColour(count <= 1 ? juce::Colour::fromString("FFF97316")
-                               : juce::Colour::fromString("FF2563EB"));
-        g.setFont(juce::FontOptions().withHeight(92.0f).withStyle("Bold"));
+        g.setColour(count <= 1 ? UiColors::accentStrong : UiColors::accent);
+        g.setFont(GameUi::heading(92.0f));
         g.drawText(juce::String(count),
-                   countCard.toNearestInt().withY((int)countCard.getY() + 52).withHeight(112),
+                   juce::Rectangle<float>(countCard.getX(),
+                                          countCard.getY() + 48.0f,
+                                          cardWidth, 110.0f),
                    juce::Justification::centred, false);
+
+        for (int i = 0; i < 4; ++i)
+        {
+            const float dotX = countCard.getCentreX() - 34.0f + static_cast<float>(i) * 22.0f;
+            g.setColour(i < count ? UiColors::accent : UiColors::borderStrong);
+            g.fillEllipse(dotX, countCard.getBottom() - 42.0f, 6.0f, 6.0f);
+        }
     }
 
-    // Pause screen: a clear, centered light card keeps the underlying game
-    // visible but removes visual noise while the music is stopped.
+    // Pause overlay.
     if (gameState == GameState::Paused)
     {
-        g.setColour(juce::Colour::fromString("990C2145"));
+        g.setColour(UiColors::background.withAlpha(0.76f));
         g.fillAll();
 
         const juce::Rectangle<float> pauseCard(
-            getWidth() * 0.5f - 230.0f,
-            getHeight() * 0.5f - 150.0f,
-            460.0f, 300.0f);
-        g.setColour(UiColors::card);
-        g.fillRoundedRectangle(pauseCard, 24.0f);
-        g.setColour(UiColors::border);
-        g.drawRoundedRectangle(pauseCard, 24.0f, 1.5f);
-
-        g.setColour(UiColors::blue);
-        g.setFont(juce::FontOptions().withHeight(30.0f).withStyle("Bold"));
-        g.drawText("GAME PAUSED", pauseCard.toNearestInt().withHeight(48).withY((int)pauseCard.getY() + 28), juce::Justification::centred);
-
-        g.setColour(UiColors::secondaryText);
-        g.setFont(juce::FontOptions().withHeight(16.0f));
-        g.drawText("Take a breath. Your progress is saved for this session.",
-                   (int)pauseCard.getX() + 24, (int)pauseCard.getY() + 90,
-                   (int)pauseCard.getWidth() - 48, 28, juce::Justification::centred);
-
-        g.setColour(UiColors::orange);
-        g.fillRoundedRectangle(juce::Rectangle<float>(pauseCard.getX() + 74.0f,
-            pauseCard.getY() + 150.0f, pauseCard.getWidth() - 148.0f, 5.0f), 2.5f);
-
+            width * 0.5f - 250.0f,
+            height * 0.5f - 170.0f,
+            500.0f, 340.0f);
+        GameUi::drawCard(g, pauseCard, 24.0f, true);
+        g.setColour(UiColors::accent);
+        g.fillRoundedRectangle(pauseCard.getX() + 28.0f, pauseCard.getY(),
+                               84.0f, 3.0f, 1.5f);
+        GameUi::drawEyebrow(g, "SESSION PAUSED",
+                            juce::Rectangle<float>(pauseCard.getX() + 28.0f,
+                                                   pauseCard.getY() + 32.0f,
+                                                   300.0f, 16.0f));
         g.setColour(UiColors::text);
-        g.setFont(juce::FontOptions().withHeight(14.0f).withStyle("Bold"));
-        g.drawText("Press RESUME to continue", (int)pauseCard.getX() + 24,
-                   (int)pauseCard.getY() + 182, (int)pauseCard.getWidth() - 48,
-                   24, juce::Justification::centred);
+        g.setFont(GameUi::heading(32.0f));
+        g.drawText("Take a breath.",
+                   juce::Rectangle<float>(pauseCard.getX() + 28.0f,
+                                          pauseCard.getY() + 52.0f,
+                                          pauseCard.getWidth() - 56.0f, 44.0f),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(13.0f));
+        g.drawText("Your timing and score are frozen exactly where you left them.",
+                   juce::Rectangle<float>(pauseCard.getX() + 28.0f,
+                                          pauseCard.getY() + 102.0f,
+                                          pauseCard.getWidth() - 56.0f, 24.0f),
+                   juce::Justification::centredLeft, false);
+
+        GameUi::drawDivider(g, pauseCard.getX() + 28.0f,
+                            pauseCard.getRight() - 28.0f,
+                            pauseCard.getY() + 142.0f);
+
+        GameUi::drawEyebrow(g, "SCORE",
+                            juce::Rectangle<float>(pauseCard.getX() + 28.0f,
+                                                   pauseCard.getY() + 164.0f,
+                                                   160.0f, 14.0f),
+                            UiColors::muted);
+        g.setColour(UiColors::accent);
+        g.setFont(GameUi::heading(38.0f));
+        g.drawText(juce::String(gameplayStats.getScore()),
+                   juce::Rectangle<float>(pauseCard.getX() + 28.0f,
+                                          pauseCard.getY() + 182.0f,
+                                          240.0f, 46.0f),
+                   juce::Justification::centredLeft, false);
+        GameUi::drawEyebrow(g, "COMBO",
+                            juce::Rectangle<float>(pauseCard.getX() + 280.0f,
+                                                   pauseCard.getY() + 164.0f,
+                                                   160.0f, 14.0f),
+                            UiColors::muted);
+        g.setColour(UiColors::green);
+        g.setFont(GameUi::heading(38.0f));
+        g.drawText("x" + juce::String(gameplayStats.getCombo()),
+                   juce::Rectangle<float>(pauseCard.getX() + 280.0f,
+                                          pauseCard.getY() + 182.0f,
+                                          180.0f, 46.0f),
+                   juce::Justification::centredLeft, false);
+
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(pauseCard.getX() + 28.0f,
+                                                pauseCard.getBottom() - 56.0f,
+                                                pauseCard.getWidth() - 56.0f, 30.0f),
+                         "PRESS RESUME IN THE TOP BAR TO CONTINUE",
+                         UiColors::accent,
+                         true);
     }
-
-
 }
 
 //==============================================================================
@@ -4901,31 +6652,26 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 void MainComponent::resized()
 {
     overlayComponent.setBounds(getLocalBounds());
+    modalOverlayComponent.setBounds(getLocalBounds());
 
-    const int width =
-        getWidth();
+    const int width = getWidth();
+    const int height = getHeight();
 
     const bool authScreen = showAuthScreen;
-    const bool songSelect =
-        gameState == GameState::SongSelect && !authScreen;
-
-    const bool tunerScreen =
-        gameState == GameState::Tuner;
-
-    const bool finishedScreen =
-        gameState == GameState::Finished;
-
-    const bool showGame =
-        gameState == GameState::Playing
+    const bool songSelect = gameState == GameState::SongSelect && !authScreen;
+    const bool tunerScreen = gameState == GameState::Tuner;
+    const bool finishedScreen = gameState == GameState::Finished;
+    const bool showGame = gameState == GameState::Playing
         || gameState == GameState::Paused;
 
     //==========================================================================
-    // Song select
+    // Visibility
+    //==========================================================================
 
     songTitleLabel.setVisible(songSelect);
     loginScreenTitleLabel.setVisible(authScreen);
-    currentUserLabel.setVisible(!authScreen && currentUsername.isNotEmpty());
-    logoutButton.setVisible(!authScreen && currentUsername.isNotEmpty());
+    currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
+    logoutButton.setVisible(songSelect && currentUsername.isNotEmpty());
     gameSongTitleLabel.setVisible(showGame);
 
     songPridumayButton.setVisible(songSelect);
@@ -4937,6 +6683,8 @@ void MainComponent::resized()
     accountStatusLabel.setVisible(songSelect || authScreen);
     accountLoginButton.setVisible(authScreen);
     accountRegisterButton.setVisible(authScreen);
+    verifyEmailButton.setVisible(authScreen);
+    forgotPasswordButton.setVisible(authScreen);
     songMistButton.setVisible(false);
     songChordsButton.setVisible(false);
     aiSoloButton.setVisible(false);
@@ -4945,67 +6693,31 @@ void MainComponent::resized()
     generateMelodyButton.setVisible(false);
     newGenerationButton.setVisible(false);
     songPridumayBestLabel.setVisible(songSelect);
+    songListBox.setVisible(songSelect);
     songMistBestLabel.setVisible(false);
     songChordsBestLabel.setVisible(false);
     dailyChallengeBestLabel.setVisible(false);
 
-    //==========================================================================
-    // Tuner
-
-    tunerTitleLabel.setVisible(
-        tunerScreen);
-
-    tunerNoteLabel.setVisible(
-        tunerScreen);
-
-    tunerFrequencyLabel.setVisible(
-        tunerScreen);
-
-    tunerStringLabel.setVisible(
-        tunerScreen);
-
-    tunerCentsLabel.setVisible(
-        tunerScreen);
-
-    tunerStatusLabel.setVisible(
-        tunerScreen);
-
+    tunerTitleLabel.setVisible(tunerScreen);
+    tunerNoteLabel.setVisible(tunerScreen);
+    tunerFrequencyLabel.setVisible(tunerScreen);
+    tunerStringLabel.setVisible(tunerScreen);
+    tunerCentsLabel.setVisible(tunerScreen);
+    tunerStatusLabel.setVisible(tunerScreen);
     tunerStartButton.setVisible(tunerScreen);
     tunerSkipButton.setVisible(tunerScreen);
 
-    //==========================================================================
-    // Game
+    pitchLabel.setVisible(showGame);
+    beatLabel.setVisible(showGame);
+    barBeatLabel.setVisible(showGame);
+    bpmLabel.setVisible(showGame);
+    gameSessionLabel.setVisible(showGame);
+    hitLabel.setVisible(showGame);
+    targetNoteLabel.setVisible(showGame);
 
-    pitchLabel.setVisible(
-        showGame);
-
-    beatLabel.setVisible(
-        showGame);
-
-    barBeatLabel.setVisible(
-        showGame);
-
-    bpmLabel.setVisible(
-        showGame);
-
-    gameSessionLabel.setVisible(
-        showGame);
-
-    hitLabel.setVisible(
-        showGame);
-
-    targetNoteLabel.setVisible(
-        showGame);
-
-    gameStartButton.setVisible(
-        showGame || finishedScreen);
-
-    pauseButton.setVisible(
-        showGame);
-
-    menuButton.setVisible(
-        showGame || finishedScreen);
-
+    gameStartButton.setVisible(showGame || finishedScreen);
+    pauseButton.setVisible(showGame);
+    menuButton.setVisible(showGame || finishedScreen);
     distortionButton.setVisible(showGame);
     midiBackingButton.setVisible(showGame);
     midiBackingVolumeSlider.setVisible(showGame);
@@ -5029,202 +6741,124 @@ void MainComponent::resized()
     distortionToneSlider.setVisible(showGame);
     distortionDriveLabel.setVisible(showGame);
     distortionToneLabel.setVisible(showGame);
-
-    speed50Button.setVisible(
-        showGame);
-
-    speed100Button.setVisible(
-        showGame);
-
-    speed120Button.setVisible(
-        showGame);
-
-    audioSettingsButton.setVisible(
-        showGame);
-
-    // Difficulty UI deliberately hidden.
-
+    speed50Button.setVisible(showGame);
+    speed100Button.setVisible(showGame);
+    speed120Button.setVisible(showGame);
+    audioSettingsButton.setVisible(showGame);
     easyButton.setVisible(false);
     normalButton.setVisible(false);
     hardButton.setVisible(false);
-
-    tablatureComponent.setVisible(
-        showGame);
+    tablatureComponent.setVisible(showGame);
 
     //==========================================================================
-    // Top bar
-
-    beatLabel.setBounds(
-        34,
-        38,
-        40,
-        32);
-
-    barBeatLabel.setBounds(
-        78,
-        38,
-        40,
-        32);
-
-    bpmLabel.setBounds(
-        128,
-        38,
-        55,
-        32);
-
-    speed50Button.setBounds(
-        193,
-        40,
-        48,
-        32);
-
-    speed100Button.setBounds(
-        247,
-        40,
-        52,
-        32);
-
-    speed120Button.setBounds(
-        305,
-        40,
-        52,
-        32);
-
-    audioSettingsButton.setBounds(
-        width - 154,
-        40,
-        120,
-        32);
-
-    gameStartButton.setBounds(
-        375,
-        40,
-        78,
-        32);
-
-    pauseButton.setBounds(
-        461,
-        40,
-        90,
-        32);
-
-    menuButton.setBounds(
-        559,
-        40,
-        105,
-        32);
-
+    // Authentication
     //==========================================================================
-    // Gameplay header and compact HUD
-
-    gameSongTitleLabel.setBounds(680, 34, juce::jmax(180, width - 870), 48);
-
-    pitchLabel.setFont(juce::FontOptions().withHeight(20.0f).withStyle("Bold"));
-    pitchLabel.setBounds(32, 128, 134, 34);
-
-    targetNoteLabel.setFont(juce::FontOptions().withHeight(20.0f).withStyle("Bold"));
-    targetNoteLabel.setBounds(width - 166, 128, 134, 34);
-
-    // Status and score occupy separate rows with a clear visual gap.
-    hitLabel.setBounds(32, getHeight() - 126, width - 64, 38);
-    gameSessionLabel.setBounds(32, getHeight() - 72, width - 64, 46);
-
-    // Give the tablature a little more top breathing room and only enough
-    // height for the six strings and title. The lower area belongs to the pedal.
-    constexpr int tabTop = 204;
-    constexpr int tabHeight = 200;
-    tablatureComponent.setBounds(24, tabTop, width - 48, tabHeight);
-
-    // Small red stompbox: title, two knobs with values, then the footswitch.
-    const int pedalWidth = 252;
-    const int pedalHeight = 142;
-    const int pedalX = (width - pedalWidth) / 2;
-    const int pedalTop = tabTop + tabHeight + 28;
-    distortionButton.setBounds(pedalX + 16, pedalTop + 108, pedalWidth - 32, 25);
-    distortionDriveLabel.setBounds(pedalX + 14, pedalTop + 29, 104, 18);
-    distortionToneLabel.setBounds(pedalX + 134, pedalTop + 29, 104, 18);
-    distortionDriveSlider.setBounds(pedalX + 12, pedalTop + 43, 108, 64);
-    distortionToneSlider.setBounds(pedalX + 132, pedalTop + 43, 108, 64);
-    // Full-width mixer: three columns, two rows, with readable dark value boxes.
-    const int mixerWidth = juce::jmax(320, width - 48);
-    const int mixerX = (width - mixerWidth) / 2;
-    const int mixerTop = pedalTop + pedalHeight + 14;
-    const int colGap = 12;
-    const int cellWidth = (mixerWidth - 28 - 2 * colGap) / 3;
-    auto layoutMixerChannel = [&](juce::TextButton& button, juce::Label& label,
-                                  juce::Slider& slider, int column, int row)
-    {
-        const int x = mixerX + 14 + column * (cellWidth + colGap);
-        const int y = mixerTop + 34 + row * 78;
-        button.setBounds(x, y, cellWidth, 23);
-        label.setBounds(x, y + 25, 74, 16);
-        slider.setBounds(x + 72, y + 23, juce::jmax(64, cellWidth - 74), 22);
-    };
-    layoutMixerChannel(midiBackingButton, midiBackingVolumeLabel, midiBackingVolumeSlider, 0, 0);
-    layoutMixerChannel(midiDrumsButton, midiDrumsVolumeLabel, midiDrumsVolumeSlider, 1, 0);
-    layoutMixerChannel(midiBassButton, midiBassVolumeLabel, midiBassVolumeSlider, 2, 0);
-    layoutMixerChannel(midiRhythmGuitarButton, midiRhythmGuitarVolumeLabel, midiRhythmGuitarVolumeSlider, 0, 1);
-    layoutMixerChannel(midiPianoButton, midiPianoVolumeLabel, midiPianoVolumeSlider, 1, 1);
-    layoutMixerChannel(metronomeMixerButton, metronomeMixerVolumeLabel, metronomeMixerVolumeSlider, 2, 1);
-
-    //==========================================================================
-    // Song select
-
-    songTitleLabel.setBounds(100, 120, width - 200, 60);
-    loginScreenTitleLabel.setBounds((width - 420) / 2, 230, 420, 58);
-    accountStatusLabel.setBounds((width - 420) / 2, 292, 420, 34);
-    accountLoginButton.setBounds((width - 420) / 2 + 20, 344, 180, 42);
-    accountRegisterButton.setBounds((width - 420) / 2 + 220, 344, 180, 42);
-    currentUserLabel.setBounds(18, 12, juce::jmax(200, width - 150), 28);
-    logoutButton.setBounds(width - 122, 10, 104, 30);
-
-    const int songCardWidth = juce::jmin(620, width - 120);
-    const int songCardX = (width - songCardWidth) / 2;
-    songPridumayButton.setBounds(songCardX + 14, 210, songCardWidth - 28, 42);
-    songPridumayBestLabel.setBounds(songCardX + 14, 252, songCardWidth - 28, 24);
-    onlineCatalogButton.setBounds(songCardX + 14, 292, songCardWidth - 28, 42);
-    onlineCatalogStatusLabel.setBounds(songCardX + 14, 338, songCardWidth - 28, 28);
-    accountStatusLabel.setBounds(songCardX + 14, 368, songCardWidth - 230, 30);
-    accountLoginButton.setBounds(songCardX + songCardWidth - 208, 368, 92, 30);
-    accountRegisterButton.setBounds(songCardX + songCardWidth - 108, 368, 94, 30);
-    leaderboardTitleLabel.setBounds(songCardX + 14, 405, songCardWidth - 28, 30);
-    refreshLeaderboardButton.setBounds(songCardX + songCardWidth - 174, 440, 160, 34);
-    leaderboardLabel.setBounds(songCardX + 24, 440, songCardWidth - 220, 375);
-
-
-    //==========================================================================
-    // Tuner
-
-    if (tunerScreen)
-    {
-        const int tunerLeft = 42;
-        const int tunerGap = 22;
-        const int tunerLeftWidth = (width - 84 - tunerGap) * 43 / 100;
-        const int tunerRightX = tunerLeft + tunerLeftWidth + tunerGap;
-        const int tunerRightWidth = width - 42 - tunerRightX;
-        tunerTitleLabel.setBounds(tunerRightX + 12, 126, tunerRightWidth - 24, 28);
-        tunerNoteLabel.setBounds(tunerRightX + 12, 210, tunerRightWidth - 24, 76);
-        tunerFrequencyLabel.setBounds(tunerRightX + 12, 282, tunerRightWidth - 24, 28);
-        tunerStringLabel.setBounds(tunerRightX + 12, 318, tunerRightWidth - 24, 30);
-        tunerCentsLabel.setBounds(tunerRightX + 12, 350, tunerRightWidth - 24, 30);
-        tunerStatusLabel.setBounds(tunerRightX + 12, 388, tunerRightWidth - 24, 40);
-        const int tunerButtonWidth = juce::jmin(250, (width - 100) / 2);
-        const int tunerButtonGap = 18;
-        const int tunerButtonsX = (width - (tunerButtonWidth * 2 + tunerButtonGap)) / 2;
-        tunerSkipButton.setBounds(tunerButtonsX, getHeight() - 76, tunerButtonWidth, 46);
-        tunerStartButton.setBounds(tunerButtonsX + tunerButtonWidth + tunerButtonGap, getHeight() - 76, tunerButtonWidth, 46);
-    }
 
     if (authScreen)
     {
-        const int cardWidth = juce::jmin(460, width - 48);
+        const int cardWidth = juce::jmin(560, width - 48);
+        const int cardHeight = 400;
         const int cardX = (width - cardWidth) / 2;
-        loginScreenTitleLabel.setBounds(cardX, 230, cardWidth, 58);
-        accountStatusLabel.setBounds(cardX + 20, 292, cardWidth - 40, 34);
-        accountLoginButton.setBounds(cardX + 20, 344, (cardWidth - 50) / 2, 42);
-        accountRegisterButton.setBounds(cardX + 30 + (cardWidth - 50) / 2, 344,
-                                        (cardWidth - 50) / 2, 42);
+        const int cardY = juce::jmax(150, (height - cardHeight) / 2);
+
+        loginScreenTitleLabel.setBounds(cardX + 40, cardY + 114, cardWidth - 80, 52);
+        accountStatusLabel.setJustificationType(juce::Justification::centred);
+        accountStatusLabel.setBounds(cardX + 50, cardY + 198, cardWidth - 100, 38);
+
+        const int buttonWidth = (cardWidth - 92) / 2;
+        accountLoginButton.setBounds(cardX + 40, cardY + 276, buttonWidth, 44);
+        accountRegisterButton.setBounds(cardX + 52 + buttonWidth, cardY + 276,
+                                        buttonWidth, 44);
+
+        verifyEmailButton.setBounds(cardX + 40, cardY + 338, buttonWidth, 28);
+        forgotPasswordButton.setBounds(cardX + 52 + buttonWidth, cardY + 338,
+                                       buttonWidth, 28);
     }
+
+    //==========================================================================
+    // Song select
+    //==========================================================================
+
+    if (songSelect)
+    {
+        accountStatusLabel.setJustificationType(juce::Justification::centredLeft);
+        currentUserLabel.setBounds(width - 362, 48, 220, 22);
+        currentUserLabel.setJustificationType(juce::Justification::centredLeft);
+        logoutButton.setBounds(width - 122, 42, 94, 32);
+        songTitleLabel.setBounds(48, 140, width - 96, 44);
+
+        const int contentY = 228;
+        const int availableH = juce::jmax(320, height - 68 - 20 - contentY);
+        const int contentH = juce::jmin(560, availableH);
+        const int footerY = contentY + contentH + 20;
+        const int contentW = width - 96;
+        const int gap = 20;
+        const int leftW = contentW * 56 / 100;
+        const int rightX = 48 + leftW + gap;
+        const int rightW = contentW - leftW - gap;
+
+        songPridumayBestLabel.setBounds(48 + 24 + 138, contentY + 78,
+                                        leftW - 24 - 138 - 24, 20);
+
+        const int buttonY = contentY + contentH - 64;
+        const int available = leftW - 48;
+        const int startW = juce::jmin(180, (available - 12) / 2);
+        const int onlineW = juce::jmin(240, available - startW - 12);
+        songPridumayButton.setBounds(48 + 24, buttonY, startW, 42);
+        onlineCatalogButton.setBounds(48 + 24 + startW + 12, buttonY, onlineW, 42);
+        onlineCatalogStatusLabel.setBounds(48 + 24, buttonY - 30, leftW - 48, 22);
+
+        // Catalogue list between the header block and the action buttons.
+        const int listTop = contentY + 186;
+        const int listBottom = buttonY - 38;
+        songListBox.setBounds(48 + 18, listTop, leftW - 36,
+                              juce::jmax(56, listBottom - listTop));
+
+        leaderboardTitleLabel.setBounds(rightX + 24, contentY + 38, rightW - 48, 30);
+        refreshLeaderboardButton.setBounds(rightX + rightW - 142, contentY + 68,
+                                           118, 32);
+        leaderboardLabel.setBounds(rightX + 24, contentY + 118,
+                                   rightW - 48, contentH - 142);
+
+        accountStatusLabel.setBounds(24 + 34, footerY + 7, width - 48 - 58, 30);
+    }
+
+    //==========================================================================
+    // Tuner
+    //==========================================================================
+
+    if (tunerScreen)
+    {
+        const int margin = 42;
+        const int gap = 20;
+        const int panelY = 190;
+        const int panelH = juce::jmin(560, juce::jmax(380, height - 190 - 120));
+        const int leftW = (width - 84 - gap) * 44 / 100;
+        const int rightX = margin + leftW + gap;
+        const int rightW = width - margin - rightX;
+
+        tunerTitleLabel.setBounds(rightX + 24, panelY + 24, rightW - 48, 20);
+        tunerNoteLabel.setBounds(rightX + 24, panelY + 142, rightW - 48, 96);
+        tunerFrequencyLabel.setBounds(rightX + 24, panelY + 242, rightW - 48, 26);
+        tunerStringLabel.setBounds(rightX + rightW - 180, panelY + 278, 160, 30);
+        tunerCentsLabel.setBounds(rightX + rightW - 180, panelY + 310, 160, 30);
+        tunerStringLabel.setJustificationType(juce::Justification::centredRight);
+        tunerCentsLabel.setJustificationType(juce::Justification::centredRight);
+        tunerStatusLabel.setBounds(rightX + 40, panelY + 368, rightW - 80, 40);
+        tunerStatusLabel.setJustificationType(juce::Justification::centred);
+
+        const int buttonWidth = juce::jmin(230, (width - 100) / 2);
+        const int buttonGap = 16;
+        const int buttonsX = (width - (buttonWidth * 2 + buttonGap)) / 2;
+        const int buttonY = panelY + panelH + 24;
+        tunerSkipButton.setBounds(buttonsX, buttonY, buttonWidth, 46);
+        tunerStartButton.setBounds(buttonsX + buttonWidth + buttonGap,
+                                   buttonY, buttonWidth, 46);
+    }
+
+    //==========================================================================
+    // Results
+    //==========================================================================
 
     if (finishedScreen)
     {
@@ -5232,8 +6866,112 @@ void MainComponent::resized()
         const int gap = 20;
         const int totalWidth = buttonWidth * 2 + gap;
         const int left = (width - totalWidth) / 2;
-        const int y = getHeight() - 82;
+        const int cardBottom = 82 + juce::jmax(520, height - 170);
+        const int y = height >= 820 ? cardBottom - 56 : height - 76;
         gameStartButton.setBounds(left, y, buttonWidth, 44);
         menuButton.setBounds(left + buttonWidth + gap, y, buttonWidth, 44);
+        gameStartButton.setButtonText("PLAY AGAIN");
+        menuButton.setButtonText("MAIN MENU");
+    }
+
+    //==========================================================================
+    // Gameplay
+    //==========================================================================
+
+    if (showGame)
+    {
+        menuButton.setButtonText(gameState == GameState::Paused ? "BACK" : "MENU");
+        const int hudY = 120;
+        const int hudH = 96;
+        const int bottomH = juce::jlimit(124, 160, height / 6);
+        const int bottomY = height - 24 - bottomH;
+        const int studioH = juce::jlimit(176, 218, height / 4);
+        const int studioY = bottomY - 14 - studioH;
+        const int tabY = hudY + hudH + 12;
+        const int tabH = juce::jmax(150, studioY - 12 - tabY);
+
+        const int audioW = 112;
+        const int menuW = 100;
+        const int pauseW = 82;
+        const int startW = 76;
+        const int actionGap = 8;
+        const int actionsW = audioW + menuW + pauseW + startW + actionGap * 3;
+        const int actionY = 46;
+        const int actionH = 36;
+        int actionX = width - 24 - actionsW;
+        gameStartButton.setBounds(actionX, actionY, startW, actionH);
+        actionX += startW + actionGap;
+        pauseButton.setBounds(actionX, actionY, pauseW, actionH);
+        actionX += pauseW + actionGap;
+        menuButton.setBounds(actionX, actionY, menuW, actionH);
+        actionX += menuW + actionGap;
+        audioSettingsButton.setBounds(actionX, actionY, audioW, actionH);
+
+        gameSongTitleLabel.setBounds(210, 45, juce::jmax(200, width - 640), 28);
+
+        beatLabel.setBounds(44 + 46, 83, 30, 22);
+        barBeatLabel.setBounds(132 + 40, 83, 28, 22);
+        bpmLabel.setBounds(212 + 42, 83, 44, 22);
+
+        speed50Button.setBounds(310, 82, 44, 24);
+        speed100Button.setBounds(360, 82, 48, 24);
+        speed120Button.setBounds(414, 82, 48, 24);
+
+        pitchLabel.setBounds(24 + 18, hudY + 36, 190 - 36, 48);
+        targetNoteLabel.setBounds(width - 214 + 18, hudY + 36, 190 - 36, 48);
+
+        tablatureComponent.setBounds(24, tabY, width - 48, tabH);
+
+        const int pedalW = juce::jmin(252, width / 3);
+        const int pedalX = 24;
+        const int pedalTop = studioY;
+        distortionButton.setBounds(pedalX + 18, pedalTop + studioH - 46,
+                                   pedalW - 36, 32);
+        distortionDriveLabel.setBounds(pedalX + 16, pedalTop + 88,
+                                       (pedalW - 48) / 2, 16);
+        distortionToneLabel.setBounds(pedalX + 16 + (pedalW - 48) / 2 + 16,
+                                      pedalTop + 88, (pedalW - 48) / 2, 16);
+        distortionDriveSlider.setBounds(pedalX + 12, pedalTop + 104,
+                                        (pedalW - 48) / 2 + 8, 52);
+        distortionToneSlider.setBounds(pedalX + 32 + (pedalW - 48) / 2,
+                                       pedalTop + 104, (pedalW - 48) / 2 + 8, 52);
+
+        const int mixerX = 24 + pedalW + 16;
+        const int mixerW = width - 24 - mixerX;
+        const int channelX = mixerX + 14;
+        const int channelTop = studioY + 66;
+        const int cellGap = 12;
+        const int cellW = (mixerW - 28 - cellGap * 2) / 3;
+        const int rowH = (studioH - 66 - 10) / 2;
+
+        auto layoutMixerChannel = [&](juce::TextButton& button, juce::Label& label,
+                                      juce::Slider& slider, int column, int row)
+        {
+            const int x = channelX + column * (cellW + cellGap);
+            const int y = channelTop + row * rowH;
+            button.setBounds(x, y, cellW, 22);
+            slider.setBounds(x, y + 27, cellW, 18);
+            label.setBounds(x, y + 48, cellW, 12);
+        };
+
+        layoutMixerChannel(midiBackingButton, midiBackingVolumeLabel,
+                           midiBackingVolumeSlider, 0, 0);
+        layoutMixerChannel(midiDrumsButton, midiDrumsVolumeLabel,
+                           midiDrumsVolumeSlider, 1, 0);
+        layoutMixerChannel(midiBassButton, midiBassVolumeLabel,
+                           midiBassVolumeSlider, 2, 0);
+        layoutMixerChannel(midiRhythmGuitarButton, midiRhythmGuitarVolumeLabel,
+                           midiRhythmGuitarVolumeSlider, 0, 1);
+        layoutMixerChannel(midiPianoButton, midiPianoVolumeLabel,
+                           midiPianoVolumeSlider, 1, 1);
+        layoutMixerChannel(metronomeMixerButton, metronomeMixerVolumeLabel,
+                           metronomeMixerVolumeSlider, 2, 1);
+
+        const int bottomW = width - 48;
+        const int judgementW = bottomW * 40 / 100;
+        const int scoreX = 24 + bottomW * 66 / 100;
+        hitLabel.setBounds(24 + 24, bottomY + 34, judgementW - 48, bottomH - 44);
+        gameSessionLabel.setBounds(scoreX + 16, bottomY + 24,
+                                   width - 24 - scoreX - 32, bottomH - 30);
     }
 }

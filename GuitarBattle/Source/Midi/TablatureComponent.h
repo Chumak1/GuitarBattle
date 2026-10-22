@@ -32,6 +32,8 @@ private:
     juce::Time lastSyncTime;
 
     double pixelsPerBeat = 90.0;
+    float layoutStringSpacing = 26.0f;
+    float layoutFirstStringY = 60.0f;
 
     static constexpr int numberOfStrings = 6;
 

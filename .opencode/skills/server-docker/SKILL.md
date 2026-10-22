@@ -20,6 +20,14 @@ curl.exe -s http://localhost:8000/health/ready
 
 Ожидаемый ответ: `{"status":"ready","database":"ok"}`.
 
+## Production (fretfight.online)
+
+- DNS: публичная зона `fretfight-online` в Yandex Cloud; NS `ns1.yandexcloud.net`, `ns2.yandexcloud.net`.
+- Edge: Caddy на хосте, `/etc/caddy/Caddyfile`; TLS Let's Encrypt; reverse proxy на `127.0.0.1:8000`.
+- API-контейнер слушает только `127.0.0.1:8000` (`API_BIND_HOST=127.0.0.1`). В security group открыты только 22 (админский IP), 80 и 443.
+- Проверка: `curl.exe -s https://fretfight.online/health/ready`, `https://fretfight.online/admin/`.
+- Caddy: `sudo systemctl status caddy`; после правки конфига — `sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && sudo systemctl reload caddy`.
+
 ## Диагностика
 
 ```powershell
@@ -30,6 +38,18 @@ curl.exe -s http://localhost:8000/api/v1/songs?limit=2
 ```
 
 Документация: `http://localhost:8000/docs` (кроме `APP_ENV=production`).
+
+## Email (SMTP)
+
+- Переменные: `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`,
+  `SMTP_SECURITY` (`starttls`/`ssl`/`none`), `SMTP_FROM_EMAIL`, `SMTP_FROM_NAME`.
+- Порт 587 — обычно `starttls`, порт 465 — `ssl`.
+- Если `SMTP_HOST` пуст в development, код подтверждения пишется в
+  `docker compose logs api`. В production при пустом `SMTP_HOST` регистрация
+  возвращает 503: смотреть логи с кодами там нельзя.
+- Проверка: зарегистрировать тестовый аккаунт, найти письмо, ввести код через
+  `POST /api/v1/auth/verify-email`, затем проверить вход.
+- Не печатать SMTP-пароль и коды в чат/лог.
 
 ## База данных
 
@@ -68,12 +88,14 @@ docker compose exec db psql -U <POSTGRES_USER> -d <POSTGRES_DB> -c "UPDATE users
 
 ## Тесты
 
-Сейчас `tests/` содержит только README. При добавлении:
-
 ```powershell
-docker compose exec api python -m compileall app
-# после появления pytest:
-docker compose exec api pytest -q
+# Python-код и миграции
+python -m compileall -q app tests migrations
+
+# Полный набор; conftest сам поднимает одноразовый PostgreSQL на 127.0.0.1:55432
+& "D:\GuitarBattle\GuitarBattleServer\.venv-test\Scripts\python.exe" -m pytest -q
 ```
 
-Для тестов нужен отдельный test-database или транзакции с откатом; не гоняй destructive-тесты по рабочей БД.
+Тесты используют `TEST_DATABASE_URL` и отдельную БД с `test` в имени; рабочую БД
+они не трогают. Письма в тестах складываются во внутренний outbox, SMTP не нужен.
+Не гоняй destructive-тесты по рабочей БД.

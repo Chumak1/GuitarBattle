@@ -7,31 +7,67 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 
 ## База
 
-- Клиент: `http://localhost:8000/api/v1` — единая константа `ApiClient::baseUrl` в `Source/Network/ApiClient.h`; скачивание ассетов идёт от `ApiClient::serverOrigin`.
-- Сервер: `GuitarBattleServer/app/api/v1/`.
+- Клиент: `https://fretfight.online/api/v1` — единая константа `ApiClient::baseUrl` в `Source/Network/ApiClient.h`; скачивание ассетов идёт от `ApiClient::serverOrigin`.
+- Сервер: `GuitarBattleServer/app/api/v1/`; админ-панель — статическая страница `GuitarBattleServer/app/static/admin/`, отдаётся тем же FastAPI по `/admin/`.
 - Формат: JSON UTF-8.
-- Авторизация: `Authorization: Bearer <access_token>`.
+- Авторизация: `Authorization: Bearer <access_token>`. Панель хранит токен в `sessionStorage` и проверяет права запросом к `/admin/songs`.
 
 ## Эндпоинты
 
 | Метод | Путь | Тело / параметры | Ответ |
 |---|---|---|---|
-| POST | `/auth/register` | `username`, `email`, `password`, `display_name?` | профиль |
-| POST | `/auth/login` | `identifier`, `password` | `access_token`, `token_type` |
+| POST | `/auth/register` | `username`, `email`, `password`, `display_name?` | профиль, `email_verified=false` |
+| POST | `/auth/login` | `identifier`, `password` | `access_token`, `token_type`; 403, если почта не подтверждена |
+| POST | `/auth/verify-email` | `email`, `code` (6 цифр) | `access_token`; подтверждает почту |
+| POST | `/auth/resend-verification` | `email` | 202, всегда одинаковый ответ |
+| POST | `/auth/forgot-password` | `email` | 202, всегда одинаковый ответ |
+| POST | `/auth/reset-password` | `email`, `code`, `new_password` | `access_token`; старые токены инвалидируются |
 | GET | `/auth/me` | Bearer | профиль |
 | PATCH | `/auth/me` | `display_name` | профиль |
+| POST | `/auth/change-password` | Bearer, `current_password`, `new_password` | 204, без тела; старые токены инвалидируются |
 | GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных; у каждого элемента `readiness` |
 | GET | `/songs/{slug}` | — | детали + `version` + `files` + `assets` + `readiness` |
 | GET | `/songs/{slug}/files/{file_id}/download` | — | MIDI/MP3 |
+| GET | `/admin/songs` | Bearer admin, `search?`, `published?`, `limit`, `offset` | черновики и опубликованные |
+| POST | `/admin/songs` | Bearer admin, `slug`, `title`, `bpm`, остальные поля опциональны | черновик |
+| GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `readiness` |
+| PATCH | `/admin/songs/{id}` | Bearer admin, поля песни | обновлённая песня |
+| POST | `/admin/songs/{id}/publish` | Bearer admin | публикация |
+| POST | `/admin/songs/{id}/unpublish` | Bearer admin | снятие с публикации |
+| DELETE | `/admin/songs/{id}` | Bearer admin | 204 |
 | POST | `/admin/songs/{id}/files/midi` | Bearer admin, multipart `file` | новый `SongFile` (`role=midi`) |
 | POST | `/admin/songs/{id}/files/audio/{role}` | Bearer admin, multipart `file`; `role`: `drums`, `bass`, `guitar`, `others` | новый `SongFile` |
+| GET | `/admin/songs/{id}/files` | Bearer admin | все версии файлов |
+| GET | `/admin/songs/{id}/files/{file_id}/download` | Bearer admin | файл |
+| POST | `/admin/songs/{id}/files/{file_id}/analyze` | Bearer admin | сохранённый анализ MIDI |
 | POST | `/games/sessions` | `song_id` (UUID), `speed_percent` | сессия |
 | POST | `/games/sessions/{id}/finish` | `score_points`, `accuracy_percent`, `max_combo`, `perfect_count`, `good_count`, `miss_count` | score |
 | GET | `/games/history` | Bearer, `limit`, `offset` | история |
+| GET | `/games/best-scores` | Bearer | лучший счёт по каждой опубликованной песне + сумма рейтинга |
 | GET | `/leaderboard` | `song_slug?`, `limit`, `offset` | результаты |
-| GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков |
+| GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков (сумма лучших результатов по песням) |
 
 Админские маршруты `/admin/songs...` требуют `is_admin`.
+
+## Регистрация и восстановление пароля
+
+1. `POST /auth/register` создаёт пользователя с `email_verified=false`, генерирует
+   6-значный код и отправляет письмо. Если SMTP не настроен в production,
+   возвращается 503 и пользователь не создаётся.
+2. `POST /auth/verify-email` проверяет код, ставит `email_verified=true` и сразу
+   возвращает `access_token`. Повторная проверка уже подтверждённой почты — 400.
+3. `POST /auth/login` для неподтверждённой почты возвращает 403 с
+   `detail="Email address is not verified"`; клиент предлагает `VERIFY EMAIL`.
+4. `POST /auth/resend-verification` и `POST /auth/forgot-password` всегда
+   возвращают 202, чтобы не раскрывать наличие аккаунта. Повторная отправка
+   ограничена cooldown (по умолчанию 60 секунд).
+5. `POST /auth/reset-password` проверяет код, меняет пароль, подтверждает почту и
+   возвращает новый `access_token`. Старые JWT инвалидируются через
+   `users.token_version`.
+
+Коды хранятся только как HMAC-SHA256, живут 15 минут, одноразовые, максимум
+5 неверных попыток. Существующие аккаунты миграция `0005` помечает
+подтверждёнными, чтобы не заблокировать игроков при выкатке.
 
 ## Версии контента и кэш ассетов
 
@@ -77,11 +113,16 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 
 `Source/MainComponent.cpp`:
 
-- `authenticateOnlineAccount` / `finishOnlineSignIn` — register/login/me.
+- `authenticateOnlineAccount` — вход и регистрация.
+- `showEmailVerificationDialog` — ввод/повторная отправка кода подтверждения.
+- `recoverOnlineAccountPassword` / `showPasswordResetDialog` — восстановление пароля.
+- `finishOnlineSignIn` — загрузка `/auth/me` и переход в приложение.
 - `startOnlineGameSession` — создание сессии.
 - `submitOnlineGameResult` — отправка результата.
 - `refreshGlobalLeaderboard` — глобальный рейтинг.
-- `loadFirstOnlineCatalogSong` — каталог, скачивание MIDI/MP3.
+- `refreshOnlineCatalog` — список опубликованных песен на главном экране.
+- `refreshOnlineBestScores` — лучшие счета пользователя по каждой песне (`/games/best-scores`).
+- `startSelectedSong` / `downloadOnlineSong` — выбор строки каталога и загрузка ассетов по требованию.
 - Поиск по `apiClient.`, `ApiClient::get`, `ApiClient::post`.
 
 ## Чек-лист изменения API
@@ -102,5 +143,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 - `accuracy_percent` — 0–100, не 0–1.
 - `song_id` — UUID, `slug` — строка.
 - `access_token` живёт только в памяти; при 401 нужен повторный логин.
+- При 403 на `/auth/login` почта не подтверждена; это не неверный пароль.
+- После смены/сброса пароля старый JWT перестаёт работать (401) из-за `token_version`.
 - Ошибки FastAPI — `{"detail": ...}`; клиент должен это учитывать.
+- SMTP-переменные и коды никогда не логировать в production.
 - Не логировать токены и пароли.
