@@ -39,6 +39,34 @@ class LoginRequest(BaseModel):
         return value.strip().lower()
 
 
+class EmailOnlyRequest(BaseModel):
+    email: EmailStr
+
+    @field_validator("email")
+    @classmethod
+    def normalize_email(cls, value: str) -> str:
+        return value.strip().lower()
+
+
+class VerifyEmailRequest(EmailOnlyRequest):
+    code: str = Field(min_length=6, max_length=6, pattern=r"^\d{6}$")
+
+    @field_validator("code", mode="before")
+    @classmethod
+    def normalize_code(cls, value: object) -> object:
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class ResetPasswordRequest(VerifyEmailRequest):
+    new_password: str = Field(min_length=10, max_length=128)
+
+
+class MessageResponse(BaseModel):
+    message: str
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -67,3 +95,8 @@ class ProfileUpdateRequest(BaseModel):
         if not cleaned:
             raise ValueError("Display name cannot be blank")
         return cleaned
+
+
+class PasswordChangeRequest(BaseModel):
+    current_password: str = Field(min_length=1, max_length=128)
+    new_password: str = Field(min_length=10, max_length=128)

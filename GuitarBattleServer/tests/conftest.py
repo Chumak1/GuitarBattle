@@ -242,6 +242,16 @@ def clean_db(db_engine):
     yield
 
 
+@pytest.fixture(autouse=True)
+def clear_email_outbox():
+    """Keep captured verification/reset emails isolated per test."""
+    from app.services.email_service import clear_test_outbox
+
+    clear_test_outbox()
+    yield
+    clear_test_outbox()
+
+
 @pytest.fixture()
 def db_session(clean_db):
     session = SessionLocal()
@@ -305,5 +315,14 @@ def draft_song(db_client, admin_user) -> dict[str, Any]:
 @pytest.fixture()
 def published_song(db_client, admin_user) -> dict[str, Any]:
     song = helpers.create_song(db_client, admin_user["headers"])
+    updated = helpers.publish_song(db_client, admin_user["headers"], song["id"])
+    return {**song, **updated}
+
+
+@pytest.fixture()
+def second_published_song(db_client, admin_user) -> dict[str, Any]:
+    song = helpers.create_song(
+        db_client, admin_user["headers"], title="Second Test Song"
+    )
     updated = helpers.publish_song(db_client, admin_user["headers"], song["id"])
     return {**song, **updated}

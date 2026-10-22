@@ -5,14 +5,39 @@ HTTP contract the JUCE client uses, not the service internals.
 """
 from __future__ import annotations
 
+import re
 import uuid
 from io import BytesIO
 from typing import Any
 
 import mido
 
+from app.services.email_service import get_test_outbox
+
 API = "/api/v1"
 DEFAULT_PASSWORD = "GuitarBattleTest123"
+_CODE_RE = re.compile(r"\b(\d{6})\b")
+
+
+def _latest_message_to(email: str, subject_part: str) -> str:
+    for message in reversed(get_test_outbox()):
+        if message.to == email and subject_part in message.subject:
+            return message.text
+    raise AssertionError(f"No email with {subject_part!r} was sent to {email}")
+
+
+def verification_code(email: str) -> str:
+    text = _latest_message_to(email, "подтверждение")
+    match = _CODE_RE.search(text)
+    assert match is not None, text
+    return match.group(1)
+
+
+def password_reset_code(email: str) -> str:
+    text = _latest_message_to(email, "восстановление")
+    match = _CODE_RE.search(text)
+    assert match is not None, text
+    return match.group(1)
 
 
 def unique(prefix: str) -> str:
@@ -60,9 +85,13 @@ def register_user(
         "register_response": body,
     }
     if login:
-        token = login_user(client, username=username, password=password)
-        account["token"] = token["access_token"]
-        account["headers"] = auth_headers(token["access_token"])
+        verification = client.post(
+            f"{API}/auth/verify-email",
+            json={"email": body["email"], "code": verification_code(body["email"])},
+        )
+        assert verification.status_code == 200, verification.text
+        account["token"] = verification.json()["access_token"]
+        account["headers"] = auth_headers(account["token"])
     return account
 
 

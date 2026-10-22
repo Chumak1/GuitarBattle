@@ -29,10 +29,21 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       SONG_FILES_DIR: /data/song_files
       MAX_MIDI_UPLOAD_BYTES: 20971520
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USERNAME: ${SMTP_USERNAME:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@fretfight.online}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-GuitarBattle}
+      SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
+      EMAIL_CODE_EXPIRE_MINUTES: ${EMAIL_CODE_EXPIRE_MINUTES:-15}
+      EMAIL_CODE_RESEND_SECONDS: ${EMAIL_CODE_RESEND_SECONDS:-60}
+      EMAIL_CODE_MAX_ATTEMPTS: ${EMAIL_CODE_MAX_ATTEMPTS:-5}
     volumes:
       - song_files_data:/data/song_files
     ports:
-      - "127.0.0.1:8000:8000"
+      - "${API_BIND_HOST:-127.0.0.1}:8000:8000"
     depends_on:
       db:
         condition: service_healthy

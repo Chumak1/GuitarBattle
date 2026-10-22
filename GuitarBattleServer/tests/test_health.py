@@ -15,9 +15,12 @@ def test_readiness_reports_database(db_client):
     assert response.json() == {"status": "ready", "database": "ok"}
 
 
-def test_root_metadata(client):
+def test_root_serves_landing_page(client):
     response = client.get("/")
     assert response.status_code == 200
-    body = response.json()
-    assert body["service"]
-    assert body["version"] == "0.1.0"
+    assert response.headers["content-type"].startswith("text/html")
+    assert response.headers["cache-control"] == "no-cache, must-revalidate"
+    body = response.text.lower()
+    assert "fretfight" in body
+    assert "first guitar battle" in body
+    assert "online" in body
