@@ -25,6 +25,12 @@ GuitarBattle/Builds/**/x64/
 /GuitarBattle/Backup/
 /GuitarBattle/Source.zip
 /GuitarBattleServer.zip
+/GuitarBattleServer2.zip
+/GuitarBattle/GuitarBattle.zip
+*.bak-ui
+
+# Ableton / editor sidecar files
+*.asd
 
 # Python / server
 GuitarBattleServer/.env
