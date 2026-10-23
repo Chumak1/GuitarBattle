@@ -15,7 +15,9 @@ public:
     double getBpm() const;
     double getSampleRate() const;
 
-    uint64_t getBeatLengthSamples() const;
+    // Fractional beat length. Keeping the fractional part prevents the
+    // metronome from drifting against the MIDI timeline over long songs.
+    double getBeatLengthSamples() const;
 
     //======================================================================
     // Timeline
@@ -37,10 +39,15 @@ public:
     void pauseScheduler();
 
     void resumeScheduler(
-        uint64_t currentSample);
+        uint64_t currentSample,
+        uint64_t songStartSample);
 
-    void processScheduler(
-        uint64_t currentSample);
+    // Returns the sample offset of the first beat inside this block, or -1
+    // when no beat starts in the block. This lets the caller place the click
+    // at the exact beat sample instead of quantising it to the block start.
+    int processScheduler(
+        uint64_t currentSample,
+        int numSamples);
 
     bool consumeTrigger();
 
@@ -56,7 +63,7 @@ private:
     //======================================================================
     // Scheduler
 
-    std::atomic<uint64_t> nextBeatSample{ 0 };
+    std::atomic<double> nextBeatSample{ 0.0 };
     std::atomic<uint64_t> beatCounter{ 0 };
 
     std::atomic<int> beatInBar{ 0 };

@@ -431,17 +431,23 @@ MainComponent::MainComponent()
                 audioSampleCounter.load(
                     std::memory_order_relaxed);
 
-            const auto beatLengthSamples =
+            const double beatLengthSamples =
                 metronome.getBeatLengthSamples();
 
             // Give the player a full bar of four audible metronome clicks.
             // The song timeline starts on the beat immediately after click 4.
+            // Use the fractional beat length so the count-in and the song start
+            // stay locked to the same timeline as the MIDI backing.
             countInRemaining.store(4, std::memory_order_relaxed);
             countInActive.store(true, std::memory_order_release);
             tablatureComponent.setPlayheadRunning(false);
 
+            const auto countInSamples =
+                static_cast<uint64_t>(
+                    std::llround(beatLengthSamples * 4.0));
+
             gameplayStartSample.store(
-                currentSample + beatLengthSamples * 4,
+                currentSample + countInSamples,
                 std::memory_order_relaxed);
 
             currentPlayheadBeat.store(
@@ -750,25 +756,12 @@ MainComponent::MainComponent()
         };
 
     //==========================================================================
-    // Register WAV/MP3 decoders before the local catalogue loads its stems.
+    // Register WAV/MP3 decoders before online song assets are loaded.
     audioFormatManager.registerBasicFormats();
 
-    // Build the local song catalogue before selecting the initial song.
-    songsRoot = juce::File("D:\\GuitarBattle\\GuitarBattle\\Songs");
-    if (!songsRoot.isDirectory())
-        songsRoot = juce::File::getCurrentWorkingDirectory().getChildFile("Songs");
-    scanSongLibrary();
+    // The catalogue is server-only. Local Songs/ folders are intentionally
+    // ignored; published songs arrive asynchronously from refreshOnlineCatalog().
     songPridumayButton.setButtonText("START SONG");
-    if (!songLibrary.empty())
-    {
-        loadSongMidi(songLibrary.front().title);
-    }
-    else
-        DBG("SONG LIBRARY EMPTY: expected song folders under " + songsRoot.getFullPathName());
-
-    // Build the song-select catalogue rows from the local library. Published
-    // online songs are appended asynchronously by refreshOnlineCatalog(), so the
-    // message thread never waits for the network here.
     rebuildCatalogRows(juce::var());
 
     //==========================================================================
@@ -981,7 +974,7 @@ MainComponent::MainComponent()
     addAndMakeVisible(songTitleLabel);
 
     // Current song title shown in the gameplay header.
-    gameSongTitleLabel.setText(juce::String::fromUTF8("\xD0\x9F\xD1\x80\xD0\xB8\xD0\xB4\xD1\x83\xD0\xBC\xD0\xB0\xD0\xB9 \xD1\x81\xD0\xB2\xD0\xB5\xD1\x82\xD0\xBB\xD1\x8B\xD0\xB9 \xD0\xBC\xD0\xB8\xD1\x80"), juce::dontSendNotification);
+    gameSongTitleLabel.setText("FretFight", juce::dontSendNotification);
     gameSongTitleLabel.setFont(GameUi::heading(23.0f));
     gameSongTitleLabel.setColour(juce::Label::textColourId, UiColors::text);
     gameSongTitleLabel.setJustificationType(juce::Justification::centredLeft);
@@ -1169,9 +1162,8 @@ MainComponent::MainComponent()
         refreshOnlineCatalog();
     };
 
-    // Pulse the catalogue as soon as the client starts so the song list is
-    // populated before the player signs in. Failures leave the local songs in
-    // place, exactly like the previous single-song behaviour.
+    // Populate the server catalogue as soon as the client starts. There is no
+    // local fallback: if the request fails the list stays empty until REFRESH.
     refreshOnlineCatalog();
 
     songMistButton.onClick = [] {};
@@ -1366,60 +1358,30 @@ MainComponent::MainComponent()
         };
 
     //==========================================================================
-    // Restore audio device settings
+    // Restore audio device settings and the server-hosted sound pack
 
     auto savedState =
         appProperties.getUserSettings()
         ->getXmlValue(
             "AudioDeviceState");
 
-    // Register decoders and load the optional clean electric-guitar SFZ bank
-    // before the audio device starts. The existing synth tone remains a fallback.
-    loadGuitarSampleBank();
-    loadBackingSampleBanks();
+    // The sound pack is downloaded from the server, never read from a local
+    // D:\GuitarBattle\... path.  A validated cache is decoded before the audio
+    // device starts; otherwise the built-in fallbacks are used until the
+    // background refresh finishes.
+    const auto cachedManifest = ClientAssets::readCachedManifest();
+    clientAssetsReady = ClientAssets::cacheMatches(cachedManifest);
+    clientAssetsRoot = clientAssetsReady ? ClientAssets::currentRoot()
+                                         : juce::File();
+
+    loadGuitarSampleBank(clientAssetsRoot);
+    loadBackingSampleBanks(clientAssetsRoot);
+    loadMetronomeSamples(clientAssetsRoot);
 
     // Song stems are loaded when a catalogue entry is selected.
 
-    setAudioChannels(
-        32,
-        2,
-        savedState.get());
-
-    // Older builds saved a two-input device state. Expand it once so a guitar
-    // connected to any input of a multi-channel interface is captured without
-    // asking the user to reconfigure the device first.
-    if (auto* settings = appProperties.getUserSettings())
-    {
-        if (!settings->getBoolValue("AudioInputsExpanded", false))
-        {
-            if (auto* device = deviceManager.getCurrentAudioDevice())
-            {
-                const int availableInputs = device->getInputChannelNames().size();
-                const int activeInputs =
-                    device->getActiveInputChannels().countNumberOfSetBits();
-
-                if (availableInputs > activeInputs && availableInputs > 0)
-                {
-                    auto setup = deviceManager.getAudioDeviceSetup();
-                    setup.inputChannels.clear();
-                    setup.inputChannels.setRange(
-                        0,
-                        juce::jmin(availableInputs, 32),
-                        true);
-                    setup.useDefaultInputChannels = false;
-
-                    // If the driver refuses the wider channel set, restore the
-                    // previously saved device setup instead of leaving the app
-                    // without an audio device.
-                    if (deviceManager.setAudioDeviceSetup(setup, true).isNotEmpty())
-                        deviceManager.initialise(32, 2, savedState.get(), true);
-                }
-            }
-
-            settings->setValue("AudioInputsExpanded", true);
-            settings->saveIfNeeded();
-        }
-    }
+    startAudioDevice(savedState.get());
+    startClientAssetRefresh();
 
     //==========================================================================
     // Start pitch thread
@@ -1441,6 +1403,10 @@ MainComponent::MainComponent()
 
 void MainComponent::timerCallback()
 {
+    // A downloaded sound pack is applied only while the audio device is idle.
+    if (pendingClientAssetsReload)
+        applyPendingClientAssetsReload();
+
     updateHitFeedbackAnimation();
 
     if (gameState != GameState::Playing)
@@ -1661,6 +1627,135 @@ MainComponent::~MainComponent()
 }
 
 //==============================================================================
+// Server-hosted sound pack
+//==============================================================================
+
+void MainComponent::startAudioDevice(const juce::XmlElement* savedState)
+{
+    setAudioChannels(32, 2, savedState);
+    audioDeviceStarted = true;
+
+    // Older builds saved a two-input device state. Expand it once so a guitar
+    // connected to any input of a multi-channel interface is captured without
+    // asking the user to reconfigure the device first.
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        if (! settings->getBoolValue("AudioInputsExpanded", false))
+        {
+            if (auto* device = deviceManager.getCurrentAudioDevice())
+            {
+                const int availableInputs = device->getInputChannelNames().size();
+                const int activeInputs =
+                    device->getActiveInputChannels().countNumberOfSetBits();
+
+                if (availableInputs > activeInputs && availableInputs > 0)
+                {
+                    auto setup = deviceManager.getAudioDeviceSetup();
+                    setup.inputChannels.clear();
+                    setup.inputChannels.setRange(
+                        0,
+                        juce::jmin(availableInputs, 32),
+                        true);
+                    setup.useDefaultInputChannels = false;
+
+                    // If the driver refuses the wider channel set, restore the
+                    // previously saved device setup instead of leaving the app
+                    // without an audio device.
+                    if (deviceManager.setAudioDeviceSetup(setup, true).isNotEmpty())
+                        deviceManager.initialise(32, 2, savedState, true);
+                }
+            }
+
+            settings->setValue("AudioInputsExpanded", true);
+            settings->saveIfNeeded();
+        }
+    }
+}
+
+void MainComponent::startClientAssetRefresh()
+{
+    if (clientAssetsRefreshInFlight)
+        return;
+
+    clientAssetsRefreshInFlight = true;
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    ClientAssets::refresh(apiClient,
+        [safeThis](ClientAssets::RefreshResult result)
+        {
+            auto* self = safeThis.getComponent();
+
+            if (self == nullptr)
+                return;
+
+            self->clientAssetsRefreshInFlight = false;
+
+            if (! result.ok)
+            {
+                if (! self->clientAssetsReady)
+                    self->onlineCatalogStatusLabel.setText(
+                        "Sound pack unavailable: " + result.message
+                            + " Built-in sounds will be used.",
+                        juce::dontSendNotification);
+
+                return;
+            }
+
+            const bool changed = result.updated
+                || ! self->clientAssetsReady
+                || self->clientAssetsRoot != ClientAssets::currentRoot();
+
+            self->clientAssetsRoot = ClientAssets::currentRoot();
+            self->clientAssetsReady = true;
+
+            if (changed)
+            {
+                self->pendingClientAssetsReload = true;
+                self->applyPendingClientAssetsReload();
+            }
+        });
+}
+
+void MainComponent::applyPendingClientAssetsReload()
+{
+    if (! pendingClientAssetsReload)
+        return;
+
+    // Never rebuild the sample banks under a running gameplay callback.  The
+    // timer applies the pack as soon as the player is back in a menu screen.
+    if (gameState == GameState::Playing || gameState == GameState::Paused)
+        return;
+
+    pendingClientAssetsReload = false;
+    reloadClientAssets();
+}
+
+void MainComponent::reloadClientAssets()
+{
+    if (! clientAssetsRoot.isDirectory())
+        return;
+
+    std::unique_ptr<juce::XmlElement> deviceState;
+
+    if (audioDeviceStarted)
+    {
+        deviceState = deviceManager.createStateXml();
+        shutdownAudio();
+        audioDeviceStarted = false;
+    }
+
+    loadGuitarSampleBank(clientAssetsRoot);
+    loadBackingSampleBanks(clientAssetsRoot);
+    loadMetronomeSamples(clientAssetsRoot);
+
+    startAudioDevice(deviceState.get());
+
+    resized();
+    repaint();
+}
+
+//==============================================================================
 // Pause
 //==============================================================================
 
@@ -1768,9 +1863,15 @@ void MainComponent::resumeGame()
 
 
 
-    // First click after resume comes one beat later.
+    // Resume on the shifted song grid so the metronome stays aligned with
+    // the MIDI backing and the already-running external audio timeline.
+    const auto resumeSongStart =
+        gameplayStartSample.load(
+            std::memory_order_relaxed);
+
     metronome.resumeScheduler(
-        currentSample);
+        currentSample,
+        resumeSongStart);
 
     metronomeSamplesRemaining = 0;
 
@@ -1844,32 +1945,6 @@ void MainComponent::returnToSongSelect()
 //==============================================================================
 // Target helpers
 //==============================================================================
-
-juce::File MainComponent::findSongAsset(const juce::File& folder,
-                                                const juce::StringArray& stems,
-                                                const juce::StringArray& extensions) const
-{
-    for (const auto& stem : stems)
-        for (const auto& extension : extensions)
-        {
-            auto candidate = folder.getChildFile(stem + extension);
-            if (candidate.existsAsFile()) return candidate;
-        }
-    // Accept files whose names contain the role, e.g. "Power metal - bass.wav".
-    juce::Array<juce::File> files;
-    folder.findChildFiles(files, juce::File::findFiles, false);
-    for (const auto& file : files)
-    {
-        const auto lowerName = file.getFileNameWithoutExtension().toLowerCase();
-        const auto lowerExt = file.getFileExtension().toLowerCase();
-        if (!extensions.contains(lowerExt)) continue;
-        for (const auto& stem : stems)
-            if (lowerName == stem.toLowerCase() || lowerName.contains(stem.toLowerCase()))
-                return file;
-    }
-    return {};
-}
-
 
 void MainComponent::authenticateOnlineAccount(bool createAccount)
 {
@@ -2887,8 +2962,7 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
     if (song.artist.isNotEmpty())
         meta.add(song.artist);
     meta.add(juce::String(juce::roundToInt(song.bpm)) + " BPM");
-    meta.add(song.online ? (song.downloaded ? "ONLINE / CACHED" : "ONLINE")
-                         : "LOCAL");
+    meta.add(song.downloaded ? "ONLINE / CACHED" : "ONLINE");
 
     g.setColour(UiColors::text);
     g.setFont(GameUi::font(14.0f, true));
@@ -2951,21 +3025,6 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
 
     std::vector<CatalogSong> rows;
 
-    // Local folders first, so the built-in "1 Power metal" track stays at hand
-    // even when the catalogue request fails.
-    for (const auto& entry : songLibrary)
-    {
-        if (entry.slug.isNotEmpty())
-            continue; // cached online songs are represented by the server list
-
-        CatalogSong row;
-        row.title = entry.title;
-        row.bpm = entry.bpm;
-        row.online = false;
-        row.downloaded = true;
-        rows.push_back(row);
-    }
-
     if (const auto* items = serverItems.getArray())
     {
         const auto cacheRoot = onlineSongsCacheRoot();
@@ -2988,18 +3047,6 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
             row.online = true;
             row.downloaded = findOnlineLibraryEntry(slug) != nullptr
                 || cacheRoot.getChildFile(slug).getChildFile("version.txt").existsAsFile();
-            rows.push_back(row);
-        }
-    }
-
-    if (rows.empty())
-    {
-        // Offline fallback: keep the local library usable as before.
-        for (const auto& entry : songLibrary)
-        {
-            CatalogSong row;
-            row.title = entry.title;
-            row.bpm = entry.bpm;
             rows.push_back(row);
         }
     }
@@ -3030,11 +3077,16 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
 
 void MainComponent::refreshOnlineCatalog()
 {
+    // The catalogue refresh is also a natural retry point when the initial
+    // sound-pack download failed (for example while the network was offline).
+    if (! clientAssetsReady && ! clientAssetsRefreshInFlight)
+        startClientAssetRefresh();
+
     onlineCatalogButton.setEnabled(false);
     onlineCatalogStatusLabel.setText("Loading song catalogue...", juce::dontSendNotification);
 
     // The request runs on an ApiClient worker thread; only this callback touches
-    // components. A failure keeps the local songs in the catalogue.
+    // components. A failure keeps the last server catalogue, if one was loaded.
     juce::Component::SafePointer<MainComponent> safeThis(this);
     apiClient.getJson("/songs?limit=100&offset=0", {}, 6000,
         [safeThis](ApiClient::Response response)
@@ -3048,7 +3100,7 @@ void MainComponent::refreshOnlineCatalog()
             if (!response.transportOk || !response.json.isObject())
             {
                 self->onlineCatalogStatusLabel.setText(
-                    "Server unavailable. Showing local songs. Press REFRESH CATALOG to retry.",
+                    "Server unavailable. Press REFRESH CATALOG to retry.",
                     juce::dontSendNotification);
                 return;
             }
@@ -3062,7 +3114,7 @@ void MainComponent::refreshOnlineCatalog()
             if (onlineCount <= 0)
             {
                 self->onlineCatalogStatusLabel.setText(
-                    "No published songs yet. Local songs are still available.",
+                    "No published songs yet. Publish a song, then press REFRESH CATALOG.",
                     juce::dontSendNotification);
             }
             else
@@ -3135,8 +3187,8 @@ MainComponent::SongEntry* MainComponent::findOnlineLibraryEntry(const juce::Stri
 
 int MainComponent::getBestScoreForSong(const juce::String& slug, const juce::String& title)
 {
-    // Local settings use the slug for online songs and the folder name for
-    // local ones; the title key keeps scores saved by older client versions.
+    // Server songs use the slug; the title key keeps scores saved by older
+    // client versions.
     int best = getBestScore(title);
 
     if (slug.isNotEmpty())
@@ -3159,8 +3211,8 @@ void MainComponent::selectCatalogSong(int index)
     selectedCatalogIndex = index;
     const auto& song = catalogSongs[static_cast<size_t>(index)];
 
-    // The game session is opened for online songs only (see startOnlineGameSession).
-    onlineSongUuid = song.online ? song.serverId : juce::String();
+    // Every catalogue row is a server song; the session is opened on START.
+    onlineSongUuid = song.serverId;
     onlineGameSessionUuid.clear();
 
     // Selecting a row only highlights it: audio files and MIDI are loaded when
@@ -3175,22 +3227,15 @@ void MainComponent::startSelectedSong()
 {
     if (catalogSongs.empty())
     {
-        // Same fallback as before the catalogue existed.
-        if (!songLibrary.empty() && loadSongMidi(songLibrary.front().title))
-            beginTuningForSelectedSong();
+        onlineCatalogStatusLabel.setText(
+            "No songs loaded. Press REFRESH CATALOG to fetch the server catalogue.",
+            juce::dontSendNotification);
         return;
     }
 
     selectedCatalogIndex = juce::jlimit(0, static_cast<int>(catalogSongs.size()) - 1,
                                         selectedCatalogIndex);
     const auto& song = catalogSongs[static_cast<size_t>(selectedCatalogIndex)];
-
-    if (!song.online)
-    {
-        if (loadSongMidi(song.title))
-            beginTuningForSelectedSong();
-        return;
-    }
 
     // Cached online songs are playable without any network traffic.
     if (auto* entry = findOnlineLibraryEntry(song.slug))
@@ -3527,37 +3572,6 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
     });
 }
 
-void MainComponent::scanSongLibrary()
-{
-    songLibrary.clear();
-    if (!songsRoot.isDirectory()) return;
-
-    juce::Array<juce::File> folders;
-    songsRoot.findChildFiles(folders, juce::File::findDirectories, false);
-    std::sort(folders.begin(), folders.end(), [](const juce::File& a, const juce::File& b)
-    { return a.getFileName().compareIgnoreCase(b.getFileName()) < 0; });
-    for (const auto& folder : folders)
-    {
-        SongEntry entry;
-        entry.title = folder.getFileName();
-        entry.folder = folder;
-        entry.soloMidi = findSongAsset(folder, { "solo", "midi", "guitar_solo", "solo_guitar" }, { ".mid", ".midi" });
-        if (!entry.soloMidi.existsAsFile())
-            entry.soloMidi = findSongAsset(folder, { "" }, { ".mid", ".midi" });
-        entry.drums = findSongAsset(folder, { "drums", "drum" }, { ".wav", ".mp3", ".aiff", ".flac" });
-        entry.bass = findSongAsset(folder, { "bass" }, { ".wav", ".mp3", ".aiff", ".flac" });
-        entry.rhythmGuitar = findSongAsset(folder, { "rhythm_guitar", "rhythm guitar", "guitar", "rhythm" }, { ".wav", ".mp3", ".aiff", ".flac" });
-        entry.others = findSongAsset(folder, { "others", "other", "keys", "instruments" }, { ".wav", ".mp3", ".aiff", ".flac" });
-        if (entry.soloMidi.existsAsFile())
-        {
-            songLibrary.push_back(entry);
-            DBG("SONG CATALOG: " + entry.title + " MIDI=" + entry.soloMidi.getFullPathName());
-        }
-        else
-            DBG("SONG SKIPPED (no solo MIDI): " + folder.getFullPathName());
-    }
-}
-
 bool MainComponent::loadSongAudio(const SongEntry& song)
 {
     for (auto& track : externalAudioTracks)
@@ -3613,7 +3627,7 @@ bool MainComponent::loadSongMidi(const juce::String& songId)
     selectedSong = *found;
     if (found->slug.isEmpty())
     {
-        // Local folder or generated challenge: no online session can be opened.
+        // No server identity: an online game session cannot be opened.
         onlineSongUuid.clear();
         onlineGameSessionUuid.clear();
     }
@@ -3954,9 +3968,8 @@ void MainComponent::saveBestScoreForSelectedSong(int score)
 {
     if (auto* settings = appProperties.getUserSettings())
     {
-        // Online songs are keyed by slug, local ones by folder name. The title
-        // key written by older client versions is still read as a fallback in
-        // getBestScoreForSong().
+        // Server songs are keyed by slug. The title key written by older client
+        // versions is still read as a fallback in getBestScoreForSong().
         const auto key = juce::String("BestScore_")
             + (selectedSongSlug.isNotEmpty() ? selectedSongSlug : selectedSongId);
         const int previous = settings->getIntValue(key, 0);
@@ -3971,7 +3984,7 @@ void MainComponent::saveBestScoreForSelectedSong(int score)
 
 void MainComponent::updateSongBestScoreLabels()
 {
-    juce::String selectedBestText = "BEST: " + juce::String(getBestScore(selectedSongId));
+    juce::String selectedBestText = "BEST: -";
 
     if (juce::isPositiveAndBelow(selectedCatalogIndex,
                                  static_cast<int>(catalogSongs.size())))
@@ -4213,53 +4226,19 @@ void MainComponent::advanceTarget()
 // Clean electric-guitar SFZ sample bank
 //==============================================================================
 
-void MainComponent::loadGuitarSampleBank()
+void MainComponent::loadGuitarSampleBank(const juce::File& assetsRoot)
 {
     guitarSamplesLoaded.store(false, std::memory_order_relaxed);
     guitarSampleRegions.clear();
     guitarRegionForMidi.fill(-1);
 
-    juce::File bankDirectory;
-    auto tryRoot = [&bankDirectory](const juce::File& root)
+    // The bank lives in the server-hosted sound pack.  No local Sounds folder
+    // or absolute development path is consulted.
+    const auto bankDirectory = assetsRoot.getChildFile("guitar");
+
+    if (! bankDirectory.isDirectory())
     {
-        // Preferred location: <project root>\Sounds\GuitarSamples
-        // Also support an SFZ bank stored directly in <project root>\Sounds.
-        const auto soundsDirectory = root.getChildFile("Sounds");
-        const auto candidates = {
-            soundsDirectory.getChildFile("GuitarSamples"),
-            soundsDirectory
-        };
-
-        for (const auto& candidate : candidates)
-        {
-            if (!candidate.isDirectory())
-                continue;
-
-            juce::Array<juce::File> sfzFiles;
-            candidate.findChildFiles(sfzFiles, juce::File::findFiles, false, "*.sfz");
-            if (!sfzFiles.isEmpty())
-            {
-                bankDirectory = candidate;
-                return true;
-            }
-        }
-        return false;
-    };
-
-    if (!tryRoot(juce::File::getCurrentWorkingDirectory()))
-    {
-        auto location = juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory();
-        for (int depth = 0; depth < 7 && !location.isRoot(); ++depth)
-        {
-            if (tryRoot(location))
-                break;
-            location = location.getParentDirectory();
-        }
-    }
-
-    if (!bankDirectory.isDirectory())
-    {
-        DBG("GUITAR SAMPLES: folder not found; using the built-in fallback tone.");
+        DBG("GUITAR SAMPLES: server sound pack is not available; using the built-in fallback tone.");
         return;
     }
 
@@ -4411,7 +4390,7 @@ void MainComponent::loadGuitarSampleBank()
 // Sample-based backing instruments (SFZ + WAV/FLAC)
 //==============================================================================
 
-void MainComponent::loadBackingSampleBanks()
+void MainComponent::loadBackingSampleBanks(const juce::File& assetsRoot)
 {
     DBG("BACKING DRUM WAV BUILD: 2026-10-13-v6");
     for (auto& loaded : backingSamplesLoaded)
@@ -4420,6 +4399,12 @@ void MainComponent::loadBackingSampleBanks()
         regions.clear();
     for (auto& map : backingSampleMap)
         map.fill(-1);
+
+    if (! assetsRoot.isDirectory())
+    {
+        DBG("BACKING: server sound pack is not available; using procedural fallbacks.");
+        return;
+    }
 
     auto midiKey = [](juce::String value) -> int
     {
@@ -4440,40 +4425,10 @@ void MainComponent::loadBackingSampleBanks()
         return -1;
     };
 
-    juce::File soundsRoot;
-    auto findSounds = [&soundsRoot](juce::File start)
-    {
-        juce::File firstSoundsFolder;
-        for (int depth = 0; depth < 12 && start != start.getParentDirectory(); ++depth)
-        {
-            const auto candidate = start.getChildFile("Sounds");
-            if (candidate.isDirectory())
-            {
-                if (!firstSoundsFolder.isDirectory()) firstSoundsFolder = candidate;
-                const auto drums = candidate.getChildFile("Drums");
-                if (drums.getChildFile("KICK_AC.wav").existsAsFile()
-                    || drums.getChildFile("SNARE_LIVE.wav").existsAsFile())
-                {
-                    soundsRoot = candidate;
-                    DBG("BACKING: selected Sounds folder with drum WAVs: " + soundsRoot.getFullPathName());
-                    return true;
-                }
-            }
-            start = start.getParentDirectory();
-        }
-        if (firstSoundsFolder.isDirectory()) soundsRoot = firstSoundsFolder;
-        return soundsRoot.isDirectory();
-    };
-    findSounds(juce::File::getCurrentWorkingDirectory());
-    if (!soundsRoot.isDirectory())
-        findSounds(juce::File::getSpecialLocation(juce::File::currentExecutableFile).getParentDirectory());
-    if (!soundsRoot.isDirectory())
-        DBG("BACKING: Sounds folder not found. Expected Sounds/Drums/*.wav.");
-
-    // Load the user's dedicated one-shot drum kit from Sounds/Drums.
+    // Load the dedicated one-shot drum kit from the server sound pack.
     // GM MIDI drum notes are mapped to these WAVs; no pitch-shifting is applied.
     {
-        const auto drumsDirectory = soundsRoot.getChildFile("Drums");
+        const auto drumsDirectory = assetsRoot.getChildFile("drums");
         struct DrumFile { const char* fileName; int rootKey; };
         const DrumFile drumFiles[] = {
             { "KICK_AC.wav", 36 },
@@ -4536,23 +4491,19 @@ void MainComponent::loadBackingSampleBanks()
             + " WAV samples " + (ready ? "READY" : "FAILED"));
     }
 
-    DBG("BACKING SFZ BANKS: bass and piano only; drums must use Sounds/Drums WAVs");
-    struct BankSpec { int instrument; juce::String sfzName; };
+    DBG("BACKING SFZ BANKS: bass and piano only; drums use the server WAV kit");
+    struct BankSpec { int instrument; juce::File sfz; };
     const BankSpec banks[] = {
-        { 1, "FingerBassYR 20190930.sfz" },
-        { 3, "UprightPianoKW-small-20190703.sfz" }
+        { 1, assetsRoot.getChildFile("bass").getChildFile("FingerBassYR 20190930.sfz") },
+        { 3, assetsRoot.getChildFile("piano").getChildFile("UprightPianoKW-small-20190703.sfz") }
     };
 
-    if (soundsRoot.isDirectory()) for (const auto& bank : banks)
+    for (const auto& bank : banks)
     {
-        juce::Array<juce::File> found;
-        soundsRoot.findChildFiles(found, juce::File::findFiles, true, "*.sfz");
-        juce::File sfz;
-        for (const auto& candidate : found)
-            if (candidate.getFileName().equalsIgnoreCase(bank.sfzName)) { sfz = candidate; break; }
-        if (!sfz.existsAsFile())
+        const auto& sfz = bank.sfz;
+        if (! sfz.existsAsFile())
         {
-            DBG("BACKING SFZ: missing " + bank.sfzName + "; using procedural fallback for instrument " + juce::String(bank.instrument));
+            DBG("BACKING SFZ: missing " + sfz.getFileName() + "; using procedural fallback for instrument " + juce::String(bank.instrument));
             continue;
         }
 
@@ -4657,6 +4608,53 @@ void MainComponent::loadBackingSampleBanks()
         backingSamplesLoaded[static_cast<size_t>(bank.instrument)].store(ready, std::memory_order_release);
         DBG("BACKING SFZ: instrument=" + juce::String(bank.instrument) + ", regions=" + juce::String(static_cast<int>(regions.size())) + ", file=" + sfz.getFileName() + (ready ? " READY" : " FAILED"));
     }
+}
+
+//==============================================================================
+// Metronome clicks (server-hosted sound pack)
+//==============================================================================
+
+void MainComponent::loadMetronomeSamples(const juce::File& assetsRoot)
+{
+    // Called only while the audio device is stopped: no allocation or file I/O
+    // happens in prepareToPlay()/getNextAudioBlock().
+    metronomeAccentBuffer.setSize(0, 0);
+    metronomeNormalBuffer.setSize(0, 0);
+    metronomeSamplesRemaining = 0;
+    metronomePlaybackPosition = 0;
+
+    if (! assetsRoot.isDirectory())
+        return;
+
+    auto loadClick = [this](const juce::File& file, juce::AudioBuffer<float>& buffer)
+    {
+        if (! file.existsAsFile())
+        {
+            DBG("METRONOME: missing " + file.getFullPathName());
+            return;
+        }
+
+        std::unique_ptr<juce::AudioFormatReader> reader(
+            audioFormatManager.createReaderFor(file));
+
+        if (reader == nullptr || reader->lengthInSamples <= 0)
+        {
+            DBG("METRONOME: cannot read " + file.getFileName());
+            return;
+        }
+
+        const int channels = juce::jlimit(
+            1, 2, static_cast<int>(reader->numChannels));
+        const int samples = static_cast<int>(reader->lengthInSamples);
+        buffer.setSize(channels, samples);
+        reader->read(&buffer, 0, samples, 0, true, true);
+    };
+
+    const auto metronomeDirectory = assetsRoot.getChildFile("metronome");
+    loadClick(metronomeDirectory.getChildFile("wooden-metronome-click.wav"),
+              metronomeAccentBuffer);
+    loadClick(metronomeDirectory.getChildFile("light-clicking-perc.wav"),
+              metronomeNormalBuffer);
 }
 
 float MainComponent::renderBackingSample(int instrument, int midiNote, double elapsedOutputSamples, double outputSampleRate) const
@@ -4860,12 +4858,76 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
     const int channels = static_cast<int>(juce::jmin<uint32_t>(2, reader->numChannels));
     constexpr double maxSongSeconds = 60.0;
     const int64_t maxSamplesForOneMinute = static_cast<int64_t>(reader->sampleRate * maxSongSeconds);
+
+    // The server's MP3 stems are raw CBR streams without a gapless
+    // (Xing/LAME) header. JUCE's MP3 decoder therefore leaves the standard
+    // MP3 priming in front of the audio: 1105 samples of codec/encoder delay,
+    // plus a full 1152-sample silent frame when the encoder wrote one.
+    // Without trimming this, every stem starts ~51 ms after the MIDI and
+    // metronome timeline. Detect the silent priming frame from the decoded
+    // PCM instead of relying on the file name alone.
+    int sourceStartOffset = 0;
+
+    if (file.hasFileExtension("mp3"))
+    {
+        constexpr int probeFrameSamples = 1152;
+        const int probeSamples = static_cast<int>(
+            juce::jmin<int64_t>(
+                reader->lengthInSamples,
+                probeFrameSamples));
+
+        juce::AudioBuffer<float> probe(channels, probeSamples);
+        probe.clear();
+
+        if (probeSamples > 0
+            && reader->read(&probe, 0, probeSamples, 0, true, true))
+        {
+            float probeMagnitude = 0.0f;
+
+            for (int channel = 0; channel < channels; ++channel)
+            {
+                probeMagnitude = juce::jmax(
+                    probeMagnitude,
+                    probe.getMagnitude(channel, 0, probeSamples));
+            }
+
+            const bool firstFrameIsSilent =
+                probeMagnitude < 1.0e-4f;
+
+            constexpr double codecDelaySeconds =
+                1105.0 / 44100.0;
+            constexpr double primingFrameSeconds =
+                1152.0 / 44100.0;
+
+            const double delaySeconds =
+                codecDelaySeconds
+                + (firstFrameIsSilent ? primingFrameSeconds : 0.0);
+
+            sourceStartOffset = juce::jmax(
+                0,
+                static_cast<int>(
+                    std::llround(
+                        reader->sampleRate * delaySeconds)));
+        }
+    }
+
+    // Read enough source samples that, after removing the MP3 priming,
+    // the gameplay window is still a full 60 seconds for long songs.
+    const int64_t maxSamplesWithPriming =
+        maxSamplesForOneMinute + static_cast<int64_t>(sourceStartOffset);
+
     const int samples = static_cast<int>(juce::jmin<int64_t>(reader->lengthInSamples,
-        juce::jmin<int64_t>(maxSamplesForOneMinute,
+        juce::jmin<int64_t>(maxSamplesWithPriming,
             static_cast<int64_t>(std::numeric_limits<int>::max()))));
-    track.audio.setSize(channels, samples);
+
+    const int samplesToRead =
+        juce::jmax(0, samples - sourceStartOffset);
+
+    track.audio.setSize(channels, samplesToRead);
     track.audio.clear();
-    if (!reader->read(&track.audio, 0, samples, 0, true, true))
+
+    if (samplesToRead <= 0
+        || !reader->read(&track.audio, 0, samplesToRead, sourceStartOffset, true, true))
     {
         track.audio.setSize(0, 0);
         DBG("Failed reading external audio track: " + file.getFullPathName());
@@ -4874,10 +4936,11 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
     track.sourceSampleRate = reader->sampleRate;
     track.loaded.store(true, std::memory_order_release);
     DBG("Loaded external audio track: " + file.getFullPathName()
-        + " (" + juce::String(samples) + " samples, "
+        + " (" + juce::String(samplesToRead) + " samples, "
         + juce::String(reader->sampleRate) + " Hz, "
-        + juce::String(static_cast<double>(samples) / reader->sampleRate, 2)
-        + " seconds; capped at 60 seconds)");
+        + juce::String(static_cast<double>(samplesToRead) / reader->sampleRate, 2)
+        + " seconds; capped at 60 seconds; trimmed "
+        + juce::String(sourceStartOffset) + " MP3 priming samples)");
     return true;
 }
 
@@ -4920,62 +4983,9 @@ void MainComponent::prepareToPlay(
     }
 
 
-    // Audio formats were registered in the constructor before the sample bank was loaded.
-
-    //==========================================================================
-    // Metronome sounds
-
-    metronomeAccentReader.reset(
-        audioFormatManager.createReaderFor(
-            juce::File(
-                "D:\\GuitarBattle\\GuitarBattle\\Sounds\\wooden-metronome-click.wav")));
-
-    metronomeNormalReader.reset(
-        audioFormatManager.createReaderFor(
-            juce::File(
-                "D:\\GuitarBattle\\GuitarBattle\\Sounds\\light-clicking-perc.wav")));
-
-    //==========================================================================
-    // Accent
-
-    if (metronomeAccentReader != nullptr)
-    {
-        metronomeAccentBuffer.setSize(
-            static_cast<int>(
-                metronomeAccentReader->numChannels),
-            static_cast<int>(
-                metronomeAccentReader->lengthInSamples));
-
-        metronomeAccentReader->read(
-            &metronomeAccentBuffer,
-            0,
-            static_cast<int>(
-                metronomeAccentReader->lengthInSamples),
-            0,
-            true,
-            true);
-    }
-
-    //==========================================================================
-    // Normal
-
-    if (metronomeNormalReader != nullptr)
-    {
-        metronomeNormalBuffer.setSize(
-            static_cast<int>(
-                metronomeNormalReader->numChannels),
-            static_cast<int>(
-                metronomeNormalReader->lengthInSamples));
-
-        metronomeNormalReader->read(
-            &metronomeNormalBuffer,
-            0,
-            static_cast<int>(
-                metronomeNormalReader->lengthInSamples),
-            0,
-            true,
-            true);
-    }
+    // Audio formats were registered in the constructor before the sample bank
+    // was loaded.  Metronome clicks are decoded by loadMetronomeSamples() while
+    // the device is stopped; prepareToPlay() must not touch the filesystem.
 
     //==========================================================================
     // Pitch buffers
@@ -5049,10 +5059,13 @@ void MainComponent::getNextAudioBlock(
     //==========================================================================
 // Beat scheduler
 
+    int metronomeTriggerOffset = -1;
+
     if (gameState == GameState::Playing)
     {
-        metronome.processScheduler(
-            currentSample);
+        metronomeTriggerOffset = metronome.processScheduler(
+            currentSample,
+            bufferToFill.numSamples);
     }
 
     //==========================================================================
@@ -5340,8 +5353,11 @@ void MainComponent::getNextAudioBlock(
     //==========================================================================
     // Start metronome
 
+    int metronomeBlockOffset = 0;
+
     if (gameState == GameState::Playing
-        && metronome.consumeTrigger())
+        && metronome.consumeTrigger()
+        && metronomeTriggerOffset >= 0)
     {
         if (countInActive.load(std::memory_order_acquire))
         {
@@ -5363,6 +5379,10 @@ void MainComponent::getNextAudioBlock(
 
         metronomeSamplesRemaining =
             buffer.getNumSamples();
+
+        // Start the click on the exact beat sample inside this block instead
+        // of quantising it to the block start.
+        metronomeBlockOffset = metronomeTriggerOffset;
     }
 
     //==========================================================================
@@ -5630,12 +5650,18 @@ void MainComponent::getNextAudioBlock(
             buffer.getNumSamples()
             - metronomePlaybackPosition;
 
+        const int outputOffset =
+            juce::jlimit(
+                0,
+                bufferToFill.numSamples,
+                metronomeBlockOffset);
+
         const int samplesToPlay =
             std::min(
                 metronomeSamplesRemaining,
                 std::min(
                     availableSamples,
-                    bufferToFill.numSamples));
+                    bufferToFill.numSamples - outputOffset));
 
         if (samplesToPlay > 0)
         {
@@ -5655,7 +5681,7 @@ void MainComponent::getNextAudioBlock(
                 {
                     bufferToFill.buffer->addSample(
                         channel,
-                        bufferToFill.startSample + i,
+                        bufferToFill.startSample + outputOffset + i,
                         metronomeSample);
                 }
             }
@@ -5913,11 +5939,10 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 
         const juce::String headerTitle = headerSong != nullptr
             ? headerSong->title
-            : (songLibrary.empty() ? juce::String("1 Power metal")
-                                   : songLibrary.front().title);
-        const juce::String headerKind = headerSong != nullptr && headerSong->online
+            : juce::String("NO SONG SELECTED");
+        const juce::String headerKind = headerSong != nullptr
             ? juce::String("ONLINE SONG")
-            : juce::String("LOCAL SONG");
+            : juce::String("SERVER CATALOG");
         const double headerBpm = headerSong != nullptr ? headerSong->bpm : baseBpm;
 
         g.setColour(UiColors::muted);

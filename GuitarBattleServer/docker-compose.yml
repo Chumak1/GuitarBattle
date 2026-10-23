@@ -28,6 +28,7 @@ services:
       POSTGRES_PORT: 5432
       SECRET_KEY: ${SECRET_KEY}
       SONG_FILES_DIR: /data/song_files
+      CLIENT_ASSETS_DIR: /data/client_assets
       MAX_MIDI_UPLOAD_BYTES: 20971520
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -42,6 +43,7 @@ services:
       EMAIL_CODE_MAX_ATTEMPTS: ${EMAIL_CODE_MAX_ATTEMPTS:-5}
     volumes:
       - song_files_data:/data/song_files
+      - client_assets_data:/data/client_assets
     ports:
       - "${API_BIND_HOST:-127.0.0.1}:8000:8000"
     depends_on:
@@ -50,3 +52,4 @@ services:
 volumes:
   postgres_data:
   song_files_data:
+  client_assets_data:

@@ -17,6 +17,7 @@
 #include "Gameplay/GameSession.h"
 #include "Generation/MidiMelodyGenerator.h"
 #include "Network/ApiClient.h"
+#include "Network/ClientAssets.h"
 #include "UI/GameStyle.h"
 
 class MainComponent;
@@ -137,7 +138,7 @@ private:
     juce::Label songTitleLabel;
     juce::Label gameSongTitleLabel;
 
-    juce::TextButton songPridumayButton{ "1 Power metal" };
+    juce::TextButton songPridumayButton{ "START SONG" };
     juce::TextButton onlineCatalogButton{ "REFRESH CATALOG" };
     juce::Label onlineCatalogStatusLabel;
     juce::Label leaderboardTitleLabel;
@@ -190,13 +191,12 @@ private:
     juce::Label songMistBestLabel;
     juce::Label songChordsBestLabel;
     juce::Label dailyChallengeBestLabel;
-    juce::String selectedSongId{ "1 Power metal" };
+    juce::String selectedSongId;
 
     struct SongEntry
     {
         juce::String title;
-        // Server slug for songs cached under %APPDATA%/GuitarBattle/OnlineSongs;
-        // empty for the folders scanned from Songs/.
+        // Server slug for songs cached under %APPDATA%/GuitarBattle/OnlineSongs.
         juce::String slug;
         juce::String artist;
         juce::File folder;
@@ -207,23 +207,21 @@ private:
         juce::File others;
         double bpm = 120.0;
     };
-    juce::File songsRoot;
     std::vector<SongEntry> songLibrary;
     SongEntry selectedSong;
-    // Slug of the loaded song; empty for local folders and the daily challenge.
+    // Slug of the loaded server song; empty for the daily challenge.
     juce::String selectedSongSlug;
-    void scanSongLibrary();
     bool loadSongAudio(const SongEntry& song);
 
     //==========================================================================
-    // Song-select catalogue: the local Songs/ folders plus every published
-    // online song. Online rows do not carry audio files - they are downloaded
-    // on demand when the player presses START SONG.
+    // Song-select catalogue: every published song from the server. Rows do not
+    // carry audio files - they are downloaded on demand when the player presses
+    // START SONG. Local Songs/ folders are intentionally not scanned.
 
     struct CatalogSong
     {
         juce::String title;
-        juce::String slug;      // empty for local songs
+        juce::String slug;      // server slug
         juce::String serverId;  // server UUID, used to open a game session
         juce::String artist;
         double bpm = 120.0;
@@ -278,8 +276,6 @@ private:
                             bool startAfterDownload);
     SongEntry* findOnlineLibraryEntry(const juce::String& slug);
     int getBestScoreForSong(const juce::String& slug, const juce::String& title);
-    juce::File findSongAsset(const juce::File& folder, const juce::StringArray& stems,
-                             const juce::StringArray& extensions) const;
 
     juce::Label gameSessionLabel;
 
@@ -388,7 +384,7 @@ private:
     std::array<std::vector<BackingSampleRegion>, 4> backingSampleRegions;
     std::array<std::array<int, 128>, 4> backingSampleMap{};
     std::array<std::atomic<bool>, 4> backingSamplesLoaded{};
-    void loadBackingSampleBanks();
+    void loadBackingSampleBanks(const juce::File& assetsRoot);
     float renderBackingSample(int instrument, int midiNote, double elapsedOutputSamples, double outputSampleRate) const;
     juce::Slider distortionDriveSlider;
     juce::Slider distortionToneSlider;
@@ -506,10 +502,23 @@ private:
     std::array<int, 128> guitarRegionForMidi{};
     std::atomic<bool> guitarSamplesLoaded{ false };
 
-    void loadGuitarSampleBank();
+    void loadGuitarSampleBank(const juce::File& assetsRoot);
     float renderGuitarSample(int midiNote, double elapsedOutputSamples, double outputSampleRate) const;
 
     juce::AudioFormatManager audioFormatManager;
+
+    // Server-hosted sound pack.  clientAssetsRoot points at the unpacked
+    // "current" directory and is empty until a validated cache exists.  The
+    // buffers above are only rebuilt while the audio device is stopped.
+    juce::File clientAssetsRoot;
+    bool clientAssetsReady = false;
+    bool clientAssetsRefreshInFlight = false;
+    bool pendingClientAssetsReload = false;
+    bool audioDeviceStarted = false;
+    void startClientAssetRefresh();
+    void applyPendingClientAssetsReload();
+    void reloadClientAssets();
+    void startAudioDevice(const juce::XmlElement* savedState);
 
     // Song stems are decoded before playback; the real-time callback only reads and mixes samples.
     struct ExternalAudioTrack
@@ -526,9 +535,9 @@ private:
     // the external stem mixer during normal gameplay.
     const bool externalAudioMixerActive = true;
 
-    std::unique_ptr<juce::AudioFormatReader> metronomeAccentReader;
-
-    std::unique_ptr<juce::AudioFormatReader> metronomeNormalReader;
+    // Loaded from the server-hosted sound pack before the audio device starts
+    // (or while it is stopped for a sound-pack refresh).
+    void loadMetronomeSamples(const juce::File& assetsRoot);
 
     juce::AudioBuffer<float> metronomeAccentBuffer;
 
