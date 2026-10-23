@@ -52,7 +52,8 @@ private:
 };
 
 class MainComponent : public juce::AudioAppComponent,
-    private juce::Timer
+    private juce::Timer,
+    private juce::ChangeListener
 {
 public:
 
@@ -419,9 +420,22 @@ private:
     std::atomic<int> preferredInputChannel{ -1 };
     std::atomic<int> activeInputChannels{ 0 };
     std::array<int, 32> activeInputHardwareChannels{};
-    int currentInputChannel = 0;
+    int currentInputChannel = -1;
+
+    // Sample rate cached in prepareToPlay(); the audio callback must not query
+    // the device manager from the realtime thread.
+    std::atomic<double> cachedSampleRate{ 0.0 };
+
+    // Compact input selector shown on the tuner screen so the player can
+    // choose any available hardware input without opening gameplay.
+    juce::Label guitarInputLabel;
+    juce::ComboBox guitarInputCombo;
 
     void setPreferredInputChannel(int channel);
+    bool ensureInputChannelEnabled(int hardwareChannel);
+    void rebuildGuitarInputChoices();
+    void refreshGuitarInputCombo();
+    void changeListenerCallback(juce::ChangeBroadcaster* source) override;
 
     std::atomic<uint64_t> audioSampleCounter{ 0 };
 

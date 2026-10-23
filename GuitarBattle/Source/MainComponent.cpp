@@ -23,6 +23,49 @@
 static juce::AudioBuffer<float> makePitchPreservingTimeStretch(
     const juce::AudioBuffer<float>& source, double speedRatio);
 
+//==============================================================================
+// Shared input-channel selector contents.
+//
+// Lists every hardware input, including channels that the device selector has
+// currently switched off. Selecting one of those enables it; this is what lets
+// a guitar plugged into any interface input be captured without requiring the
+// player to reconfigure the device first.
+
+static void populateInputChannelCombo(juce::ComboBox& box,
+                                      juce::AudioDeviceManager& manager,
+                                      int preferredHardwareChannel)
+{
+    box.clear(juce::dontSendNotification);
+    box.addItem("Auto (any active input)", 1);
+
+    if (auto* device = manager.getCurrentAudioDevice())
+    {
+        const auto names = device->getInputChannelNames();
+        const auto active = device->getActiveInputChannels();
+        const int maxChannels = juce::jmin(names.size(), 32);
+
+        for (int hardware = 0; hardware < maxChannels; ++hardware)
+        {
+            auto name = names[hardware].trim();
+
+            if (name.isEmpty())
+                name = "Input " + juce::String(hardware + 1);
+
+            if (! active[hardware])
+                name << " (off)";
+
+            box.addItem(name, hardware + 2);
+        }
+    }
+
+    const int requestedId = preferredHardwareChannel < 0
+        ? 1
+        : preferredHardwareChannel + 2;
+
+    box.setSelectedId(
+        box.indexOfItemId(requestedId) >= 0 ? requestedId : 1,
+        juce::dontSendNotification);
+}
 
 //==============================================================================
 // Branded audio settings panel used by the Audio Settings dialog.
@@ -148,36 +191,11 @@ private:
 
     void rebuildInputChannelChoices(int initialChannel)
     {
-        int selected = (inputChannelBox.getSelectedId() > 0)
+        const int selected = (inputChannelBox.getSelectedId() > 0)
             ? inputChannelBox.getSelectedId() - 2
             : initialChannel;
 
-        inputChannelBox.clear(juce::dontSendNotification);
-        inputChannelBox.addItem("Auto (any active input)", 1);
-
-        if (auto* device = deviceManager.getCurrentAudioDevice())
-        {
-            const auto names = device->getInputChannelNames();
-            const auto active = device->getActiveInputChannels();
-
-            for (int hardware = 0; hardware < names.size(); ++hardware)
-            {
-                if (!active[hardware])
-                    continue;
-
-                const auto name = names[hardware].trim();
-                inputChannelBox.addItem(name.isNotEmpty()
-                                            ? name
-                                            : "Input " + juce::String(hardware + 1),
-                                        hardware + 2);
-            }
-        }
-
-        int id = selected < 0 ? 1 : selected + 2;
-        if (inputChannelBox.indexOfItemId(id) < 0)
-            id = 1;
-
-        inputChannelBox.setSelectedId(id, juce::dontSendNotification);
+        populateInputChannelCombo(inputChannelBox, deviceManager, selected);
     }
 
     juce::AudioDeviceSelectorComponent selector;
@@ -319,6 +337,52 @@ MainComponent::MainComponent()
     addAndMakeVisible(tunerStringLabel);
     addAndMakeVisible(tunerCentsLabel);
     addAndMakeVisible(tunerStatusLabel);
+
+    // Compact input selector available on the tuner screen. The guitar may be
+    // connected to any interface input, so the player can switch the capture
+    // channel without entering a song and opening the full audio settings.
+    guitarInputLabel.setText(
+        "GUITAR INPUT",
+        juce::dontSendNotification);
+
+    guitarInputLabel.setFont(
+        GameUi::eyebrow(10.0f));
+
+    guitarInputLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::muted);
+
+    guitarInputLabel.setJustificationType(
+        juce::Justification::centredLeft);
+
+    guitarInputCombo.setColour(
+        juce::ComboBox::backgroundColourId,
+        UiColors::surface2);
+
+    guitarInputCombo.setColour(
+        juce::ComboBox::textColourId,
+        UiColors::text);
+
+    guitarInputCombo.setColour(
+        juce::ComboBox::outlineColourId,
+        UiColors::borderStrong);
+
+    guitarInputCombo.setColour(
+        juce::ComboBox::arrowColourId,
+        UiColors::accent);
+
+    guitarInputCombo.onChange =
+        [this]
+        {
+            const int selectedId =
+                guitarInputCombo.getSelectedId();
+
+            if (selectedId > 0)
+                setPreferredInputChannel(selectedId - 2);
+        };
+
+    addAndMakeVisible(guitarInputLabel);
+    addAndMakeVisible(guitarInputCombo);
 
     tunerStartButton.setEnabled(false);
     tunerStartButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
@@ -1380,6 +1444,7 @@ MainComponent::MainComponent()
 
     // Song stems are loaded when a catalogue entry is selected.
 
+    deviceManager.addChangeListener(this);
     startAudioDevice(savedState.get());
     startClientAssetRefresh();
 
@@ -1597,6 +1662,9 @@ void MainComponent::updateHitFeedbackAnimation()
 
 void MainComponent::setPreferredInputChannel(int channel)
 {
+    if (channel >= 0 && ! ensureInputChannelEnabled(channel))
+        channel = -1;
+
     preferredInputChannel.store(channel, std::memory_order_relaxed);
 
     if (auto* settings = appProperties.getUserSettings())
@@ -1604,6 +1672,79 @@ void MainComponent::setPreferredInputChannel(int channel)
         settings->setValue("InputChannel", channel);
         settings->saveIfNeeded();
     }
+
+    // Do not rebuild the combo from inside its own onChange callback. Defer
+    // the refresh so the "(off)" marker disappears once the device reopens.
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    juce::MessageManager::callAsync(
+        [safeThis]
+        {
+            if (auto* self = safeThis.getComponent())
+                self->refreshGuitarInputCombo();
+        });
+}
+
+bool MainComponent::ensureInputChannelEnabled(int hardwareChannel)
+{
+    if (hardwareChannel < 0
+        || hardwareChannel >= static_cast<int>(activeInputHardwareChannels.size()))
+        return false;
+
+    auto* device = deviceManager.getCurrentAudioDevice();
+
+    if (device == nullptr)
+        return false;
+
+    const auto names = device->getInputChannelNames();
+
+    if (hardwareChannel >= names.size())
+        return false;
+
+    const auto active = device->getActiveInputChannels();
+    auto setup = deviceManager.getAudioDeviceSetup();
+    const auto previousSetup = setup;
+
+    auto mask = setup.useDefaultInputChannels
+        ? active
+        : setup.inputChannels;
+
+    if (mask[hardwareChannel])
+        return true;
+
+    mask.setBit(hardwareChannel, true);
+
+    setup.inputChannels = mask;
+    setup.useDefaultInputChannels = false;
+
+    if (deviceManager.setAudioDeviceSetup(setup, true).isNotEmpty())
+    {
+        // The driver refused the wider channel set. Restore the previous
+        // setup so the app keeps working with the channels it had.
+        deviceManager.setAudioDeviceSetup(previousSetup, true);
+        return false;
+    }
+
+    return true;
+}
+
+void MainComponent::rebuildGuitarInputChoices()
+{
+    populateInputChannelCombo(
+        guitarInputCombo,
+        deviceManager,
+        preferredInputChannel.load(std::memory_order_relaxed));
+}
+
+void MainComponent::refreshGuitarInputCombo()
+{
+    rebuildGuitarInputChoices();
+}
+
+void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
+{
+    if (source == &deviceManager)
+        refreshGuitarInputCombo();
 }
 
 MainComponent::~MainComponent()
@@ -1620,6 +1761,7 @@ MainComponent::~MainComponent()
             deviceManager.createStateXml().get());
     }
 
+    deviceManager.removeChangeListener(this);
     shutdownAudio();
 
     setLookAndFeel(nullptr);
@@ -1635,41 +1777,35 @@ void MainComponent::startAudioDevice(const juce::XmlElement* savedState)
     setAudioChannels(32, 2, savedState);
     audioDeviceStarted = true;
 
-    // Older builds saved a two-input device state. Expand it once so a guitar
-    // connected to any input of a multi-channel interface is captured without
-    // asking the user to reconfigure the device first.
-    if (auto* settings = appProperties.getUserSettings())
+    // Always make every available hardware input active. The saved device
+    // state may contain a narrower mask from an older build or from the
+    // device selector; the guitar may be plugged into any input, so the
+    // client must be able to see all of them.
+    if (auto* device = deviceManager.getCurrentAudioDevice())
     {
-        if (! settings->getBoolValue("AudioInputsExpanded", false))
+        const int availableInputs = device->getInputChannelNames().size();
+        const int activeInputs =
+            device->getActiveInputChannels().countNumberOfSetBits();
+
+        if (availableInputs > activeInputs && availableInputs > 0)
         {
-            if (auto* device = deviceManager.getCurrentAudioDevice())
-            {
-                const int availableInputs = device->getInputChannelNames().size();
-                const int activeInputs =
-                    device->getActiveInputChannels().countNumberOfSetBits();
+            auto setup = deviceManager.getAudioDeviceSetup();
+            setup.inputChannels.clear();
+            setup.inputChannels.setRange(
+                0,
+                juce::jmin(availableInputs, 32),
+                true);
+            setup.useDefaultInputChannels = false;
 
-                if (availableInputs > activeInputs && availableInputs > 0)
-                {
-                    auto setup = deviceManager.getAudioDeviceSetup();
-                    setup.inputChannels.clear();
-                    setup.inputChannels.setRange(
-                        0,
-                        juce::jmin(availableInputs, 32),
-                        true);
-                    setup.useDefaultInputChannels = false;
-
-                    // If the driver refuses the wider channel set, restore the
-                    // previously saved device setup instead of leaving the app
-                    // without an audio device.
-                    if (deviceManager.setAudioDeviceSetup(setup, true).isNotEmpty())
-                        deviceManager.initialise(32, 2, savedState, true);
-                }
-            }
-
-            settings->setValue("AudioInputsExpanded", true);
-            settings->saveIfNeeded();
+            // If the driver refuses the wider channel set, restore the
+            // previously saved device setup instead of leaving the app
+            // without an audio device.
+            if (deviceManager.setAudioDeviceSetup(setup, true).isNotEmpty())
+                deviceManager.initialise(32, 2, savedState, true);
         }
     }
+
+    refreshGuitarInputCombo();
 }
 
 void MainComponent::startClientAssetRefresh()
@@ -4959,17 +5095,24 @@ void MainComponent::prepareToPlay(
     // that count and the active-index -> hardware-channel map so guitar capture
     // can select any active input without querying the device from the
     // realtime thread.
+    cachedSampleRate.store(sampleRate, std::memory_order_relaxed);
     activeInputChannels.store(0, std::memory_order_relaxed);
     activeInputHardwareChannels.fill(-1);
-    currentInputChannel = 0;
+
+    // -1 makes the first audio block choose the loudest active input instead
+    // of always starting on hardware channel 1.
+    currentInputChannel = -1;
 
     if (auto* device = deviceManager.getCurrentAudioDevice())
     {
+        const auto names = device->getInputChannelNames();
         const auto active = device->getActiveInputChannels();
+        const int maxActive = static_cast<int>(activeInputHardwareChannels.size());
+        const int hardwareCount = juce::jmin(names.size(), maxActive);
         int activeIndex = 0;
 
         for (int hardware = 0;
-            hardware < static_cast<int>(activeInputHardwareChannels.size());
+            hardware < hardwareCount;
             ++hardware)
         {
             if (!active[hardware])
@@ -5084,14 +5227,8 @@ void MainComponent::getNextAudioBlock(
         if (currentBpm > 0.0
             && currentSample >= currentGameplayStart)
         {
-            double sampleRate = 0.0;
-
-            if (auto* device =
-                deviceManager.getCurrentAudioDevice())
-            {
-                sampleRate =
-                    device->getCurrentSampleRate();
-            }
+            const double sampleRate =
+                cachedSampleRate.load(std::memory_order_relaxed);
 
             if (sampleRate > 0.0)
             {
@@ -5170,15 +5307,14 @@ void MainComponent::getNextAudioBlock(
         }
         else
         {
-            // Auto mode: follow the loudest active input, but keep the current
-            // channel unless another one is clearly stronger. This prevents
-            // flapping between silent or noisy inputs during a performance.
-            int bestChannel = juce::jlimit(
-                0, inputChannelCount - 1, currentInputChannel);
-            float bestRms = bufferToFill.buffer->getRMSLevel(
-                bestChannel,
-                bufferToFill.startSample,
-                bufferToFill.numSamples);
+            // Auto mode: follow the loudest active input. On the first block,
+            // or while the current input is silent, switch to the strongest
+            // input immediately. Once a channel is producing signal, require
+            // a clear advantage before switching to avoid flapping between
+            // noisy inputs during a performance.
+            const int previousChannel = currentInputChannel;
+            int bestChannel = -1;
+            float bestRms = 0.0f;
 
             for (int channel = 0;
                 channel < inputChannelCount;
@@ -5189,15 +5325,56 @@ void MainComponent::getNextAudioBlock(
                     bufferToFill.startSample,
                     bufferToFill.numSamples);
 
-                if (rms > bestRms * 1.6f + 0.0015f)
+                if (rms > bestRms)
                 {
-                    bestChannel = channel;
                     bestRms = rms;
+                    bestChannel = channel;
                 }
             }
 
-            inputChannel = bestChannel;
-            currentInputChannel = bestChannel;
+            if (bestChannel < 0)
+                bestChannel = 0;
+
+            const bool previousValid =
+                previousChannel >= 0
+                && previousChannel < inputChannelCount;
+
+            if (! previousValid)
+            {
+                inputChannel = bestChannel;
+            }
+            else
+            {
+                const float previousRms =
+                    bufferToFill.buffer->getRMSLevel(
+                        previousChannel,
+                        bufferToFill.startSample,
+                        bufferToFill.numSamples);
+
+                // Match the pitch detector's silence threshold: a channel
+                // below this level cannot produce a usable note.
+                constexpr float silenceThreshold = 0.0035f;
+
+                const bool previousIsSilent =
+                    previousRms < silenceThreshold;
+
+                if (previousIsSilent
+                    && bestChannel != previousChannel
+                    && bestRms > silenceThreshold)
+                {
+                    inputChannel = bestChannel;
+                }
+                else if (bestRms > previousRms * 1.6f + 0.0015f)
+                {
+                    inputChannel = bestChannel;
+                }
+                else
+                {
+                    inputChannel = previousChannel;
+                }
+            }
+
+            currentInputChannel = inputChannel;
         }
     }
 
@@ -5423,8 +5600,7 @@ void MainComponent::getNextAudioBlock(
     if (gameState == GameState::Playing)
     {
         const uint64_t songStart = gameplayStartSample.load(std::memory_order_relaxed);
-        const double outputRate = deviceManager.getCurrentAudioDevice() != nullptr
-            ? deviceManager.getCurrentAudioDevice()->getCurrentSampleRate() : 0.0;
+        const double outputRate = cachedSampleRate.load(std::memory_order_relaxed);
         if (outputRate > 0.0 && currentSample + static_cast<uint64_t>(bufferToFill.numSamples) > songStart)
         {
             const std::array<float, 4> gains = {
@@ -5477,8 +5653,7 @@ void MainComponent::getNextAudioBlock(
     if (midiBackingEnabled.load(std::memory_order_relaxed))
     {
         const double currentBpm = bpm.load(std::memory_order_relaxed);
-        const double sr = (deviceManager.getCurrentAudioDevice() != nullptr)
-            ? deviceManager.getCurrentAudioDevice()->getCurrentSampleRate() : 0.0;
+        const double sr = cachedSampleRate.load(std::memory_order_relaxed);
         const uint64_t songStart = gameplayStartSample.load(std::memory_order_relaxed);
         const float backingVolume = midiBackingVolume.load(std::memory_order_relaxed);
         const auto& notes = gameSession.getMidiNotes();
@@ -5542,8 +5717,7 @@ void MainComponent::getNextAudioBlock(
         && dailyChallengeLoaded.load(std::memory_order_relaxed)
         && !backingNotes.empty())
     {
-        const double sr = (deviceManager.getCurrentAudioDevice() != nullptr)
-            ? deviceManager.getCurrentAudioDevice()->getCurrentSampleRate() : 0.0;
+        const double sr = cachedSampleRate.load(std::memory_order_relaxed);
         const double currentBpm = bpm.load(std::memory_order_relaxed);
         const uint64_t songStart = gameplayStartSample.load(std::memory_order_relaxed);
         if (sr > 0.0 && currentBpm > 0.0 && currentSample + static_cast<uint64_t>(bufferToFill.numSamples) > songStart)
@@ -6955,6 +7129,8 @@ void MainComponent::resized()
     tunerStatusLabel.setVisible(tunerScreen);
     tunerStartButton.setVisible(tunerScreen);
     tunerSkipButton.setVisible(tunerScreen);
+    guitarInputLabel.setVisible(tunerScreen);
+    guitarInputCombo.setVisible(tunerScreen);
 
     pitchLabel.setVisible(showGame);
     comboLabel.setVisible(showGame);
@@ -7088,6 +7264,9 @@ void MainComponent::resized()
         const int rightW = width - margin - rightX;
 
         tunerTitleLabel.setBounds(rightX + 24, panelY + 24, rightW - 48, 20);
+        guitarInputLabel.setBounds(rightX + 24, panelY + 58, 100, 22);
+        guitarInputCombo.setBounds(rightX + 126, panelY + 54,
+                                   juce::jmax(120, rightW - 150), 30);
         tunerNoteLabel.setBounds(rightX + 24, panelY + 142, rightW - 48, 96);
         tunerFrequencyLabel.setBounds(rightX + 24, panelY + 242, rightW - 48, 26);
         tunerStringLabel.setBounds(rightX + rightW - 180, panelY + 278, 160, 30);
