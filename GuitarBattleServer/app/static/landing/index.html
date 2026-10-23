@@ -1,11 +1,18 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#070b10">
-  <meta name="description" content="fretfight — first guitar battle online.">
-  <title>fretfight — first guitar battle online</title>
+  <meta name="description" content="fretfight — первая гитарная битва онлайн. Играйте по табам под минусовки, получайте оценку в реальном времени и соревнуйтесь в общем рейтинге.">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="fretfight">
+  <meta property="og:title" content="fretfight — первая гитарная битва онлайн">
+  <meta property="og:description" content="Табы, минусовки из четырёх стемов и оценка игры по микрофону в реальном времени. Соревнуйтесь за место в мировом рейтинге.">
+  <meta property="og:url" content="https://fretfight.online/">
+  <meta property="og:locale" content="ru_RU">
+  <link rel="canonical" href="https://fretfight.online/">
+  <title>fretfight — первая гитарная битва онлайн</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b10'/%3E%3Cpath d='M24 16h25v9H34v7h13v9H34v17h-10z' fill='%23f3c451'/%3E%3C/svg%3E">
   <style>
     :root {
@@ -13,347 +20,896 @@
       --bg: #070b10;
       --bg-soft: #0b1119;
       --surface: #101821;
+      --surface-2: #0d141d;
+      --line: rgba(141, 156, 171, 0.16);
       --text: #e9eff6;
       --muted: #8d9cab;
       --gold: #f3c451;
       --gold-strong: #ffb703;
+      --radius: 18px;
+      --max: 1120px;
     }
 
     * { box-sizing: border-box; }
 
-    html,
-    body {
-      width: 100%;
-      height: 100%;
-      margin: 0;
-      overflow: hidden;
-    }
+    html { scroll-behavior: smooth; }
 
     body {
-      position: relative;
-      display: grid;
-      place-items: center;
-      overflow: hidden;
+      margin: 0;
       background:
-        radial-gradient(circle at 50% 44%, rgba(243, 196, 81, 0.10), transparent 36%),
-        radial-gradient(circle at 82% 18%, rgba(109, 183, 255, 0.06), transparent 32%),
-        linear-gradient(145deg, #0b1119 0%, var(--bg) 54%, #05080c 100%);
+        radial-gradient(circle at 50% -10%, rgba(243, 196, 81, 0.12), transparent 42%),
+        radial-gradient(circle at 88% 12%, rgba(109, 183, 255, 0.05), transparent 34%),
+        linear-gradient(180deg, #0b1119 0%, var(--bg) 46%, #05080c 100%);
       color: var(--text);
       font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
       -webkit-font-smoothing: antialiased;
       text-rendering: optimizeLegibility;
+      line-height: 1.6;
     }
 
-    /* Faint fretboard grid, tying the page to the instrument. */
-    body::before {
+    a { color: inherit; }
+
+    .wrap {
+      width: min(92vw, var(--max));
+      margin: 0 auto;
+    }
+
+    /* ---------- header ---------- */
+
+    .site-header {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      background: rgba(7, 11, 16, 0.72);
+      border-bottom: 1px solid var(--line);
+    }
+
+    .site-header .wrap {
+      display: flex;
+      align-items: center;
+      gap: 24px;
+      min-height: 66px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--gold);
+      font-weight: 900;
+      font-size: 1.24rem;
+      letter-spacing: -0.04em;
+      text-decoration: none;
+      text-transform: lowercase;
+    }
+
+    .brand .mark {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      border-radius: 9px;
+      background: linear-gradient(160deg, var(--gold), #c98f12);
+      color: #1a1204;
+      font-size: 1rem;
+      letter-spacing: 0;
+    }
+
+    .nav {
+      display: flex;
+      gap: 22px;
+      margin-left: auto;
+      font-size: 0.92rem;
+    }
+
+    .nav a {
+      color: var(--muted);
+      text-decoration: none;
+      transition: color 160ms ease;
+    }
+
+    .nav a:hover,
+    .nav a:focus-visible { color: var(--text); }
+
+    .status-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 13px;
+      border: 1px solid rgba(243, 196, 81, 0.34);
+      border-radius: 999px;
+      color: var(--gold);
+      background: rgba(243, 196, 81, 0.08);
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .status-chip .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--gold);
+      box-shadow: 0 0 10px rgba(243, 196, 81, 0.9);
+    }
+
+    /* ---------- hero ---------- */
+
+    .hero {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(56px, 9vw, 110px) 0 clamp(52px, 7vw, 90px);
+    }
+
+    .hero::before {
       content: "";
       position: absolute;
-      inset: 0;
+      inset: -10% -5% auto -5%;
+      height: 130%;
       pointer-events: none;
       opacity: 0.16;
       background-image:
         repeating-linear-gradient(90deg, transparent 0 118px, rgba(243, 196, 81, 0.18) 119px 120px),
         repeating-linear-gradient(0deg, transparent 0 176px, rgba(141, 156, 171, 0.12) 177px 178px);
-      transform: perspective(900px) rotateX(62deg) translateY(12%);
-      transform-origin: center;
-      mask-image: radial-gradient(circle at 50% 48%, black, transparent 70%);
-      -webkit-mask-image: radial-gradient(circle at 50% 48%, black, transparent 70%);
+      transform: perspective(900px) rotateX(63deg) translateY(10%);
+      transform-origin: top center;
+      mask-image: radial-gradient(circle at 50% 30%, black, transparent 72%);
+      -webkit-mask-image: radial-gradient(circle at 50% 30%, black, transparent 72%);
     }
 
-    /* Soft gold halo behind the silhouette. */
-    body::after {
+    .hero .wrap {
+      position: relative;
+      z-index: 2;
+      display: grid;
+      gap: clamp(30px, 5vw, 56px);
+      align-items: center;
+    }
+
+    @media (min-width: 900px) {
+      .hero .wrap { grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); }
+    }
+
+    .kicker {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 18px;
+      color: var(--gold);
+      font-size: 0.74rem;
+      font-weight: 600;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+    }
+
+    .kicker::before {
+      content: "";
+      width: 34px;
+      height: 2px;
+      border-radius: 2px;
+      background: linear-gradient(90deg, transparent, var(--gold-strong));
+    }
+
+    h1.wordmark {
+      margin: 0;
+      color: var(--gold);
+      font-size: clamp(3rem, 11vw, 7.4rem);
+      font-weight: 900;
+      letter-spacing: -0.065em;
+      line-height: 0.84;
+      text-transform: lowercase;
+      text-shadow:
+        0 0 1px rgba(255, 231, 166, 0.6),
+        0 0 42px rgba(243, 196, 81, 0.22),
+        0 18px 60px rgba(0, 0, 0, 0.6);
+    }
+
+    .lead {
+      margin: 22px 0 0;
+      max-width: 34rem;
+      color: #c3cedb;
+      font-size: clamp(1rem, 1.5vw, 1.12rem);
+    }
+
+    .lead strong { color: var(--text); font-weight: 600; }
+
+    .hero-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 14px;
+      margin-top: 30px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px 24px;
+      border-radius: 12px;
+      border: 1px solid transparent;
+      font-size: 0.98rem;
+      font-weight: 600;
+      text-decoration: none;
+      cursor: pointer;
+      transition: transform 160ms ease, box-shadow 160ms ease, background 160ms ease, border-color 160ms ease;
+    }
+
+    .btn-primary {
+      background: linear-gradient(160deg, var(--gold), #e0a72c);
+      color: #17110a;
+      box-shadow: 0 14px 32px rgba(243, 196, 81, 0.22);
+    }
+
+    .btn-primary:hover,
+    .btn-primary:focus-visible {
+      transform: translateY(-1px);
+      box-shadow: 0 18px 38px rgba(243, 196, 81, 0.3);
+    }
+
+    .btn-ghost {
+      border-color: var(--line);
+      background: rgba(255, 255, 255, 0.02);
+      color: var(--text);
+    }
+
+    .btn-ghost:hover,
+    .btn-ghost:focus-visible {
+      border-color: rgba(243, 196, 81, 0.42);
+      color: var(--gold);
+      transform: translateY(-1px);
+    }
+
+    .hero-visual {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 300px;
+    }
+
+    .hero-visual::after {
       content: "";
       position: absolute;
-      width: min(110vmin, 1100px);
+      width: min(74%, 420px);
       aspect-ratio: 1;
-      left: 50%;
-      top: 48%;
-      transform: translate(-50%, -50%);
       border-radius: 50%;
-      background: radial-gradient(circle, rgba(243, 196, 81, 0.12), transparent 66%);
-      filter: blur(18px);
+      background: radial-gradient(circle, rgba(243, 196, 81, 0.16), transparent 68%);
+      filter: blur(10px);
       pointer-events: none;
     }
 
     .guitar {
-      position: absolute;
-      left: 50%;
-      top: 49%;
-      width: min(54vh, 70vw);
+      position: relative;
+      z-index: 1;
+      width: min(58vh, 330px);
       height: auto;
-      transform: translate(-50%, -50%) rotate(-17deg);
-      opacity: 0.70;
-      filter: saturate(0.82) contrast(1.04);
+      transform: rotate(-14deg);
+      opacity: 0.86;
+      filter: saturate(0.85) contrast(1.03) drop-shadow(0 30px 60px rgba(0, 0, 0, 0.55));
       pointer-events: none;
       user-select: none;
     }
 
-    .veil {
-      position: absolute;
-      inset: 0;
-      pointer-events: none;
-      background:
-        radial-gradient(ellipse at 50% 50%, transparent 8%, rgba(7, 11, 16, 0.28) 48%, rgba(7, 11, 16, 0.88) 100%),
-        linear-gradient(180deg, rgba(7, 11, 16, 0.18), transparent 28%, transparent 72%, rgba(7, 11, 16, 0.42));
-    }
+    /* ---------- facts strip ---------- */
 
-    main {
+    .facts {
       position: relative;
       z-index: 2;
-      width: min(92vw, 1120px);
-      padding: 24px;
-      text-align: center;
-      animation: reveal 900ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: rgba(11, 17, 25, 0.55);
     }
 
-    h1 {
+    .facts .wrap {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1px;
+      padding: 0;
+    }
+
+    @media (min-width: 820px) {
+      .facts .wrap { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+
+    .fact {
+      padding: 22px 18px;
+      text-align: center;
+      border-left: 1px solid var(--line);
+    }
+
+    .fact:first-child { border-left: 0; }
+
+    @media (max-width: 819px) {
+      .fact:nth-child(3) { border-left: 0; }
+      .fact:nth-child(n + 3) { border-top: 1px solid var(--line); }
+    }
+
+    .fact b {
+      display: block;
+      color: var(--gold);
+      font-size: 1.05rem;
+      letter-spacing: -0.01em;
+    }
+
+    .fact span {
+      display: block;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    /* ---------- sections ---------- */
+
+    section { padding: clamp(58px, 8vw, 96px) 0; }
+
+    .section-head {
+      max-width: 44rem;
+      margin-bottom: clamp(28px, 4vw, 44px);
+    }
+
+    .section-head .kicker { margin-bottom: 12px; }
+
+    h2 {
       margin: 0;
+      font-size: clamp(1.7rem, 3.4vw, 2.6rem);
+      line-height: 1.15;
+      letter-spacing: -0.03em;
+    }
+
+    .section-head p {
+      margin: 14px 0 0;
+      color: var(--muted);
+      font-size: 1.02rem;
+    }
+
+    .cards {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    }
+
+    .card {
+      position: relative;
+      padding: 26px 24px 28px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(170deg, rgba(16, 24, 33, 0.92), rgba(9, 14, 20, 0.92));
+      transition: border-color 180ms ease, transform 180ms ease;
+    }
+
+    .card:hover {
+      border-color: rgba(243, 196, 81, 0.34);
+      transform: translateY(-2px);
+    }
+
+    .card .icon {
+      display: grid;
+      place-items: center;
+      width: 42px;
+      height: 42px;
+      margin-bottom: 16px;
+      border-radius: 12px;
+      border: 1px solid rgba(243, 196, 81, 0.28);
+      background: rgba(243, 196, 81, 0.1);
       color: var(--gold);
-      font-size: clamp(2.8rem, 15vw, 13.5rem);
-      font-weight: 900;
-      letter-spacing: -0.065em;
-      line-height: 0.82;
-      text-transform: lowercase;
-      text-shadow:
-        0 0 1px rgba(255, 231, 166, 0.65),
-        0 0 38px rgba(243, 196, 81, 0.24),
-        0 18px 60px rgba(0, 0, 0, 0.62);
+      font-size: 1.16rem;
     }
 
-    .tagline {
-      margin: clamp(22px, 3vw, 34px) auto 0;
-      max-width: 760px;
-      color: var(--text);
-      font-size: clamp(0.76rem, 1.4vw, 1.04rem);
-      font-weight: 500;
-      letter-spacing: 0.34em;
-      line-height: 1.9;
-      text-transform: uppercase;
-      text-shadow: 0 2px 18px rgba(0, 0, 0, 0.8);
+    .card h3 {
+      margin: 0 0 8px;
+      font-size: 1.06rem;
+      letter-spacing: -0.01em;
     }
 
-    .tagline span {
+    .card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    /* ---------- steps ---------- */
+
+    .steps {
+      display: grid;
+      gap: 18px;
+      counter-reset: step;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    }
+
+    .step {
+      position: relative;
+      padding: 28px 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+      counter-increment: step;
+    }
+
+    .step::before {
+      content: counter(step, decimal-leading-zero);
+      display: block;
+      margin-bottom: 14px;
       color: var(--gold);
-    }
-
-    .rule {
-      width: clamp(54px, 8vw, 96px);
-      height: 2px;
-      margin: clamp(26px, 3.4vw, 40px) auto 0;
-      border-radius: 2px;
-      background: linear-gradient(90deg, transparent, var(--gold-strong), transparent);
-      box-shadow: 0 0 20px rgba(255, 183, 3, 0.55);
-    }
-
-    .footer {
-      position: fixed;
-      left: 0;
-      right: 0;
-      bottom: max(18px, env(safe-area-inset-bottom));
-      z-index: 3;
-      color: rgba(141, 156, 171, 0.7);
-      font-size: 0.62rem;
+      font-size: 0.82rem;
+      font-weight: 700;
       letter-spacing: 0.22em;
-      text-align: center;
+    }
+
+    .step h3 {
+      margin: 0 0 8px;
+      font-size: 1.04rem;
+    }
+
+    .step p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.94rem;
+    }
+
+    /* ---------- about / requirements ---------- */
+
+    .split {
+      display: grid;
+      gap: clamp(26px, 4vw, 52px);
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      align-items: start;
+    }
+
+    .about p {
+      margin: 0 0 16px;
+      color: #c3cedb;
+    }
+
+    .tick-list {
+      margin: 22px 0 0;
+      padding: 0;
+      list-style: none;
+      display: grid;
+      gap: 12px;
+    }
+
+    .tick-list li {
+      position: relative;
+      padding-left: 30px;
+      color: #c3cedb;
+      font-size: 0.97rem;
+    }
+
+    .tick-list li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0.34em;
+      width: 16px;
+      height: 16px;
+      border-radius: 5px;
+      border: 1px solid rgba(243, 196, 81, 0.4);
+      background:
+        linear-gradient(135deg, transparent 44%, var(--gold) 45% 55%, transparent 56%) no-repeat 50% 55% / 9px 9px,
+        rgba(243, 196, 81, 0.1);
+    }
+
+    .panel {
+      padding: 26px 24px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: linear-gradient(170deg, rgba(16, 24, 33, 0.9), rgba(8, 13, 18, 0.9));
+    }
+
+    .panel h3 {
+      margin: 0 0 16px;
+      font-size: 0.8rem;
+      letter-spacing: 0.2em;
       text-transform: uppercase;
+      color: var(--gold);
     }
 
-    @keyframes reveal {
-      from { opacity: 0; transform: translateY(14px); }
-      to   { opacity: 1; transform: translateY(0); }
+    .spec {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 12px 0;
+      border-top: 1px solid var(--line);
+      font-size: 0.94rem;
     }
 
-    @media (max-width: 620px) {
-      .guitar {
-        width: min(64vh, 76vw);
-        opacity: 0.58;
-      }
+    .spec:first-of-type { border-top: 0; padding-top: 0; }
 
-      .tagline {
-        max-width: 88vw;
-        letter-spacing: 0.22em;
-      }
+    .spec span { color: var(--muted); }
+    .spec b { font-weight: 600; text-align: right; }
+
+    /* ---------- cta ---------- */
+
+    .cta {
+      padding-bottom: clamp(70px, 9vw, 110px);
+    }
+
+    .cta-inner {
+      position: relative;
+      overflow: hidden;
+      padding: clamp(36px, 6vw, 62px);
+      border: 1px solid rgba(243, 196, 81, 0.24);
+      border-radius: 24px;
+      background:
+        radial-gradient(circle at 84% 18%, rgba(243, 196, 81, 0.16), transparent 42%),
+        linear-gradient(160deg, #12191f, #080d12);
+      text-align: center;
+    }
+
+    .cta-inner h2 { margin-bottom: 12px; }
+
+    .cta-inner p {
+      margin: 0 auto;
+      max-width: 34rem;
+      color: var(--muted);
+    }
+
+    .cta-inner .hero-actions {
+      justify-content: center;
+      margin-top: 26px;
+    }
+
+    /* ---------- footer ---------- */
+
+    .site-footer {
+      border-top: 1px solid var(--line);
+      padding: 26px 0 max(26px, env(safe-area-inset-bottom));
+      color: rgba(141, 156, 171, 0.72);
+      font-size: 0.82rem;
+    }
+
+    .site-footer .wrap {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 14px 24px;
+    }
+
+    .site-footer a {
+      color: rgba(141, 156, 171, 0.9);
+      text-decoration: none;
+    }
+
+    .site-footer a:hover { color: var(--gold); }
+
+    .site-footer .spacer { margin-left: auto; }
+
+    /* ---------- motion / small screens ---------- */
+
+    @media (max-width: 720px) {
+      .nav { display: none; }
+      .site-header .wrap { justify-content: space-between; }
+      .status-chip { margin-left: auto; }
+      .hero-visual { order: -1; min-height: 220px; }
+      .guitar { width: min(44vh, 240px); }
     }
 
     @media (prefers-reduced-motion: reduce) {
-      main { animation: none; }
+      html { scroll-behavior: auto; }
+      * { transition: none !important; animation: none !important; }
     }
   </style>
 </head>
 <body>
-  <svg class="guitar" viewBox="0 0 800 1200" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">
-    <defs>
-      <linearGradient id="bodyFill" x1="0.1" y1="0" x2="0.9" y2="1">
-        <stop offset="0" stop-color="#203040"/>
-        <stop offset="0.48" stop-color="#101821"/>
-        <stop offset="1" stop-color="#05080c"/>
-      </linearGradient>
-      <linearGradient id="goldFill" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0" stop-color="#ffe7a6"/>
-        <stop offset="0.46" stop-color="#f3c451"/>
-        <stop offset="1" stop-color="#a97012"/>
-      </linearGradient>
-      <linearGradient id="fretboard" x1="0" y1="0" x2="1" y2="0">
-        <stop offset="0" stop-color="#0b1119"/>
-        <stop offset="0.5" stop-color="#182432"/>
-        <stop offset="1" stop-color="#0b1119"/>
-      </linearGradient>
-      <radialGradient id="halo" cx="0.5" cy="0.5" r="0.5">
-        <stop offset="0" stop-color="#f3c451" stop-opacity="0.32"/>
-        <stop offset="0.55" stop-color="#f3c451" stop-opacity="0.08"/>
-        <stop offset="1" stop-color="#f3c451" stop-opacity="0"/>
-      </radialGradient>
-      <filter id="softBlur" x="-25%" y="-25%" width="150%" height="150%">
-        <feGaussianBlur stdDeviation="6"/>
-      </filter>
-      <filter id="neckGlow" x="-40%" y="-10%" width="180%" height="120%">
-        <feGaussianBlur stdDeviation="3" result="glow"/>
-        <feMerge>
-          <feMergeNode in="glow"/>
-          <feMergeNode in="SourceGraphic"/>
-        </feMerge>
-      </filter>
-    </defs>
 
-    <ellipse cx="400" cy="760" rx="360" ry="430" fill="url(#halo)"/>
+<header class="site-header">
+  <div class="wrap">
+    <a class="brand" href="#top"><span class="mark">♪</span>fretfight</a>
+    <nav class="nav" aria-label="Основная навигация">
+      <a href="#about">О проекте</a>
+      <a href="#how">Как играть</a>
+      <a href="#features">Возможности</a>
+      <a href="#requirements">Требования</a>
+    </nav>
+    <span class="status-chip"><span class="dot"></span>в разработке</span>
+  </div>
+</header>
 
-    <g filter="url(#softBlur)">
-      <!-- Neck and fretboard -->
-      <path d="M366 690 L382 188 L418 188 L434 690 Z" fill="url(#fretboard)" stroke="url(#goldFill)" stroke-width="5"/>
-      <path d="M374 680 L388 202 L412 202 L426 680 Z" fill="#0a1017" opacity="0.9"/>
+<main id="top">
 
-      <!-- Frets -->
-      <g stroke="#8d9cab" stroke-opacity="0.30" stroke-width="2">
-        <line x1="383" y1="238" x2="417" y2="238"/>
-        <line x1="382" y1="280" x2="418" y2="280"/>
-        <line x1="381" y1="322" x2="419" y2="322"/>
-        <line x1="380" y1="364" x2="420" y2="364"/>
-        <line x1="378" y1="406" x2="422" y2="406"/>
-        <line x1="377" y1="448" x2="423" y2="448"/>
-        <line x1="376" y1="490" x2="424" y2="490"/>
-        <line x1="375" y1="532" x2="425" y2="532"/>
-        <line x1="373" y1="574" x2="427" y2="574"/>
-        <line x1="372" y1="616" x2="428" y2="616"/>
-        <line x1="371" y1="658" x2="429" y2="658"/>
-      </g>
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap">
+      <div>
+        <p class="kicker">first guitar battle online</p>
+        <h1 class="wordmark" id="hero-title">fretfight</h1>
+        <p class="lead">
+          Гитарная битва в реальном времени: играйте по табам под минусовки,
+          получайте оценку точности по микрофону и поднимайтесь в
+          <strong>общем мировом рейтинге</strong>.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#how">Как это работает</a>
+          <a class="btn btn-ghost" href="#features">Возможности</a>
+        </div>
+      </div>
 
-      <!-- Strings -->
-      <g stroke="#e9eff6" stroke-opacity="0.36" stroke-linecap="round">
-        <line x1="375" y1="1005" x2="382" y2="198" stroke-width="1.4"/>
-        <line x1="385" y1="1005" x2="389" y2="198" stroke-width="1.5"/>
-        <line x1="395" y1="1005" x2="396" y2="198" stroke-width="1.7"/>
-        <line x1="405" y1="1005" x2="403" y2="198" stroke-width="1.9"/>
-        <line x1="415" y1="1005" x2="410" y2="198" stroke-width="2.1"/>
-        <line x1="425" y1="1005" x2="417" y2="198" stroke-width="2.3"/>
-      </g>
+      <div class="hero-visual" aria-hidden="true">
+        <svg class="guitar" viewBox="0 0 800 1200" xmlns="http://www.w3.org/2000/svg" focusable="false">
+          <defs>
+            <linearGradient id="bodyFill" x1="0.1" y1="0" x2="0.9" y2="1">
+              <stop offset="0" stop-color="#203040"/>
+              <stop offset="0.48" stop-color="#101821"/>
+              <stop offset="1" stop-color="#05080c"/>
+            </linearGradient>
+            <linearGradient id="goldFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="#ffe7a6"/>
+              <stop offset="0.46" stop-color="#f3c451"/>
+              <stop offset="1" stop-color="#a97012"/>
+            </linearGradient>
+            <linearGradient id="fretboard" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0" stop-color="#0b1119"/>
+              <stop offset="0.5" stop-color="#182432"/>
+              <stop offset="1" stop-color="#0b1119"/>
+            </linearGradient>
+            <filter id="softBlur" x="-25%" y="-25%" width="150%" height="150%">
+              <feGaussianBlur stdDeviation="6"/>
+            </filter>
+          </defs>
 
-      <!-- Headstock -->
-      <path d="M373 188 L353 94 C350 76 361 65 381 65 L419 65 C439 65 450 76 447 94 L427 188 Z"
-            fill="url(#bodyFill)" stroke="url(#goldFill)" stroke-width="6"/>
-      <line x1="374" y1="190" x2="426" y2="190" stroke="url(#goldFill)" stroke-width="7"/>
+          <g filter="url(#softBlur)">
+            <path d="M366 690 L382 188 L418 188 L434 690 Z" fill="url(#fretboard)" stroke="url(#goldFill)" stroke-width="5"/>
+            <path d="M374 680 L388 202 L412 202 L426 680 Z" fill="#0a1017" opacity="0.9"/>
 
-      <!-- Tuning pegs -->
-      <g fill="url(#goldFill)">
-        <rect x="327" y="84" width="28" height="11" rx="5.5"/>
-        <rect x="327" y="116" width="28" height="11" rx="5.5"/>
-        <rect x="327" y="148" width="28" height="11" rx="5.5"/>
-        <rect x="445" y="84" width="28" height="11" rx="5.5"/>
-        <rect x="445" y="116" width="28" height="11" rx="5.5"/>
-        <rect x="445" y="148" width="28" height="11" rx="5.5"/>
-        <circle cx="356" cy="89" r="5"/>
-        <circle cx="356" cy="121" r="5"/>
-        <circle cx="356" cy="153" r="5"/>
-        <circle cx="444" cy="89" r="5"/>
-        <circle cx="444" cy="121" r="5"/>
-        <circle cx="444" cy="153" r="5"/>
-      </g>
+            <g stroke="#8d9cab" stroke-opacity="0.30" stroke-width="2">
+              <line x1="383" y1="238" x2="417" y2="238"/>
+              <line x1="382" y1="280" x2="418" y2="280"/>
+              <line x1="381" y1="322" x2="419" y2="322"/>
+              <line x1="380" y1="364" x2="420" y2="364"/>
+              <line x1="378" y1="406" x2="422" y2="406"/>
+              <line x1="377" y1="448" x2="423" y2="448"/>
+              <line x1="376" y1="490" x2="424" y2="490"/>
+              <line x1="375" y1="532" x2="425" y2="532"/>
+              <line x1="373" y1="574" x2="427" y2="574"/>
+              <line x1="372" y1="616" x2="428" y2="616"/>
+              <line x1="371" y1="658" x2="429" y2="658"/>
+            </g>
 
-      <!-- Body -->
-      <path d="M400 655
-               C 360 655 326 675 311 715
-               C 297 752 306 782 287 812
-               C 261 854 236 876 236 941
-               C 236 1021 306 1086 400 1086
-               C 494 1086 564 1021 564 941
-               C 564 876 539 854 513 812
-               C 494 782 503 752 489 715
-               C 474 675 440 655 400 655 Z"
-            fill="url(#bodyFill)" stroke="url(#goldFill)" stroke-width="9"/>
+            <g stroke="#e9eff6" stroke-opacity="0.36" stroke-linecap="round">
+              <line x1="375" y1="1005" x2="382" y2="198" stroke-width="1.4"/>
+              <line x1="385" y1="1005" x2="389" y2="198" stroke-width="1.5"/>
+              <line x1="395" y1="1005" x2="396" y2="198" stroke-width="1.7"/>
+              <line x1="405" y1="1005" x2="403" y2="198" stroke-width="1.9"/>
+              <line x1="415" y1="1005" x2="410" y2="198" stroke-width="2.1"/>
+              <line x1="425" y1="1005" x2="417" y2="198" stroke-width="2.3"/>
+            </g>
 
-      <!-- Inner body shading -->
-      <path d="M400 695
-               C 367 695 341 712 329 744
-               C 317 776 326 807 309 835
-               C 288 871 266 892 267 947
-               C 268 1012 323 1057 400 1057
-               C 477 1057 532 1012 533 947
-               C 534 892 512 871 491 835
-               C 474 807 483 776 471 744
-               C 459 712 433 695 400 695 Z"
-            fill="#081017" opacity="0.38"/>
+            <path d="M373 188 L353 94 C350 76 361 65 381 65 L419 65 C439 65 450 76 447 94 L427 188 Z"
+                  fill="url(#bodyFill)" stroke="url(#goldFill)" stroke-width="6"/>
+            <line x1="374" y1="190" x2="426" y2="190" stroke="url(#goldFill)" stroke-width="7"/>
 
-      <!-- Pickguard -->
-      <path d="M347 760
-               C 327 804 337 866 368 906
-               C 388 933 391 963 400 985
-               C 421 982 449 954 464 914
-               C 481 869 472 802 452 760 Z"
-            fill="#060a0f" fill-opacity="0.78"
-            stroke="#f3c451" stroke-opacity="0.24" stroke-width="3"/>
+            <g fill="url(#goldFill)">
+              <rect x="327" y="84" width="28" height="11" rx="5.5"/>
+              <rect x="327" y="116" width="28" height="11" rx="5.5"/>
+              <rect x="327" y="148" width="28" height="11" rx="5.5"/>
+              <rect x="445" y="84" width="28" height="11" rx="5.5"/>
+              <rect x="445" y="116" width="28" height="11" rx="5.5"/>
+              <rect x="445" y="148" width="28" height="11" rx="5.5"/>
+              <circle cx="356" cy="89" r="5"/><circle cx="356" cy="121" r="5"/><circle cx="356" cy="153" r="5"/>
+              <circle cx="444" cy="89" r="5"/><circle cx="444" cy="121" r="5"/><circle cx="444" cy="153" r="5"/>
+            </g>
 
-      <!-- Pickups -->
-      <g>
-        <rect x="345" y="831" width="110" height="29" rx="8" fill="#0a1017" stroke="url(#goldFill)" stroke-width="3"/>
-        <rect x="345" y="905" width="110" height="29" rx="8" fill="#0a1017" stroke="url(#goldFill)" stroke-width="3"/>
-        <g fill="#f3c451" opacity="0.72">
-          <circle cx="363" cy="845" r="2.4"/><circle cx="380" cy="845" r="2.4"/>
-          <circle cx="397" cy="845" r="2.4"/><circle cx="414" cy="845" r="2.4"/>
-          <circle cx="431" cy="845" r="2.4"/><circle cx="448" cy="845" r="2.4"/>
-          <circle cx="363" cy="919" r="2.4"/><circle cx="380" cy="919" r="2.4"/>
-          <circle cx="397" cy="919" r="2.4"/><circle cx="414" cy="919" r="2.4"/>
-          <circle cx="431" cy="919" r="2.4"/><circle cx="448" cy="919" r="2.4"/>
-        </g>
-      </g>
+            <path d="M400 655
+                     C 360 655 326 675 311 715
+                     C 297 752 306 782 287 812
+                     C 261 854 236 876 236 941
+                     C 236 1021 306 1086 400 1086
+                     C 494 1086 564 1021 564 941
+                     C 564 876 539 854 513 812
+                     C 494 782 503 752 489 715
+                     C 474 675 440 655 400 655 Z"
+                  fill="url(#bodyFill)" stroke="url(#goldFill)" stroke-width="9"/>
 
-      <!-- Bridge -->
-      <g>
-        <rect x="352" y="974" width="96" height="24" rx="7" fill="url(#goldFill)" opacity="0.86"/>
-        <rect x="362" y="981" width="12" height="10" rx="2" fill="#070b10" opacity="0.62"/>
-        <rect x="380" y="981" width="12" height="10" rx="2" fill="#070b10" opacity="0.62"/>
-        <rect x="398" y="981" width="12" height="10" rx="2" fill="#070b10" opacity="0.62"/>
-        <rect x="416" y="981" width="12" height="10" rx="2" fill="#070b10" opacity="0.62"/>
-      </g>
+            <path d="M400 695
+                     C 367 695 341 712 329 744
+                     C 317 776 326 807 309 835
+                     C 288 871 266 892 267 947
+                     C 268 1012 323 1057 400 1057
+                     C 477 1057 532 1012 533 947
+                     C 534 892 512 871 491 835
+                     C 474 807 483 776 471 744
+                     C 459 712 433 695 400 695 Z"
+                  fill="#081017" opacity="0.38"/>
 
-      <!-- Controls -->
-      <g fill="#0b1119" stroke="url(#goldFill)" stroke-width="3">
-        <circle cx="488" cy="986" r="15"/>
-        <circle cx="488" cy="1024" r="15"/>
-      </g>
-      <circle cx="488" cy="986" r="4" fill="#f3c451"/>
-      <circle cx="488" cy="1024" r="4" fill="#f3c451"/>
+            <path d="M347 760
+                     C 327 804 337 866 368 906
+                     C 388 933 391 963 400 985
+                     C 421 982 449 954 464 914
+                     C 481 869 472 802 452 760 Z"
+                  fill="#060a0f" fill-opacity="0.78"
+                  stroke="#f3c451" stroke-opacity="0.24" stroke-width="3"/>
 
-      <!-- Neck edge highlight -->
-      <path d="M370 686 L385 204" stroke="#f3c451" stroke-opacity="0.28" stroke-width="2" fill="none"/>
-      <path d="M430 686 L415 204" stroke="#070b10" stroke-opacity="0.55" stroke-width="2" fill="none"/>
+            <g>
+              <rect x="345" y="831" width="110" height="29" rx="8" fill="#0a1017" stroke="url(#goldFill)" stroke-width="3"/>
+              <rect x="345" y="905" width="110" height="29" rx="8" fill="#0a1017" stroke="url(#goldFill)" stroke-width="3"/>
+              <g fill="#f3c451" opacity="0.72">
+                <circle cx="363" cy="845" r="2.4"/><circle cx="380" cy="845" r="2.4"/>
+                <circle cx="397" cy="845" r="2.4"/><circle cx="414" cy="845" r="2.4"/>
+                <circle cx="431" cy="845" r="2.4"/><circle cx="448" cy="845" r="2.4"/>
+                <circle cx="363" cy="919" r="2.4"/><circle cx="380" cy="919" r="2.4"/>
+                <circle cx="397" cy="919" r="2.4"/><circle cx="414" cy="919" r="2.4"/>
+                <circle cx="431" cy="919" r="2.4"/><circle cx="448" cy="919" r="2.4"/>
+              </g>
+            </g>
 
-      <!-- Body rim highlight -->
-      <path d="M400 666
-               C 366 666 336 684 323 720
-               C 309 758 318 788 300 818
-               C 278 855 251 880 250 941
-               C 249 1005 307 1070 400 1070"
-            fill="none" stroke="#ffe7a6" stroke-opacity="0.22" stroke-width="3" filter="url(#neckGlow)"/>
-    </g>
-  </svg>
+            <rect x="352" y="974" width="96" height="24" rx="7" fill="url(#goldFill)" opacity="0.86"/>
+            <g fill="#0b1119" stroke="url(#goldFill)" stroke-width="3">
+              <circle cx="488" cy="986" r="15"/>
+              <circle cx="488" cy="1024" r="15"/>
+            </g>
+            <circle cx="488" cy="986" r="4" fill="#f3c451"/>
+            <circle cx="488" cy="1024" r="4" fill="#f3c451"/>
+          </g>
+        </svg>
+      </div>
+    </div>
+  </section>
 
-  <div class="veil"></div>
+  <div class="facts" aria-label="Коротко о проекте">
+    <div class="wrap">
+      <div class="fact"><b>4 стема</b><span>бас · барабаны · гитара · прочее</span></div>
+      <div class="fact"><b>MIDI → табы</b><span>автоматическая раскладка</span></div>
+      <div class="fact"><b>Микрофон</b><span>оценка в реальном времени</span></div>
+      <div class="fact"><b>Рейтинг</b><span>общий и по песням</span></div>
+    </div>
+  </div>
 
-  <main>
-    <h1>fretfight</h1>
-    <p class="tagline">First guitar battle <span>online</span></p>
-    <div class="rule"></div>
-  </main>
+  <section id="about" aria-labelledby="about-title">
+    <div class="wrap split">
+      <div class="about">
+        <div class="section-head">
+          <p class="kicker">о проекте</p>
+          <h2 id="about-title">Гитара, табы и честное соревнование</h2>
+        </div>
+        <p>
+          fretfight — это тренажёр и соревнование в одном приложении. Вы выбираете песню
+          из каталога, играете по табам под минусовку и видите, насколько точно звучит
+          каждая нота.
+        </p>
+        <p>
+          Всё честно: звук берётся с микрофона или аудиоинтерфейса, а не из кликов по экрану.
+          Результат каждой попытки сохраняется, так что прогресс видно не только на глаз,
+          но и в цифрах.
+        </p>
+        <ul class="tick-list">
+          <li>Каталог песен с табами и минусовками</li>
+          <li>Оценка точности и комбо по каждой попытке</li>
+          <li>Личный прогресс и лучший результат по каждой песне</li>
+          <li>Общий рейтинг игроков</li>
+        </ul>
+      </div>
 
-  <p class="footer">fretfight · coming soon</p>
+      <aside class="panel">
+        <h3>Как считается результат</h3>
+        <div class="spec"><span>Точность</span><b>% попаданий в ноту</b></div>
+        <div class="spec"><span>Комбо</span><b>серия без промахов</b></div>
+        <div class="spec"><span>Очки</span><b>за каждую ноту</b></div>
+        <div class="spec"><span>Уровень</span><b>сложность 1–10</b></div>
+      </aside>
+    </div>
+  </section>
+
+  <section id="how" aria-labelledby="how-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">как играть</p>
+        <h2 id="how-title">Три шага до первой битвы</h2>
+        <p>Никаких настроек на полдня: установили, подключили гитару, играете.</p>
+      </div>
+
+      <div class="steps">
+        <article class="step">
+          <h3>Установите клиент</h3>
+          <p>
+            Настольное приложение для Windows. Скачайте песню из каталога —
+            MIDI и минусовки загрузятся автоматически.
+          </p>
+        </article>
+        <article class="step">
+          <h3>Подключите звук</h3>
+          <p>
+            Микрофон перед комбо или аудиоинтерфейс. Приложение слушает
+            вашу игру и сопоставляет её с нотами песни.
+          </p>
+        </article>
+        <article class="step">
+          <h3>Играйте и соревнуйтесь</h3>
+          <p>
+            Табы подсвечивают текущую ноту, минусовка держит ритм, а после
+            песни результат уходит в личную статистику и рейтинг.
+          </p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="features" aria-labelledby="features-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker">возможности</p>
+        <h2 id="features-title">Всё, чтобы играть, а не настраивать</h2>
+      </div>
+
+      <div class="cards">
+        <article class="card">
+          <div class="icon" aria-hidden="true">♪</div>
+          <h3>Табы из MIDI</h3>
+          <p>Ноты автоматически раскладываются по струнам и ладам — с темпом, длительностями и сменой размера.</p>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true">◉</div>
+          <h3>Минусовка из стемов</h3>
+          <p>Четыре дорожки — бас, барабаны, гитара и прочее. Можно убрать гитару и играть вместе с ритм-секцией.</p>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true">◎</div>
+          <h3>Живая оценка</h3>
+          <p>Определение высоты тона по микрофону в реальном времени: точность, комбо и промахи прямо во время игры.</p>
+        </article>
+        <article class="card">
+          <div class="icon" aria-hidden="true">▲</div>
+          <h3>Рейтинг игроков</h3>
+          <p>Лучший результат по каждой песне идёт в общий зачёт. Сравнивайте себя с другими и следите за ростом.</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="requirements" aria-labelledby="requirements-title">
+    <div class="wrap split">
+      <div>
+        <div class="section-head">
+          <p class="kicker">требования</p>
+          <h2 id="requirements-title">Что понадобится</h2>
+          <p>Клиент рассчитан на обычный домашний сетап.</p>
+        </div>
+        <ul class="tick-list">
+          <li>Windows 10 или 11, 64-бит</li>
+          <li>Микрофон или аудиоинтерфейс</li>
+          <li>Электрогитара или акустика с подключением</li>
+          <li>Наушники — чтобы минусовка не попадала в микрофон</li>
+        </ul>
+      </div>
+
+      <aside class="panel">
+        <h3>Статус проекта</h3>
+        <div class="spec"><span>Платформа</span><b>Windows</b></div>
+        <div class="spec"><span>Состояние</span><b>в разработке</b></div>
+        <div class="spec"><span>Каталог</span><b>наполняется</b></div>
+        <div class="spec"><span>Сайт</span><b>fretfight.online</b></div>
+      </aside>
+    </div>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <div class="wrap">
+      <div class="cta-inner">
+        <h2 id="cta-title">Релиз уже близко</h2>
+        <p>
+          Мы дорабатываем клиент и наполняем каталог. Первые песни, оценка в реальном
+          времени и общий рейтинг появятся здесь же — на fretfight.online.
+        </p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#how">Как это работает</a>
+          <a class="btn btn-ghost" href="#top">Наверх</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    <span>© 2026 fretfight</span>
+    <span class="spacer"></span>
+    <span>fretfight.online</span>
+  </div>
+</footer>
+
 </body>
 </html>
