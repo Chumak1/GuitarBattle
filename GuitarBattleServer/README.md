@@ -19,10 +19,21 @@ FastAPI + PostgreSQL + SQLAlchemy + Alembic + Docker Compose.
 
 ## Public pages
 
-- `GET /` — the full-screen placeholder at `app/static/landing/index.html` (brand, tagline, blurred guitar).
+- `GET /` — the landing page at `app/static/landing/index.html` (hero, project overview, how it works, features, requirements, CTA).
 - `GET /admin/` — the admin SPA at `app/static/admin/`.
 
 Both are served by FastAPI from inside the API image. Caddy only needs to reverse-proxy `fretfight.online` to `127.0.0.1:8000`; no separate static-site root is required.
+
+## Deploying to production
+
+Production lives on the Yandex Cloud VM `guitarbattle-prod` (`ubuntu@84.201.151.183`), directory `/opt/guitarbattle/GuitarBattleServer`, behind Caddy. From the repository root:
+
+```powershell
+pwsh -File GuitarBattleServer/scripts/deploy-prod.ps1
+```
+
+The script packs the server directory (never `.env`), uploads it over SSH, keeps a timestamped `GuitarBattleServer.backup-*` copy of the previous release, syncs the files, rebuilds the `api` image, restarts the stack and waits for `https://fretfight.online/health/ready`. Use `-NoBuild` to sync files without restarting containers. The production `.env` stays on the server untouched; add new variables there manually before deploying code that needs them.
+
 
 ## API overview
 
