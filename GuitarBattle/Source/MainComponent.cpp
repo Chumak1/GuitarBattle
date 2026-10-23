@@ -28,14 +28,21 @@ static juce::AudioBuffer<float> makePitchPreservingTimeStretch(
 // Branded audio settings panel used by the Audio Settings dialog.
 // Keeps JUCE's native device selector and its existing deviceManager bindings,
 // while placing it inside the app's dark navy/gold visual system.
-class AudioSettingsPanel final : public juce::Component
+class AudioSettingsPanel final : public juce::Component,
+                                 private juce::ChangeListener
 {
 public:
-    explicit AudioSettingsPanel(juce::AudioDeviceManager& manager)
-        : selector(manager, 0, 2, 0, 2, true, true, true, false)
+    AudioSettingsPanel(juce::AudioDeviceManager& manager,
+                       int initialInputChannel,
+                       std::function<void(int)> onInputChannelChanged)
+        : selector(manager, 0, 32, 0, 2, true, true, true, false),
+          deviceManager(manager),
+          inputChannelChanged(onInputChannelChanged)
     {
-        setSize(760, 560);
+        setSize(760, 600);
         addAndMakeVisible(selector);
+        addAndMakeVisible(inputChannelLabel);
+        addAndMakeVisible(inputChannelBox);
 
         // Keep the native selector readable on the dark theme.
         std::function<void(juce::Component&)> applyReadableAudioColours;
@@ -59,6 +66,31 @@ public:
                 applyReadableAudioColours(*component.getChildComponent(i));
         };
         applyReadableAudioColours(selector);
+
+        inputChannelLabel.setText("GUITAR INPUT", juce::dontSendNotification);
+        inputChannelLabel.setJustificationType(juce::Justification::centredLeft);
+        inputChannelLabel.setColour(juce::Label::textColourId, UiColors::text);
+        inputChannelLabel.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
+
+        inputChannelBox.setColour(juce::ComboBox::textColourId, UiColors::text);
+        inputChannelBox.setColour(juce::ComboBox::backgroundColourId, UiColors::card);
+        inputChannelBox.setColour(juce::ComboBox::outlineColourId, UiColors::border);
+        inputChannelBox.setColour(juce::ComboBox::arrowColourId, UiColors::accent);
+        inputChannelBox.setTooltip("Choose the input channel that carries your guitar. "
+                                   "Auto follows the loudest active input.");
+        inputChannelBox.onChange = [this]
+        {
+            if (inputChannelChanged)
+                inputChannelChanged(inputChannelBox.getSelectedId() - 2);
+        };
+
+        deviceManager.addChangeListener(this);
+        rebuildInputChannelChoices(initialInputChannel);
+    }
+
+    ~AudioSettingsPanel() override
+    {
+        deviceManager.removeChangeListener(this);
     }
 
     void paint(juce::Graphics& g) override
@@ -89,15 +121,70 @@ public:
 
         g.setColour(UiColors::border);
         g.drawLine(30.0f, 96.0f, static_cast<float>(getWidth() - 30), 96.0f, 1.0f);
+        g.drawLine(30.0f, static_cast<float>(getHeight() - 92),
+                   static_cast<float>(getWidth() - 30),
+                   static_cast<float>(getHeight() - 92), 1.0f);
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(10.5f));
+        g.drawText("Auto follows the loudest active input. Enable extra inputs above for other channels.",
+                   30, getHeight() - 44, getWidth() - 60, 20,
+                   juce::Justification::centredLeft, false);
     }
 
     void resized() override
     {
-        selector.setBounds(30, 108, getWidth() - 60, getHeight() - 132);
+        selector.setBounds(30, 108, getWidth() - 60,
+                           juce::jmax(80, getHeight() - 204));
+        inputChannelLabel.setBounds(30, getHeight() - 76, 130, 24);
+        inputChannelBox.setBounds(168, getHeight() - 78, 320, 28);
     }
 
 private:
+    void changeListenerCallback(juce::ChangeBroadcaster*) override
+    {
+        rebuildInputChannelChoices(-1);
+    }
+
+    void rebuildInputChannelChoices(int initialChannel)
+    {
+        int selected = (inputChannelBox.getSelectedId() > 0)
+            ? inputChannelBox.getSelectedId() - 2
+            : initialChannel;
+
+        inputChannelBox.clear(juce::dontSendNotification);
+        inputChannelBox.addItem("Auto (any active input)", 1);
+
+        if (auto* device = deviceManager.getCurrentAudioDevice())
+        {
+            const auto names = device->getInputChannelNames();
+            const auto active = device->getActiveInputChannels();
+
+            for (int hardware = 0; hardware < names.size(); ++hardware)
+            {
+                if (!active[hardware])
+                    continue;
+
+                const auto name = names[hardware].trim();
+                inputChannelBox.addItem(name.isNotEmpty()
+                                            ? name
+                                            : "Input " + juce::String(hardware + 1),
+                                        hardware + 2);
+            }
+        }
+
+        int id = selected < 0 ? 1 : selected + 2;
+        if (inputChannelBox.indexOfItemId(id) < 0)
+            id = 1;
+
+        inputChannelBox.setSelectedId(id, juce::dontSendNotification);
+    }
+
     juce::AudioDeviceSelectorComponent selector;
+    juce::AudioDeviceManager& deviceManager;
+    std::function<void(int)> inputChannelChanged;
+    juce::Label inputChannelLabel;
+    juce::ComboBox inputChannelBox;
 };
 
 //==============================================================================
@@ -122,17 +209,16 @@ MainComponent::MainComponent()
     options.commonToAllUsers = false;
     appProperties.setStorageParameters(options);
 
+    if (auto* settings = appProperties.getUserSettings())
+        preferredInputChannel.store(
+            settings->getIntValue("InputChannel", -1),
+            std::memory_order_relaxed);
+
     setSize(
         1000,
         950);
 
     startTimerHz(30);
-
-    // Use a single still frame as the background; no background animation.
-    // The image is optional, so the light theme remains usable if it is absent.
-    const juce::File framesDirectory("D:\\GuitarBattle\\GuitarBattle\\Style\\VideoFrames");
-    backgroundFrame = juce::ImageFileFormat::loadFrom(
-        framesDirectory.getChildFile("frame_0001.jpg"));
 
     overlayComponent.setBounds(getLocalBounds());
     addAndMakeVisible(overlayComponent);
@@ -478,7 +564,7 @@ MainComponent::MainComponent()
     midiBackingButton.setColour(juce::TextButton::textColourOnId, UiColors::background);
     midiBackingButton.setToggleState(true, juce::dontSendNotification);
     midiBackingButton.setButtonText("SOLO GUITAR ON");
-    midiBackingButton.setTooltip("Toggle the MIDI solo-guitar part generated by GuitarBattle.");
+    midiBackingButton.setTooltip("Toggle the MIDI solo-guitar part generated by FretFight.");
     addAndMakeVisible(midiBackingButton);
     midiBackingButton.onClick = [this]
     {
@@ -686,24 +772,41 @@ MainComponent::MainComponent()
     rebuildCatalogRows(juce::var());
 
     //==========================================================================
-    // Pitch label
+    // Pitch / combo HUD labels
 
     pitchLabel.setText(
-        "x0",
+        "---",
         juce::dontSendNotification);
 
     pitchLabel.setFont(
-        GameUi::heading(32.0f));
+        GameUi::font(20.0f, true));
 
     pitchLabel.setColour(
         juce::Label::textColourId,
-        UiColors::accent);
+        UiColors::green);
 
     pitchLabel.setJustificationType(
         juce::Justification::centred);
 
     addAndMakeVisible(
         pitchLabel);
+
+    comboLabel.setText(
+        "x0",
+        juce::dontSendNotification);
+
+    comboLabel.setFont(
+        GameUi::heading(30.0f));
+
+    comboLabel.setColour(
+        juce::Label::textColourId,
+        UiColors::accent);
+
+    comboLabel.setJustificationType(
+        juce::Justification::centred);
+
+    addAndMakeVisible(
+        comboLabel);
 
     //==========================================================================
     // Beat label
@@ -1192,7 +1295,13 @@ MainComponent::MainComponent()
             juce::DialogWindow::LaunchOptions options;
 
             options.content.setOwned(
-                new AudioSettingsPanel(deviceManager));
+                new AudioSettingsPanel(
+                    deviceManager,
+                    preferredInputChannel.load(std::memory_order_relaxed),
+                    [this](int channel)
+                    {
+                        setPreferredInputChannel(channel);
+                    }));
 
             options.dialogTitle =
                 "Audio Settings";
@@ -1272,9 +1381,45 @@ MainComponent::MainComponent()
     // Song stems are loaded when a catalogue entry is selected.
 
     setAudioChannels(
-        2,
+        32,
         2,
         savedState.get());
+
+    // Older builds saved a two-input device state. Expand it once so a guitar
+    // connected to any input of a multi-channel interface is captured without
+    // asking the user to reconfigure the device first.
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        if (!settings->getBoolValue("AudioInputsExpanded", false))
+        {
+            if (auto* device = deviceManager.getCurrentAudioDevice())
+            {
+                const int availableInputs = device->getInputChannelNames().size();
+                const int activeInputs =
+                    device->getActiveInputChannels().countNumberOfSetBits();
+
+                if (availableInputs > activeInputs && availableInputs > 0)
+                {
+                    auto setup = deviceManager.getAudioDeviceSetup();
+                    setup.inputChannels.clear();
+                    setup.inputChannels.setRange(
+                        0,
+                        juce::jmin(availableInputs, 32),
+                        true);
+                    setup.useDefaultInputChannels = false;
+
+                    // If the driver refuses the wider channel set, restore the
+                    // previously saved device setup instead of leaving the app
+                    // without an audio device.
+                    if (deviceManager.setAudioDeviceSetup(setup, true).isNotEmpty())
+                        deviceManager.initialise(32, 2, savedState.get(), true);
+                }
+            }
+
+            settings->setValue("AudioInputsExpanded", true);
+            settings->saveIfNeeded();
+        }
+    }
 
     //==========================================================================
     // Start pitch thread
@@ -1419,7 +1564,7 @@ void MainComponent::timerCallback()
             currentBeatInBar + 1),
         juce::dontSendNotification);
 
-    pitchLabel.setText(
+    comboLabel.setText(
         "x" + juce::String(gameplayStats.getCombo()),
         juce::dontSendNotification);
 }
@@ -1479,6 +1624,21 @@ void MainComponent::updateHitFeedbackAnimation()
 //==============================================================================
 // Destructor
 //==============================================================================
+
+//==============================================================================
+// Audio input channel selection
+//==============================================================================
+
+void MainComponent::setPreferredInputChannel(int channel)
+{
+    preferredInputChannel.store(channel, std::memory_order_relaxed);
+
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        settings->setValue("InputChannel", channel);
+        settings->saveIfNeeded();
+    }
+}
 
 MainComponent::~MainComponent()
 {
@@ -1717,7 +1877,7 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
     // open while credentials are checked; only CANCEL (or a successful sign-in)
     // dismisses it.
     auto* prompt = new juce::AlertWindow(
-        createAccount ? "Create GuitarBattle account" : "Sign in to GuitarBattle",
+        createAccount ? "Create FretFight account" : "Sign in to FretFight",
         createAccount
             ? "Username, email and password are required. We will send a 6-digit confirmation code to your email."
             : "Enter your username/email and password.",
@@ -2611,7 +2771,7 @@ void MainComponent::refreshGlobalLeaderboard()
 
             if (!response.transportOk)
             {
-                self->leaderboardLabel.setText("Server unavailable. Start GuitarBattleServer and try again.",
+                self->leaderboardLabel.setText("Server unavailable. Start the FretFight server and try again.",
                                                juce::dontSendNotification);
                 return;
             }
@@ -4732,6 +4892,33 @@ void MainComponent::prepareToPlay(
     juce::ignoreUnused(
         samplesPerBlockExpected);
 
+    // The audio callback receives one buffer channel per active input. Cache
+    // that count and the active-index -> hardware-channel map so guitar capture
+    // can select any active input without querying the device from the
+    // realtime thread.
+    activeInputChannels.store(0, std::memory_order_relaxed);
+    activeInputHardwareChannels.fill(-1);
+    currentInputChannel = 0;
+
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+    {
+        const auto active = device->getActiveInputChannels();
+        int activeIndex = 0;
+
+        for (int hardware = 0;
+            hardware < static_cast<int>(activeInputHardwareChannels.size());
+            ++hardware)
+        {
+            if (!active[hardware])
+                continue;
+
+            activeInputHardwareChannels[static_cast<size_t>(activeIndex)] = hardware;
+            ++activeIndex;
+        }
+
+        activeInputChannels.store(activeIndex, std::memory_order_relaxed);
+    }
+
 
     // Audio formats were registered in the constructor before the sample bank was loaded.
 
@@ -4922,33 +5109,134 @@ void MainComponent::getNextAudioBlock(
     // IMPORTANT:
     // Use startSample because AudioSourceChannelInfo can point to an
     // offset inside the AudioBuffer.
+    //
+    // JUCE fills channels 0..outputCount-1 with the output buffers (including
+    // the first inputs) and appends input-only channels when the device has
+    // more inputs than outputs. Never assume the guitar is on channel 0: the
+    // user may have it on any input of a multi-channel interface.
 
-    const auto* samples =
-        bufferToFill.buffer->getReadPointer(
-            0,
-            bufferToFill.startSample);
+    const int inputChannelCount = juce::jlimit(
+        0,
+        bufferToFill.buffer->getNumChannels(),
+        activeInputChannels.load(std::memory_order_relaxed));
+
+    const int outputChannelCount = juce::jmin(
+        2,
+        bufferToFill.buffer->getNumChannels());
+
+    int inputChannel = 0;
+
+    if (inputChannelCount > 0)
+    {
+        const int requestedHardware =
+            preferredInputChannel.load(std::memory_order_relaxed);
+
+        int requestedIndex = -1;
+
+        if (requestedHardware >= 0)
+        {
+            const int mappedCount = juce::jmin(
+                inputChannelCount,
+                static_cast<int>(activeInputHardwareChannels.size()));
+
+            for (int index = 0; index < mappedCount; ++index)
+            {
+                if (activeInputHardwareChannels[static_cast<size_t>(index)]
+                    == requestedHardware)
+                {
+                    requestedIndex = index;
+                    break;
+                }
+            }
+        }
+
+        if (requestedIndex >= 0)
+        {
+            inputChannel = requestedIndex;
+            currentInputChannel = requestedIndex;
+        }
+        else
+        {
+            // Auto mode: follow the loudest active input, but keep the current
+            // channel unless another one is clearly stronger. This prevents
+            // flapping between silent or noisy inputs during a performance.
+            int bestChannel = juce::jlimit(
+                0, inputChannelCount - 1, currentInputChannel);
+            float bestRms = bufferToFill.buffer->getRMSLevel(
+                bestChannel,
+                bufferToFill.startSample,
+                bufferToFill.numSamples);
+
+            for (int channel = 0;
+                channel < inputChannelCount;
+                ++channel)
+            {
+                const float rms = bufferToFill.buffer->getRMSLevel(
+                    channel,
+                    bufferToFill.startSample,
+                    bufferToFill.numSamples);
+
+                if (rms > bestRms * 1.6f + 0.0015f)
+                {
+                    bestChannel = channel;
+                    bestRms = rms;
+                }
+            }
+
+            inputChannel = bestChannel;
+            currentInputChannel = bestChannel;
+        }
+    }
+
+    const auto* samples = inputChannelCount > 0
+        ? bufferToFill.buffer->getReadPointer(
+              inputChannel,
+              bufferToFill.startSample)
+        : nullptr;
 
     //==========================================================================
-    // Mono guitar -> stereo
+    // Mono guitar -> stereo monitoring
 
-    if (bufferToFill.buffer->getNumChannels() >= 2)
+    if (outputChannelCount > 0)
     {
-        auto* left =
-            bufferToFill.buffer->getWritePointer(
+        if (samples != nullptr)
+        {
+            auto* left = bufferToFill.buffer->getWritePointer(
                 0,
                 bufferToFill.startSample);
 
-        auto* right =
-            bufferToFill.buffer->getWritePointer(
-                1,
-                bufferToFill.startSample);
+            for (int i = 0;
+                i < bufferToFill.numSamples;
+                ++i)
+            {
+                left[i] = samples[i];
+            }
 
-        for (int i = 0;
-            i < bufferToFill.numSamples;
-            ++i)
+            if (outputChannelCount > 1)
+            {
+                auto* right = bufferToFill.buffer->getWritePointer(
+                    1,
+                    bufferToFill.startSample);
+
+                for (int i = 0;
+                    i < bufferToFill.numSamples;
+                    ++i)
+                {
+                    right[i] = samples[i];
+                }
+            }
+        }
+        else
         {
-            right[i] =
-                left[i];
+            for (int channel = 0;
+                channel < outputChannelCount;
+                ++channel)
+            {
+                bufferToFill.buffer->clear(
+                    channel,
+                    bufferToFill.startSample,
+                    bufferToFill.numSamples);
+            }
         }
     }
 
@@ -4963,7 +5251,7 @@ void MainComponent::getNextAudioBlock(
         pitchBuffer.setSample(
             0,
             pitchBufferPosition,
-            samples[i]);
+            samples != nullptr ? samples[i] : 0.0f);
 
         ++pitchBufferPosition;
 
@@ -5089,7 +5377,7 @@ void MainComponent::getNextAudioBlock(
     {
         const float drive = distortionDrive.load(std::memory_order_relaxed);
         const float tone = distortionTone.load(std::memory_order_relaxed);
-        const int channels = juce::jmin(2, bufferToFill.buffer->getNumChannels());
+        const int channels = outputChannelCount;
         // Gain-compensated soft clipping: increasing DRIVE adds saturation without
         // the huge output jump of an uncompensated tanh(x * drive).
         const float compensation = 1.0f / juce::jmax(1.0f, std::sqrt(drive));
@@ -5125,7 +5413,7 @@ void MainComponent::getNextAudioBlock(
                 midiRhythmGuitarEnabled.load(std::memory_order_relaxed) ? midiRhythmGuitarVolume.load(std::memory_order_relaxed) : 0.0f,
                 midiPianoEnabled.load(std::memory_order_relaxed) ? midiPianoVolume.load(std::memory_order_relaxed) : 0.0f
             };
-            const int outputChannels = bufferToFill.buffer->getNumChannels();
+            const int outputChannels = outputChannelCount;
             for (size_t trackIndex = 0; trackIndex < externalAudioTracks.size(); ++trackIndex)
             {
                 const auto& track = externalAudioTracks[trackIndex];
@@ -5178,7 +5466,7 @@ void MainComponent::getNextAudioBlock(
             && notes.size() > 0 && currentSample + static_cast<uint64_t>(bufferToFill.numSamples) > songStart)
         {
             const double samplesPerBeat = sr * 60.0 / currentBpm;
-            const int channels = bufferToFill.buffer->getNumChannels();
+            const int channels = outputChannelCount;
             for (int i = 0; i < bufferToFill.numSamples; ++i)
             {
                 const uint64_t absoluteSample = currentSample + static_cast<uint64_t>(i);
@@ -5241,7 +5529,7 @@ void MainComponent::getNextAudioBlock(
         if (sr > 0.0 && currentBpm > 0.0 && currentSample + static_cast<uint64_t>(bufferToFill.numSamples) > songStart)
         {
             const double samplesPerBeat = sr * 60.0 / currentBpm;
-            const int channels = bufferToFill.buffer->getNumChannels();
+            const int channels = outputChannelCount;
             const double elapsedAtBlockStart = currentSample >= songStart
                 ? static_cast<double>(currentSample - songStart) : -static_cast<double>(songStart - currentSample);
             for (const auto& note : backingNotes)
@@ -5362,7 +5650,7 @@ void MainComponent::getNextAudioBlock(
                         metronomePlaybackPosition + i);
 
                 for (int channel = 0;
-                    channel < bufferToFill.buffer->getNumChannels();
+                    channel < outputChannelCount;
                     ++channel)
                 {
                     bufferToFill.buffer->addSample(
@@ -5408,37 +5696,6 @@ void MainComponent::paint(juce::Graphics& g)
     const auto area = getLocalBounds().toFloat();
     g.fillAll(UiColors::background);
 
-    // Keep the old cinematic still as an almost invisible texture; the dark
-    // gradient does the actual work and keeps every screen on-brand.
-    if (backgroundFrame.isValid() && area.getWidth() > 0.0f && area.getHeight() > 0.0f)
-    {
-        const float imageW = static_cast<float>(backgroundFrame.getWidth());
-        const float imageH = static_cast<float>(backgroundFrame.getHeight());
-        const float destW = area.getWidth();
-        const float destH = area.getHeight();
-        const float imageAspect = imageW / imageH;
-        const float destAspect = destW / destH;
-        float sourceX = 0.0f, sourceY = 0.0f, sourceW = imageW, sourceH = imageH;
-
-        if (imageAspect > destAspect)
-        {
-            sourceW = imageH * destAspect;
-            sourceX = (imageW - sourceW) * 0.5f;
-        }
-        else if (imageAspect < destAspect)
-        {
-            sourceH = imageW / destAspect;
-            sourceY = (imageH - sourceH) * 0.5f;
-        }
-
-        g.setOpacity(0.075f);
-        g.drawImage(backgroundFrame,
-                    0, 0, getWidth(), getHeight(),
-                    juce::roundToInt(sourceX), juce::roundToInt(sourceY),
-                    juce::roundToInt(sourceW), juce::roundToInt(sourceH));
-        g.setOpacity(1.0f);
-    }
-
     auto drawGlow = [&g, &area](float centreX, float centreY, float radius,
                                 juce::Colour colour)
     {
@@ -5482,12 +5739,12 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         g.fillRoundedRectangle(x, y, 32.0f, 32.0f, 10.0f);
         g.setColour(UiColors::onAccent);
         g.setFont(GameUi::heading(14.0f));
-        g.drawText("GB", juce::Rectangle<float>(x, y, 32.0f, 32.0f),
+        g.drawText("FF", juce::Rectangle<float>(x, y, 32.0f, 32.0f),
                    juce::Justification::centred, false);
 
         g.setColour(UiColors::text);
         g.setFont(GameUi::heading(16.0f));
-        g.drawText("GUITARBATTLE",
+        g.drawText("FRETFIGHT",
                    juce::Rectangle<float>(x + 44.0f, y + 1.0f, 190.0f, 30.0f),
                    juce::Justification::centredLeft, false);
 
@@ -5534,7 +5791,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         g.drawEllipse(icon, 1.2f);
         g.setColour(UiColors::accent);
         g.setFont(GameUi::heading(20.0f));
-        g.drawText("GB", icon, juce::Justification::centred, false);
+        g.drawText("FF", icon, juce::Justification::centred, false);
 
         g.setColour(UiColors::accent);
         g.setFont(GameUi::eyebrow(10.0f));
@@ -5645,7 +5902,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         g.drawRoundedRectangle(art.reduced(1.0f), 18.0f, 1.0f);
         g.setColour(UiColors::onAccent);
         g.setFont(GameUi::heading(40.0f));
-        g.drawText("GB", art, juce::Justification::centred, false);
+        g.drawText("FF", art, juce::Justification::centred, false);
 
         // The header shows whichever catalogue row is highlighted, so the card
         // always previews the song START SONG will load.
@@ -6298,36 +6555,42 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     drawTempoPill({ 132.0f, 82.0f, 72.0f, 24.0f }, "BAR");
     drawTempoPill({ 212.0f, 82.0f, 88.0f, 24.0f }, "BPM");
 
-    const float leftW = 190.0f;
-    const float rightX = width - 214.0f;
-    const float rightW = 190.0f;
-    const float centreX = 226.0f;
-    const float centreW = width - 452.0f;
-    const juce::Rectangle<float> comboCard(24.0f, hudY, leftW, hudH);
-    const juce::Rectangle<float> statsCard(centreX, hudY, centreW, hudH);
-    const juce::Rectangle<float> targetCard(rightX, hudY, rightW, hudH);
+    constexpr float hudGap = 12.0f;
+    const float comboW = 124.0f;
+    const float pitchW = 214.0f;
+    const float targetW = 190.0f;
+
+    const juce::Rectangle<float> comboCard(24.0f, hudY, comboW, hudH);
+    const juce::Rectangle<float> pitchCard(comboCard.getRight() + hudGap, hudY,
+                                           pitchW, hudH);
+    const juce::Rectangle<float> targetCard(width - 24.0f - targetW, hudY,
+                                            targetW, hudH);
+    const float statsX = pitchCard.getRight() + hudGap;
+    const float statsW = juce::jmax(180.0f, targetCard.getX() - hudGap - statsX);
+    const juce::Rectangle<float> statsCard(statsX, hudY, statsW, hudH);
+
     GameUi::drawCard(g, comboCard, 16.0f);
+    GameUi::drawCard(g, pitchCard, 16.0f);
     GameUi::drawCard(g, statsCard, 16.0f);
     GameUi::drawCard(g, targetCard, 16.0f);
 
     GameUi::drawEyebrow(g, "COMBO",
-                        juce::Rectangle<float>(comboCard.getX() + 18.0f,
+                        juce::Rectangle<float>(comboCard.getX() + 14.0f,
                                                comboCard.getY() + 14.0f,
-                                               leftW - 36.0f, 15.0f));
-    g.setColour(UiColors::muted.withAlpha(0.65f));
-    g.setFont(GameUi::font(9.0f, true));
-    g.drawText("STREAK",
-               juce::Rectangle<float>(comboCard.getX() + 18.0f,
-                                      comboCard.getY() + 68.0f,
-                                      leftW - 36.0f, 14.0f),
-               juce::Justification::centred, false);
+                                               comboW - 28.0f, 15.0f));
+
+    GameUi::drawEyebrow(g, "PITCH",
+                        juce::Rectangle<float>(pitchCard.getX() + 16.0f,
+                                               pitchCard.getY() + 14.0f,
+                                               pitchW - 32.0f, 15.0f),
+                        UiColors::green);
 
     g.setColour(UiColors::accent);
     g.setFont(GameUi::eyebrow(9.0f));
     g.drawText("NEXT NOTE",
                juce::Rectangle<float>(targetCard.getX() + 18.0f,
                                       targetCard.getY() + 14.0f,
-                                      rightW - 30.0f, 15.0f),
+                                      targetW - 30.0f, 15.0f),
                juce::Justification::centredLeft, false);
 
     GameUi::drawEyebrow(g, "LIVE PERFORMANCE",
@@ -6380,49 +6643,10 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     g.setColour(juce::Colours::black.withAlpha(0.25f));
     g.fillRoundedRectangle(24.0f, tabY + 3.0f, width - 48.0f, tabH, 16.0f);
 
-    const float pedalW = juce::jmin(252.0f, width / 3.0f);
-    const juce::Rectangle<float> pedal(24.0f, studioY, pedalW, studioH);
-    const float mixerX = 24.0f + pedalW + 16.0f;
-    const juce::Rectangle<float> mixer(mixerX, studioY,
-                                       width - 24.0f - mixerX, studioH);
-
-    // Stompbox: red-tinted card with its own status badge.
-    g.setColour(juce::Colours::black.withAlpha(0.28f));
-    g.fillRoundedRectangle(pedal.translated(0.0f, 3.0f), 18.0f);
-    juce::ColourGradient pedalFill(
-        UiColors::surface2.interpolatedWith(UiColors::red, 0.10f),
-        pedal.getX(), pedal.getY(),
-        UiColors::surface.interpolatedWith(UiColors::red, 0.03f),
-        pedal.getX(), pedal.getBottom(), false);
-    g.setGradientFill(pedalFill);
-    g.fillRoundedRectangle(pedal, 18.0f);
-    g.setColour(UiColors::red.withAlpha(0.28f));
-    g.drawRoundedRectangle(pedal, 18.0f, 1.0f);
-    g.setColour(UiColors::red.withAlpha(0.55f));
-    g.fillRoundedRectangle(pedal.getX() + 22.0f,
-                           pedal.getY() + 20.0f, 4.0f, 26.0f, 2.0f);
-    g.setColour(UiColors::red);
-    g.setFont(GameUi::eyebrow(8.5f));
-    g.drawText("STOMPBOX",
-               juce::Rectangle<float>(pedal.getX() + 34.0f,
-                                      pedal.getY() + 18.0f,
-                                      pedalW - 58.0f, 14.0f),
-               juce::Justification::centredLeft, false);
-    g.setColour(UiColors::text);
-    g.setFont(GameUi::heading(19.0f));
-    g.drawText("DISTORTION",
-               juce::Rectangle<float>(pedal.getX() + 34.0f,
-                                      pedal.getY() + 33.0f,
-                                      pedalW - 58.0f, 24.0f),
-               juce::Justification::centredLeft, false);
-    GameUi::drawPill(g,
-                     juce::Rectangle<float>(pedal.getX() + 24.0f,
-                                            pedal.getY() + 62.0f,
-                                            88.0f, 20.0f),
-                     distortionEnabled.load(std::memory_order_relaxed)
-                         ? "ENGAGED" : "BYPASS",
-                     UiColors::red,
-                     distortionEnabled.load(std::memory_order_relaxed));
+    // Guitar-effect pedals are intentionally not shown yet; the backing-track
+    // mixer uses the full width until the effects UI is implemented.
+    const juce::Rectangle<float> mixer(24.0f, studioY,
+                                       width - 48.0f, studioH);
 
     GameUi::drawCard(g, mixer, 18.0f);
     GameUi::drawEyebrow(g, "MIXER",
@@ -6708,6 +6932,7 @@ void MainComponent::resized()
     tunerSkipButton.setVisible(tunerScreen);
 
     pitchLabel.setVisible(showGame);
+    comboLabel.setVisible(showGame);
     beatLabel.setVisible(showGame);
     barBeatLabel.setVisible(showGame);
     bpmLabel.setVisible(showGame);
@@ -6718,7 +6943,7 @@ void MainComponent::resized()
     gameStartButton.setVisible(showGame || finishedScreen);
     pauseButton.setVisible(showGame);
     menuButton.setVisible(showGame || finishedScreen);
-    distortionButton.setVisible(showGame);
+    distortionButton.setVisible(false);
     midiBackingButton.setVisible(showGame);
     midiBackingVolumeSlider.setVisible(showGame);
     midiBackingVolumeLabel.setVisible(showGame);
@@ -6737,10 +6962,10 @@ void MainComponent::resized()
     metronomeMixerButton.setVisible(showGame);
     metronomeMixerVolumeSlider.setVisible(showGame);
     metronomeMixerVolumeLabel.setVisible(showGame);
-    distortionDriveSlider.setVisible(showGame);
-    distortionToneSlider.setVisible(showGame);
-    distortionDriveLabel.setVisible(showGame);
-    distortionToneLabel.setVisible(showGame);
+    distortionDriveSlider.setVisible(false);
+    distortionToneSlider.setVisible(false);
+    distortionDriveLabel.setVisible(false);
+    distortionToneLabel.setVisible(false);
     speed50Button.setVisible(showGame);
     speed100Button.setVisible(showGame);
     speed120Button.setVisible(showGame);
@@ -6917,27 +7142,25 @@ void MainComponent::resized()
         speed100Button.setBounds(360, 82, 48, 24);
         speed120Button.setBounds(414, 82, 48, 24);
 
-        pitchLabel.setBounds(24 + 18, hudY + 36, 190 - 36, 48);
-        targetNoteLabel.setBounds(width - 214 + 18, hudY + 36, 190 - 36, 48);
+        const int hudGap = 12;
+        const int comboW = 124;
+        const int pitchW = 214;
+        const int targetW = 190;
+        const int comboX = 24;
+        const int pitchX = comboX + comboW + hudGap;
+        const int targetX = width - 24 - targetW;
+        const int statsX = pitchX + pitchW + hudGap;
+        const int statsW = juce::jmax(180, targetX - hudGap - statsX);
+        juce::ignoreUnused(statsW);
+
+        comboLabel.setBounds(comboX + 8, hudY + 32, comboW - 16, 46);
+        pitchLabel.setBounds(pitchX + 10, hudY + 32, pitchW - 20, 46);
+        targetNoteLabel.setBounds(targetX + 10, hudY + 32, targetW - 20, 46);
 
         tablatureComponent.setBounds(24, tabY, width - 48, tabH);
 
-        const int pedalW = juce::jmin(252, width / 3);
-        const int pedalX = 24;
-        const int pedalTop = studioY;
-        distortionButton.setBounds(pedalX + 18, pedalTop + studioH - 46,
-                                   pedalW - 36, 32);
-        distortionDriveLabel.setBounds(pedalX + 16, pedalTop + 88,
-                                       (pedalW - 48) / 2, 16);
-        distortionToneLabel.setBounds(pedalX + 16 + (pedalW - 48) / 2 + 16,
-                                      pedalTop + 88, (pedalW - 48) / 2, 16);
-        distortionDriveSlider.setBounds(pedalX + 12, pedalTop + 104,
-                                        (pedalW - 48) / 2 + 8, 52);
-        distortionToneSlider.setBounds(pedalX + 32 + (pedalW - 48) / 2,
-                                       pedalTop + 104, (pedalW - 48) / 2 + 8, 52);
-
-        const int mixerX = 24 + pedalW + 16;
-        const int mixerW = width - 24 - mixerX;
+        const int mixerX = 24;
+        const int mixerW = width - 48;
         const int channelX = mixerX + 14;
         const int channelTop = studioY + 66;
         const int cellGap = 12;

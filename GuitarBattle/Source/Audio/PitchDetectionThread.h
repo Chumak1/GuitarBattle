@@ -156,7 +156,7 @@ public:
                             [this]
                             {
                                 owner.pitchLabel.setText(
-                                    "Pitch: ---",
+                                    "---",
                                     juce::dontSendNotification);
                             });
                     }
@@ -892,7 +892,7 @@ public:
                             [this]
                             {
                                 owner.pitchLabel.setText(
-                                    "Pitch: ---",
+                                    "---",
                                     juce::dontSendNotification);
                             });
                     }

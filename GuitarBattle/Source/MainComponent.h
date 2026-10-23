@@ -129,7 +129,6 @@ private:
     //==========================================================================
     // Decoded JPEG frame sequence avoids JUCE VideoComponent's native Windows
     // playback window, which would otherwise cover all JUCE controls.
-    juce::Image backgroundFrame; // static background frame; animation disabled
     MainOverlayComponent overlayComponent{ *this };
     MainModalOverlayComponent modalOverlayComponent{ *this };
 
@@ -286,6 +285,8 @@ private:
 
     juce::Label pitchLabel;
 
+    juce::Label comboLabel;
+
     juce::Label beatLabel;
 
     juce::Label barBeatLabel;
@@ -415,6 +416,16 @@ private:
     juce::AudioBuffer<float> pitchBuffer;
 
     int pitchBufferPosition = 0;
+
+    // Guitar capture channel. -1 means "auto": follow the loudest active input.
+    // A non-negative value is a hardware input-channel index, which stays stable
+    // even if other channels are enabled or disabled later.
+    std::atomic<int> preferredInputChannel{ -1 };
+    std::atomic<int> activeInputChannels{ 0 };
+    std::array<int, 32> activeInputHardwareChannels{};
+    int currentInputChannel = 0;
+
+    void setPreferredInputChannel(int channel);
 
     std::atomic<uint64_t> audioSampleCounter{ 0 };
 
