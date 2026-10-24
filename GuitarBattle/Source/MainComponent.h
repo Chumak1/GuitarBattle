@@ -529,6 +529,7 @@ private:
     bool clientAssetsRefreshInFlight = false;
     bool pendingClientAssetsReload = false;
     bool audioDeviceStarted = false;
+    void initialiseAudio();
     void startClientAssetRefresh();
     void applyPendingClientAssetsReload();
     void reloadClientAssets();
@@ -615,6 +616,11 @@ private:
     // Application properties
 
     juce::ApplicationProperties appProperties;
+
+    //==========================================================================
+    // Frontend extension point. The frontend agent owns MainComponentUi.inc and
+    // may add UI widgets/state/helpers there without editing this header.
+#include "UI/MainComponentUi.inc"
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(
         MainComponent)
