@@ -53,6 +53,8 @@ removed after the session.
 
 - `test_health.py` — `/health/live`, `/health/ready`, service metadata.
 - `test_auth.py` — register/duplicate/login/me/profile update, inactive users.
+- `test_email_service.py` — SMTP STARTTLS/SMTPS, auth, message headers,
+  delivery errors and development/production/test behavior (no network).
 - `test_contract_validation.py` — request schema bounds shared with the client.
 - `test_songs.py` — public catalog, admin draft/publish/unpublish, MIDI upload,
   analysis and public download.
