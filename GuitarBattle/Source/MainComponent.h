@@ -176,6 +176,9 @@ private:
                             const juce::String& fallbackName,
                             const juce::String& accessToken,
                             int requestId);
+    // Clears the local session and returns to the sign-in screen. Used by the
+    // LOG OUT button and by the account window.
+    void logoutCurrentUser();
     void startOnlineGameSession();
     void submitOnlineGameResult();
 

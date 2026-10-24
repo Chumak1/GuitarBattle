@@ -4,6 +4,7 @@
 #include <cmath>
 #include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "GameStyle.h"
@@ -1701,6 +1702,7 @@ void MainComponent::resized()
     loginScreenTitleLabel.setVisible(authScreen);
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
     logoutButton.setVisible(songSelect && currentUsername.isNotEmpty());
+    accountMenuButton.setVisible(songSelect && currentUsername.isNotEmpty());
     gameSongTitleLabel.setVisible(showGame);
 
     songPridumayButton.setVisible(songSelect);
@@ -1817,6 +1819,7 @@ void MainComponent::resized()
         currentUserLabel.setBounds(width - 362, 48, 220, 22);
         currentUserLabel.setJustificationType(juce::Justification::centredLeft);
         logoutButton.setBounds(width - 122, 42, 94, 32);
+        accountMenuButton.setBounds(width - 404, 34, 258, 38);
         songTitleLabel.setBounds(48, 140, width - 96, 44);
 
         const int contentY = 228;
@@ -2190,6 +2193,1369 @@ private:
     juce::Label inputChannelLabel;
     juce::ComboBox inputChannelBox;
 };
+
+//==============================================================================
+// Personal account window.
+//
+// The layout mirrors the web account page: rating summary, global top-50,
+// attempt history, profile/password forms and account details. Requests share
+// the main window's ApiClient; every async callback is guarded by a
+// Component::SafePointer.
+//==============================================================================
+namespace AccountWindowDetail
+{
+    juce::String formatCount(int value)
+    {
+        auto text = juce::String(value);
+        for (int i = text.length() - 3; i > 0; i -= 3)
+            text = text.substring(0, i) + " " + text.substring(i);
+        return text;
+    }
+
+    juce::String formatPercent(double value)
+    {
+        return juce::String(value, 1).replace(".", ",") + "%";
+    }
+
+    juce::String formatDate(const juce::String& iso)
+    {
+        if (iso.isEmpty())
+            return "-";
+
+        auto text = iso;
+        const int dot = text.indexOfChar('.');
+        if (dot > 0)
+        {
+            const int z = text.indexOfChar('Z');
+            text = z > dot ? text.substring(0, dot) + text.substring(z)
+                           : text.substring(0, dot);
+        }
+
+        const auto time = juce::Time::fromISO8601(text);
+        if (time.toMilliseconds() == 0)
+            return iso;
+
+        const auto formatted = time.formatted("%d.%m.%y %H:%M");
+        return formatted.isNotEmpty() ? formatted : iso;
+    }
+
+    juce::String apiErrorMessage(const ApiClient::Response& response)
+    {
+        if (!response.transportOk)
+            return "No connection to the server.";
+
+        const auto detail = response.json.getProperty("detail", juce::var());
+        if (detail.isString())
+        {
+            const auto text = detail.toString();
+            if (text == "Username is already taken")
+                return "This username is already taken.";
+            if (text == "Current password is incorrect")
+                return "The current password is incorrect.";
+            if (text == "Display name cannot be blank")
+                return "Display name cannot be blank.";
+            return text;
+        }
+
+        if (detail.isArray())
+            return "Check the fields and try again.";
+
+        switch (response.statusCode)
+        {
+            case 401: return "Session expired. Please sign in again.";
+            case 403: return "You do not have access to this action.";
+            case 409: return "This value is already taken.";
+            case 422: return "Check the fields and try again.";
+            case 429: return "Too many attempts. Try again later.";
+            case 500: return "The server could not process the request.";
+            case 503: return "The service is temporarily unavailable.";
+            default: break;
+        }
+
+        return "Request failed (" + juce::String(response.statusCode) + ").";
+    }
+
+    void styleTextEditor(juce::TextEditor& editor,
+                         const juce::String& placeholder,
+                         int maxCharacters,
+                         const juce::String& allowedCharacters = {})
+    {
+        editor.setFont(GameUi::font(13.0f));
+        editor.setColour(juce::TextEditor::backgroundColourId, UiColors::surface2);
+        editor.setColour(juce::TextEditor::textColourId, UiColors::text);
+        editor.setColour(juce::TextEditor::outlineColourId, UiColors::border);
+        editor.setColour(juce::TextEditor::focusedOutlineColourId, UiColors::accent);
+        editor.setColour(juce::TextEditor::highlightColourId, UiColors::accent.withAlpha(0.25f));
+        editor.setColour(juce::TextEditor::highlightedTextColourId, UiColors::text);
+        editor.setColour(juce::TextEditor::shadowColourId, juce::Colours::transparentBlack);
+        editor.setTextToShowWhenEmpty(placeholder, UiColors::muted);
+        editor.setInputRestrictions(maxCharacters, allowedCharacters);
+        editor.setMultiLine(false);
+        editor.setReturnKeyStartsNewLine(false);
+        editor.setIndents(8, 6);
+    }
+
+    void styleButton(juce::TextButton& button, bool primary)
+    {
+        button.setColour(juce::TextButton::buttonColourId,
+                         primary ? UiColors::accent : UiColors::surface2);
+        button.setColour(juce::TextButton::buttonOnColourId,
+                         primary ? UiColors::accentStrong : UiColors::surface);
+        button.setColour(juce::TextButton::textColourOffId,
+                         primary ? UiColors::onAccent : UiColors::text);
+        button.setColour(juce::TextButton::textColourOnId,
+                         primary ? UiColors::onAccent : UiColors::text);
+        button.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    }
+}
+
+class AccountWindow final : public juce::Component
+{
+public:
+    struct Callbacks
+    {
+        std::function<void(const juce::String& username,
+                           const juce::String& displayName)> onProfileUpdated;
+        std::function<void()> onLogout;
+        std::function<void()> onSessionExpired;
+    };
+
+    AccountWindow(ApiClient& apiToUse, const juce::String& accessToken,
+                  Callbacks callbacksToUse)
+        : api(apiToUse),
+          token(accessToken),
+          callbacks(std::move(callbacksToUse)),
+          ratingModel(*this),
+          historyModel(*this)
+    {
+        setSize(1180, 900);
+        setOpaque(true);
+        configureUi();
+        resized();
+        refreshAll();
+    }
+
+    void paint(juce::Graphics& g) override
+    {
+        g.fillAll(UiColors::background);
+
+        // Top bar.
+        g.setColour(UiColors::accent);
+        g.fillRoundedRectangle(24.0f, 20.0f, 34.0f, 34.0f, 10.0f);
+        g.setColour(UiColors::onAccent);
+        g.setFont(GameUi::heading(14.0f));
+        g.drawText("FF", juce::Rectangle<float>(24.0f, 20.0f, 34.0f, 34.0f),
+                   juce::Justification::centred, false);
+
+        g.setColour(UiColors::text);
+        g.setFont(GameUi::heading(18.0f));
+        g.drawText("FRETFIGHT", juce::Rectangle<float>(68.0f, 20.0f, 240.0f, 22.0f),
+                   juce::Justification::centredLeft, false);
+
+        g.setColour(UiColors::accent);
+        g.setFont(GameUi::eyebrow(9.0f));
+        g.drawText("PERSONAL ACCOUNT",
+                   juce::Rectangle<float>(68.0f, 42.0f, 300.0f, 14.0f),
+                   juce::Justification::centredLeft, false);
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(12.0f));
+        g.drawText(welcomeText,
+                   juce::Rectangle<float>(24.0f, 64.0f,
+                                          static_cast<float>(getWidth()) - 280.0f, 18.0f),
+                   juce::Justification::centredLeft, true);
+
+        // Rating summary cards.
+        const juce::String statLabels[] = { "RATING", "RANK", "SONGS", "ATTEMPTS" };
+        const juce::String statValues[] = { ratingValue, rankValue, songsValue, attemptsValue };
+        const juce::String statNotes[] = { "best result per song", rankNote,
+                                           "songs with an attempt", "total attempts" };
+
+        const int statWidth = (statsArea.getWidth() - 3 * 12) / 4;
+        for (int i = 0; i < 4; ++i)
+        {
+            const juce::Rectangle<int> card(statsArea.getX() + i * (statWidth + 12),
+                                            statsArea.getY(),
+                                            statWidth,
+                                            statsArea.getHeight());
+            GameUi::drawCard(g, card.toFloat(), 14.0f);
+            GameUi::drawEyebrow(g, statLabels[i],
+                                juce::Rectangle<int>(card.getX() + 16, card.getY() + 12,
+                                                     card.getWidth() - 32, 14).toFloat(),
+                                UiColors::accent);
+
+            g.setColour(UiColors::text);
+            g.setFont(GameUi::heading(25.0f));
+            g.drawText(statValues[i],
+                       juce::Rectangle<int>(card.getX() + 16, card.getY() + 32,
+                                            card.getWidth() - 32, 30).toFloat(),
+                       juce::Justification::centredLeft, false);
+
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::font(10.5f));
+            g.drawText(statNotes[i],
+                       juce::Rectangle<int>(card.getX() + 16, card.getBottom() - 24,
+                                            card.getWidth() - 32, 16).toFloat(),
+                       juce::Justification::centredLeft, true);
+        }
+
+        auto drawCardHeader = [&g](const juce::Rectangle<int>& card,
+                                   const juce::String& title,
+                                   const juce::String& hint)
+        {
+            g.setColour(UiColors::text);
+            g.setFont(GameUi::heading(17.0f));
+            g.drawText(title,
+                       juce::Rectangle<int>(card.getX() + 20, card.getY() + 16,
+                                            card.getWidth() - 40, 22).toFloat(),
+                       juce::Justification::centredLeft, false);
+
+            if (hint.isNotEmpty())
+            {
+                g.setColour(UiColors::muted);
+                g.setFont(GameUi::font(11.0f));
+                g.drawText(hint,
+                           juce::Rectangle<int>(card.getX() + 20, card.getY() + 38,
+                                                card.getWidth() - 40, 18).toFloat(),
+                           juce::Justification::centredLeft, true);
+            }
+        };
+
+        GameUi::drawCard(g, ratingCard.toFloat(), 16.0f);
+        drawCardHeader(ratingCard, "GLOBAL RATING",
+                       "Sum of the best result on every song. Top 50 players.");
+
+        GameUi::drawCard(g, historyCard.toFloat(), 16.0f);
+        drawCardHeader(historyCard, "ATTEMPT HISTORY",
+                       "Your latest games: score, accuracy and max combo.");
+
+        GameUi::drawCard(g, profileCard.toFloat(), 16.0f);
+        drawCardHeader(profileCard, "PROFILE", {});
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::eyebrow(9.0f));
+        g.drawText("USERNAME",
+                   juce::Rectangle<int>(usernameEditorArea.getX(),
+                                        usernameEditorArea.getY() - 15,
+                                        usernameEditorArea.getWidth(), 13).toFloat(),
+                   juce::Justification::centredLeft, false);
+        g.drawText("DISPLAY NAME",
+                   juce::Rectangle<int>(displayNameEditorArea.getX(),
+                                        displayNameEditorArea.getY() - 15,
+                                        displayNameEditorArea.getWidth(), 13).toFloat(),
+                   juce::Justification::centredLeft, false);
+
+        GameUi::drawCard(g, passwordCard.toFloat(), 16.0f);
+        drawCardHeader(passwordCard, "PASSWORD", {});
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::eyebrow(9.0f));
+        g.drawText("CURRENT PASSWORD",
+                   juce::Rectangle<int>(currentPasswordEditorArea.getX(),
+                                        currentPasswordEditorArea.getY() - 15,
+                                        currentPasswordEditorArea.getWidth(), 13).toFloat(),
+                   juce::Justification::centredLeft, false);
+        g.drawText("NEW PASSWORD",
+                   juce::Rectangle<int>(newPasswordEditorArea.getX(),
+                                        newPasswordEditorArea.getY() - 15,
+                                        newPasswordEditorArea.getWidth(), 13).toFloat(),
+                   juce::Justification::centredLeft, false);
+
+        GameUi::drawCard(g, accountCard.toFloat(), 16.0f);
+        drawCardHeader(accountCard, "ACCOUNT", {});
+
+        const auto accountInner = accountCard.reduced(20);
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::eyebrow(9.0f));
+        g.drawText("EMAIL",
+                   juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 28,
+                                        accountInner.getWidth(), 13).toFloat(),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::text);
+        g.setFont(GameUi::font(12.0f));
+        g.drawText(meEmail.isNotEmpty() ? meEmail : "-",
+                   juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 42,
+                                        accountInner.getWidth(), 18).toFloat(),
+                   juce::Justification::centredLeft, true);
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::eyebrow(9.0f));
+        g.drawText("MEMBER SINCE",
+                   juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 70,
+                                        accountInner.getWidth(), 13).toFloat(),
+                   juce::Justification::centredLeft, false);
+        g.setColour(UiColors::text);
+        g.setFont(GameUi::font(12.0f));
+        g.drawText(AccountWindowDetail::formatDate(meCreatedAt),
+                   juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 84,
+                                        accountInner.getWidth(), 18).toFloat(),
+                   juce::Justification::centredLeft, true);
+    }
+
+    void resized() override
+    {
+        const int margin = 24;
+        const int gap = 14;
+
+        refreshButton.setBounds(getWidth() - margin - 104, 24, 104, 32);
+        logoutButton.setBounds(getWidth() - margin - 104 - 12 - 104, 24, 104, 32);
+
+        statsArea = { margin, 96, getWidth() - margin * 2, 92 };
+
+        const int contentTop = statsArea.getBottom() + 16;
+        const int contentBottom = getHeight() - 56;
+        const int contentWidth = getWidth() - margin * 2;
+        const int contentHeight = juce::jmax(300, contentBottom - contentTop);
+        const int sideWidth = juce::jmax(300, contentWidth * 34 / 100);
+        const int mainWidth = contentWidth - sideWidth - gap;
+
+        const juce::Rectangle<int> mainColumn(margin, contentTop, mainWidth, contentHeight);
+        const juce::Rectangle<int> sideColumn(margin + mainWidth + gap,
+                                              contentTop, sideWidth, contentHeight);
+
+        const int ratingHeight = juce::jmax(220, contentHeight * 42 / 100);
+        ratingCard = { mainColumn.getX(), mainColumn.getY(),
+                       mainColumn.getWidth(), ratingHeight };
+        historyCard = { mainColumn.getX(), mainColumn.getY() + ratingHeight + gap,
+                        mainColumn.getWidth(), contentHeight - ratingHeight - gap };
+
+        constexpr int profileHeight = 184;
+        constexpr int passwordHeight = 184;
+        const int accountHeight = juce::jmax(176, contentHeight - profileHeight
+                                                        - passwordHeight - 2 * gap);
+
+        profileCard = { sideColumn.getX(), sideColumn.getY(),
+                        sideColumn.getWidth(), profileHeight };
+        passwordCard = { sideColumn.getX(), sideColumn.getY() + profileHeight + gap,
+                         sideColumn.getWidth(), passwordHeight };
+        accountCard = { sideColumn.getX(),
+                        sideColumn.getY() + profileHeight + passwordHeight + 2 * gap,
+                        sideColumn.getWidth(), accountHeight };
+
+        const auto ratingInner = ratingCard.reduced(20);
+        ratingTable.setBounds(ratingInner.getX(), ratingInner.getY() + 56,
+                              ratingInner.getWidth(),
+                              juce::jmax(80, ratingInner.getHeight() - 56));
+        ratingEmptyLabel.setBounds(ratingTable.getBounds().withTrimmedTop(28));
+
+        const auto historyInner = historyCard.reduced(20);
+        constexpr int showMoreHeight = 28;
+        const int historyTableHeight = juce::jmax(60, historyInner.getHeight()
+                                                         - 56 - showMoreHeight - 8);
+        historyTable.setBounds(historyInner.getX(), historyInner.getY() + 56,
+                               historyInner.getWidth(), historyTableHeight);
+        historyEmptyLabel.setBounds(historyTable.getBounds().withTrimmedTop(28));
+
+        showMoreButtonArea = { historyInner.getRight() - 104,
+                               historyInner.getBottom() - showMoreHeight,
+                               104, showMoreHeight };
+        showMoreButton.setBounds(showMoreButtonArea);
+
+        const auto profileInner = profileCard.reduced(20);
+        usernameEditorArea = { profileInner.getX(), profileInner.getY() + 42,
+                               profileInner.getWidth(), 28 };
+        displayNameEditorArea = { profileInner.getX(), profileInner.getY() + 92,
+                                  profileInner.getWidth(), 28 };
+        saveProfileButtonArea = { profileInner.getX(), profileInner.getY() + 128,
+                                  profileInner.getWidth(), 30 };
+        usernameEditor.setBounds(usernameEditorArea);
+        displayNameEditor.setBounds(displayNameEditorArea);
+        saveProfileButton.setBounds(saveProfileButtonArea);
+
+        const auto passwordInner = passwordCard.reduced(20);
+        currentPasswordEditorArea = { passwordInner.getX(), passwordInner.getY() + 42,
+                                      passwordInner.getWidth(), 28 };
+        newPasswordEditorArea = { passwordInner.getX(), passwordInner.getY() + 92,
+                                  passwordInner.getWidth(), 28 };
+        changePasswordButtonArea = { passwordInner.getX(), passwordInner.getY() + 128,
+                                     passwordInner.getWidth(), 30 };
+        currentPasswordEditor.setBounds(currentPasswordEditorArea);
+        newPasswordEditor.setBounds(newPasswordEditorArea);
+        changePasswordButton.setBounds(changePasswordButtonArea);
+
+        const auto accountInner = accountCard.reduced(20);
+        accountLogoutButton.setBounds(accountInner.getX(), accountInner.getBottom() - 30,
+                                      accountInner.getWidth(), 30);
+
+        alertLabel.setBounds(margin, getHeight() - 40,
+                             getWidth() - margin * 2, 24);
+    }
+
+private:
+    struct RatingRow
+    {
+        int rank = 0;
+        juce::String username;
+        juce::String displayName;
+        int ratingPoints = 0;
+        int gamesPlayed = 0;
+        double bestAccuracy = 0.0;
+    };
+
+    struct HistoryRow
+    {
+        juce::String songTitle;
+        juce::String startedAt;
+        juce::String status;
+        int scorePoints = 0;
+        double accuracy = 0.0;
+        int maxCombo = 0;
+        bool hasScore = false;
+        bool hasAccuracy = false;
+        bool hasCombo = false;
+    };
+
+    class RatingModel final : public juce::TableListBoxModel
+    {
+    public:
+        explicit RatingModel(AccountWindow& ownerToUse) : owner(ownerToUse) {}
+
+        int getNumRows() override
+        {
+            return static_cast<int>(owner.ratingRows.size());
+        }
+
+        void paintRowBackground(juce::Graphics& g, int rowNumber, int, int, bool) override
+        {
+            if (!juce::isPositiveAndBelow(rowNumber, getNumRows()))
+            {
+                g.fillAll(juce::Colours::transparentBlack);
+                return;
+            }
+
+            const auto& row = owner.ratingRows[static_cast<size_t>(rowNumber)];
+            g.fillAll(row.username == owner.meUsername
+                          ? UiColors::accent.withAlpha(0.08f)
+                          : (rowNumber % 2 == 0
+                                 ? UiColors::surface.withAlpha(0.35f)
+                                 : UiColors::surface2.withAlpha(0.25f)));
+        }
+
+        void paintCell(juce::Graphics& g, int rowNumber, int columnId,
+                       int width, int height, bool) override
+        {
+            if (!juce::isPositiveAndBelow(rowNumber, getNumRows()))
+                return;
+
+            const auto& row = owner.ratingRows[static_cast<size_t>(rowNumber)];
+            const bool isMe = row.username == owner.meUsername;
+            juce::String text;
+            auto justification = juce::Justification::centredLeft;
+            auto colour = isMe ? UiColors::accent : UiColors::text;
+
+            switch (columnId)
+            {
+                case 1:
+                    text = juce::String(row.rank);
+                    justification = juce::Justification::centred;
+                    colour = row.rank <= 3 ? UiColors::accent : UiColors::muted;
+                    break;
+                case 2:
+                    text = row.displayName.isNotEmpty() ? row.displayName : row.username;
+                    if (row.displayName.isNotEmpty() && row.displayName != row.username)
+                        text += "  @" + row.username;
+                    break;
+                case 3:
+                    text = AccountWindowDetail::formatCount(row.ratingPoints);
+                    justification = juce::Justification::centredRight;
+                    break;
+                case 4:
+                    text = AccountWindowDetail::formatCount(row.gamesPlayed);
+                    justification = juce::Justification::centredRight;
+                    colour = UiColors::secondaryText;
+                    break;
+                case 5:
+                    text = AccountWindowDetail::formatPercent(row.bestAccuracy);
+                    justification = juce::Justification::centredRight;
+                    colour = UiColors::secondaryText;
+                    break;
+                default:
+                    break;
+            }
+
+            g.setColour(colour);
+            g.setFont(GameUi::font(12.0f, isMe));
+            g.drawText(text, 6, 0, width - 12, height, justification, true);
+        }
+
+    private:
+        AccountWindow& owner;
+    };
+
+    class HistoryModel final : public juce::TableListBoxModel
+    {
+    public:
+        explicit HistoryModel(AccountWindow& ownerToUse) : owner(ownerToUse) {}
+
+        int getNumRows() override
+        {
+            return static_cast<int>(owner.historyRows.size());
+        }
+
+        void paintRowBackground(juce::Graphics& g, int rowNumber, int, int, bool) override
+        {
+            if (!juce::isPositiveAndBelow(rowNumber, getNumRows()))
+            {
+                g.fillAll(juce::Colours::transparentBlack);
+                return;
+            }
+
+            g.fillAll(rowNumber % 2 == 0
+                          ? UiColors::surface.withAlpha(0.35f)
+                          : UiColors::surface2.withAlpha(0.25f));
+        }
+
+        void paintCell(juce::Graphics& g, int rowNumber, int columnId,
+                       int width, int height, bool) override
+        {
+            if (!juce::isPositiveAndBelow(rowNumber, getNumRows()))
+                return;
+
+            const auto& row = owner.historyRows[static_cast<size_t>(rowNumber)];
+            juce::String text;
+            auto justification = juce::Justification::centredLeft;
+            auto colour = UiColors::text;
+
+            switch (columnId)
+            {
+                case 1:
+                    text = row.songTitle.isNotEmpty() ? row.songTitle : "-";
+                    break;
+                case 2:
+                    text = row.startedAt;
+                    colour = UiColors::secondaryText;
+                    break;
+                case 3:
+                {
+                    const auto status = row.status.toLowerCase();
+                    const auto label = status == "finished"
+                                           ? juce::String("FINISHED")
+                                           : (status == "started" ? juce::String("IN GAME")
+                                                                  : row.status.toUpperCase());
+                    const auto pillColour = status == "finished"
+                                                ? UiColors::green
+                                                : (status == "started" ? UiColors::accent
+                                                                       : UiColors::muted);
+                    const auto pillWidth = juce::jmin(width - 12, 84);
+                    GameUi::drawPill(g,
+                                     juce::Rectangle<float>(
+                                         6.0f,
+                                         (static_cast<float>(height) - 19.0f) * 0.5f,
+                                         static_cast<float>(pillWidth),
+                                         19.0f),
+                                     label,
+                                     pillColour,
+                                     false);
+                    return;
+                }
+                case 4:
+                    text = row.hasScore ? AccountWindowDetail::formatCount(row.scorePoints)
+                                        : "-";
+                    justification = juce::Justification::centredRight;
+                    break;
+                case 5:
+                    text = row.hasAccuracy ? AccountWindowDetail::formatPercent(row.accuracy)
+                                           : "-";
+                    justification = juce::Justification::centredRight;
+                    colour = UiColors::secondaryText;
+                    break;
+                case 6:
+                    text = row.hasCombo
+                               ? "x" + AccountWindowDetail::formatCount(row.maxCombo)
+                               : "-";
+                    justification = juce::Justification::centredRight;
+                    colour = UiColors::secondaryText;
+                    break;
+                default:
+                    break;
+            }
+
+            g.setColour(colour);
+            g.setFont(GameUi::font(12.0f));
+            g.drawText(text, 6, 0, width - 12, height, justification, true);
+        }
+
+    private:
+        AccountWindow& owner;
+    };
+
+    void configureUi()
+    {
+        auto configureTable = [](juce::TableListBox& table)
+        {
+            table.setColour(juce::ListBox::backgroundColourId,
+                            juce::Colours::transparentBlack);
+            table.setColour(juce::ListBox::outlineColourId,
+                            juce::Colours::transparentBlack);
+            table.setOutlineThickness(0);
+            table.setRowHeight(32);
+            table.setHeaderHeight(28);
+            table.getViewport()->setScrollBarsShown(true, false);
+
+            auto& header = table.getHeader();
+            header.setColour(juce::TableHeaderComponent::backgroundColourId,
+                             UiColors::surface2);
+            header.setColour(juce::TableHeaderComponent::textColourId,
+                             UiColors::muted);
+            header.setColour(juce::TableHeaderComponent::outlineColourId,
+                             UiColors::border);
+            header.setColour(juce::TableHeaderComponent::highlightColourId,
+                             UiColors::accent.withAlpha(0.25f));
+            header.setStretchToFitActive(true);
+        };
+
+        configureTable(ratingTable);
+        configureTable(historyTable);
+
+        ratingTable.getHeader().addColumn(
+            "#", 1, 46, 40, 70, juce::TableHeaderComponent::notSortable);
+        ratingTable.getHeader().addColumn(
+            "PLAYER", 2, 220, 120, 420, juce::TableHeaderComponent::notSortable);
+        ratingTable.getHeader().addColumn(
+            "RATING", 3, 100, 70, 160, juce::TableHeaderComponent::notSortable);
+        ratingTable.getHeader().addColumn(
+            "SONGS", 4, 80, 60, 120, juce::TableHeaderComponent::notSortable);
+        ratingTable.getHeader().addColumn(
+            "ACCURACY", 5, 100, 80, 150, juce::TableHeaderComponent::notSortable);
+        addAndMakeVisible(ratingTable);
+
+        historyTable.getHeader().addColumn(
+            "SONG", 1, 170, 120, 420, juce::TableHeaderComponent::notSortable);
+        historyTable.getHeader().addColumn(
+            "STARTED", 2, 106, 90, 180, juce::TableHeaderComponent::notSortable);
+        historyTable.getHeader().addColumn(
+            "STATUS", 3, 84, 70, 120, juce::TableHeaderComponent::notSortable);
+        historyTable.getHeader().addColumn(
+            "SCORE", 4, 66, 60, 120, juce::TableHeaderComponent::notSortable);
+        historyTable.getHeader().addColumn(
+            "ACCURACY", 5, 76, 70, 130, juce::TableHeaderComponent::notSortable);
+        historyTable.getHeader().addColumn(
+            "COMBO", 6, 66, 60, 120, juce::TableHeaderComponent::notSortable);
+        addAndMakeVisible(historyTable);
+
+        for (auto* label : { &ratingEmptyLabel, &historyEmptyLabel })
+        {
+            label->setFont(GameUi::font(12.0f));
+            label->setColour(juce::Label::textColourId, UiColors::muted);
+            label->setJustificationType(juce::Justification::centred);
+            label->setInterceptsMouseClicks(false, false);
+            addAndMakeVisible(label);
+            label->setVisible(false);
+        }
+        ratingEmptyLabel.setText("No rated attempts yet.", juce::dontSendNotification);
+        historyEmptyLabel.setText(
+            "No attempts yet. Play a song and the result will appear here.",
+            juce::dontSendNotification);
+
+        AccountWindowDetail::styleTextEditor(
+            usernameEditor, "username", 32,
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-");
+        AccountWindowDetail::styleTextEditor(displayNameEditor, "display name", 64);
+        AccountWindowDetail::styleTextEditor(currentPasswordEditor, "current password", 128);
+        currentPasswordEditor.setPasswordCharacter(0x2022);
+        AccountWindowDetail::styleTextEditor(
+            newPasswordEditor, "new password (min 10 characters)", 128);
+        newPasswordEditor.setPasswordCharacter(0x2022);
+
+        addAndMakeVisible(usernameEditor);
+        addAndMakeVisible(displayNameEditor);
+        addAndMakeVisible(currentPasswordEditor);
+        addAndMakeVisible(newPasswordEditor);
+
+        usernameEditor.onTextChange = [this] { profileDirty = true; };
+        displayNameEditor.onTextChange = [this] { profileDirty = true; };
+
+        AccountWindowDetail::styleButton(saveProfileButton, true);
+        AccountWindowDetail::styleButton(changePasswordButton, true);
+        AccountWindowDetail::styleButton(refreshButton, false);
+        AccountWindowDetail::styleButton(logoutButton, false);
+        AccountWindowDetail::styleButton(accountLogoutButton, false);
+        AccountWindowDetail::styleButton(showMoreButton, false);
+
+        saveProfileButton.onClick = [this] { saveProfile(); };
+        changePasswordButton.onClick = [this] { changePassword(); };
+        refreshButton.onClick = [this] { refreshAll(); };
+        logoutButton.onClick = [this] { logout(); };
+        accountLogoutButton.onClick = [this] { logout(); };
+        showMoreButton.onClick = [this] { loadHistory(false); };
+        showMoreButton.setVisible(false);
+
+        addAndMakeVisible(saveProfileButton);
+        addAndMakeVisible(changePasswordButton);
+        addAndMakeVisible(refreshButton);
+        addAndMakeVisible(logoutButton);
+        addAndMakeVisible(accountLogoutButton);
+        addAndMakeVisible(showMoreButton);
+
+        alertLabel.setFont(GameUi::font(12.0f));
+        alertLabel.setColour(juce::Label::textColourId, UiColors::muted);
+        alertLabel.setJustificationType(juce::Justification::centredLeft);
+        alertLabel.setVisible(false);
+        addAndMakeVisible(alertLabel);
+    }
+
+    void refreshAll()
+    {
+        if (sessionExpired)
+            return;
+
+        refreshHadError = false;
+        showAlert("Loading account...", UiColors::muted);
+        loadMe();
+        loadSummary();
+        loadRating();
+        loadHistory(true);
+    }
+
+    void loadMe()
+    {
+        const int requestId = ++meRequestId;
+        beginRequest();
+        juce::Component::SafePointer<AccountWindow> safeThis(this);
+
+        api.getJson("/auth/me", token, 5000,
+            [safeThis, requestId](ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+                if (self == nullptr)
+                    return;
+
+                self->endRequest();
+                if (requestId != self->meRequestId)
+                    return;
+
+                if (self->handleAuthFailure(response))
+                    return;
+
+                if (!response.transportOk || !response.json.isObject())
+                {
+                    self->refreshHadError = true;
+                    self->showAlert(AccountWindowDetail::apiErrorMessage(response),
+                                    UiColors::red);
+                    return;
+                }
+
+                const auto& me = response.json;
+                self->meUsername = me.getProperty("username", juce::var()).toString();
+                self->meDisplayName = me.getProperty("display_name", juce::var()).toString();
+                self->meEmail = me.getProperty("email", juce::var()).toString();
+                self->meCreatedAt = me.getProperty("created_at", juce::var()).toString();
+
+                if (!self->profileDirty)
+                {
+                    self->usernameEditor.setText(self->meUsername, false);
+                    self->displayNameEditor.setText(self->meDisplayName, false);
+                }
+
+                self->welcomeText = "Signed in as " + self->meUsername;
+                if (self->meEmail.isNotEmpty())
+                    self->welcomeText += "  |  " + self->meEmail;
+
+                self->updateRankFromRating();
+                self->ratingTable.updateContent();
+                self->ratingTable.repaint();
+                self->repaint();
+            });
+    }
+
+    void loadSummary()
+    {
+        const int requestId = ++summaryRequestId;
+        beginRequest();
+        juce::Component::SafePointer<AccountWindow> safeThis(this);
+
+        api.getJson("/games/best-scores", token, 5000,
+            [safeThis, requestId](ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+                if (self == nullptr)
+                    return;
+
+                self->endRequest();
+                if (requestId != self->summaryRequestId)
+                    return;
+
+                if (self->handleAuthFailure(response))
+                    return;
+
+                if (!response.transportOk || !response.json.isObject())
+                {
+                    self->refreshHadError = true;
+                    self->showAlert(AccountWindowDetail::apiErrorMessage(response),
+                                    UiColors::red);
+                    return;
+                }
+
+                self->ratingValue = AccountWindowDetail::formatCount(
+                    static_cast<int>(response.json.getProperty("rating_points", 0)));
+                self->songsValue = AccountWindowDetail::formatCount(
+                    static_cast<int>(response.json.getProperty("songs_played", 0)));
+                self->attemptsValue = AccountWindowDetail::formatCount(
+                    static_cast<int>(response.json.getProperty("games_played", 0)));
+                self->repaint();
+            });
+    }
+
+    void loadRating()
+    {
+        const int requestId = ++ratingRequestId;
+        beginRequest();
+        juce::Component::SafePointer<AccountWindow> safeThis(this);
+
+        api.getJson("/leaderboard/global?limit=50", token, 5000,
+            [safeThis, requestId](ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+                if (self == nullptr)
+                    return;
+
+                self->endRequest();
+                if (requestId != self->ratingRequestId)
+                    return;
+
+                if (self->handleAuthFailure(response))
+                    return;
+
+                if (!response.transportOk || !response.json.isObject())
+                {
+                    self->refreshHadError = true;
+                    self->showAlert(AccountWindowDetail::apiErrorMessage(response),
+                                    UiColors::red);
+                    return;
+                }
+
+                const auto itemsVar = response.json.getProperty("items", juce::var());
+                self->ratingRows.clear();
+
+                if (const auto* items = itemsVar.getArray())
+                {
+                    for (const auto& item : *items)
+                    {
+                        RatingRow row;
+                        row.rank = static_cast<int>(item.getProperty("rank", 0));
+                        row.username = item.getProperty("username", juce::var()).toString();
+                        row.displayName =
+                            item.getProperty("display_name", juce::var()).toString();
+                        row.ratingPoints =
+                            static_cast<int>(item.getProperty("rating_points", 0));
+                        row.gamesPlayed =
+                            static_cast<int>(item.getProperty("games_played", 0));
+                        row.bestAccuracy =
+                            static_cast<double>(item.getProperty("best_accuracy", 0.0));
+                        self->ratingRows.push_back(row);
+                    }
+                }
+
+                self->ratingEmptyLabel.setVisible(self->ratingRows.empty());
+                self->updateRankFromRating();
+                self->ratingTable.updateContent();
+                self->ratingTable.repaint();
+                self->repaint();
+            });
+    }
+
+    void loadHistory(bool reset)
+    {
+        if (reset)
+        {
+            historyRows.clear();
+            historyOffset = 0;
+            historyHasMore = false;
+            historyEmptyLabel.setVisible(false);
+            showMoreButton.setVisible(false);
+            historyTable.updateContent();
+            historyTable.repaint();
+        }
+
+        const int requestId = ++historyRequestId;
+        const int offset = historyOffset;
+        beginRequest();
+        showMoreButton.setEnabled(false);
+        juce::Component::SafePointer<AccountWindow> safeThis(this);
+
+        api.getJson("/games/history?limit=20&offset=" + juce::String(offset), token, 5000,
+            [safeThis, requestId, reset](ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+                if (self == nullptr)
+                    return;
+
+                self->endRequest();
+                if (requestId != self->historyRequestId)
+                    return;
+
+                self->showMoreButton.setEnabled(true);
+                if (self->handleAuthFailure(response))
+                    return;
+
+                if (!response.transportOk || !response.json.isArray())
+                {
+                    self->refreshHadError = true;
+                    self->showAlert(AccountWindowDetail::apiErrorMessage(response),
+                                    UiColors::red);
+                    return;
+                }
+
+                if (reset)
+                    self->historyRows.clear();
+
+                int received = 0;
+                if (const auto* items = response.json.getArray())
+                {
+                    received = items->size();
+                    for (const auto& item : *items)
+                    {
+                        HistoryRow row;
+                        row.songTitle =
+                            item.getProperty("song_title", juce::var()).toString();
+                        row.startedAt = AccountWindowDetail::formatDate(
+                            item.getProperty("started_at", juce::var()).toString());
+                        row.status = item.getProperty("status", juce::var()).toString();
+
+                        const auto score = item.getProperty("score_points", juce::var());
+                        row.hasScore = !score.isVoid();
+                        if (row.hasScore)
+                            row.scorePoints = static_cast<int>(score);
+
+                        const auto accuracy =
+                            item.getProperty("accuracy_percent", juce::var());
+                        row.hasAccuracy = !accuracy.isVoid();
+                        if (row.hasAccuracy)
+                            row.accuracy = static_cast<double>(accuracy);
+
+                        const auto combo = item.getProperty("max_combo", juce::var());
+                        row.hasCombo = !combo.isVoid();
+                        if (row.hasCombo)
+                            row.maxCombo = static_cast<int>(combo);
+
+                        self->historyRows.push_back(row);
+                    }
+                }
+
+                self->historyOffset += received;
+                self->historyHasMore = received >= 20;
+                self->historyEmptyLabel.setVisible(self->historyRows.empty());
+                self->showMoreButton.setVisible(self->historyHasMore);
+                self->historyTable.updateContent();
+                self->historyTable.repaint();
+                self->resized();
+                self->repaint();
+            });
+    }
+
+    void saveProfile()
+    {
+        if (sessionExpired)
+            return;
+
+        const auto username = usernameEditor.getText().trim();
+        const auto displayName = displayNameEditor.getText().trim();
+
+        if (username.length() < 3 || username.length() > 32)
+        {
+            showAlert("Username must be 3-32 characters.", UiColors::red);
+            return;
+        }
+
+        if (!username.containsOnly(
+                "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.-"))
+        {
+            showAlert("Username may contain only letters, digits, dot, dash and underscore.",
+                      UiColors::red);
+            return;
+        }
+
+        if (displayName.isEmpty())
+        {
+            showAlert("Display name cannot be blank.", UiColors::red);
+            return;
+        }
+
+        if (displayName.length() > 64)
+        {
+            showAlert("Display name must be at most 64 characters.", UiColors::red);
+            return;
+        }
+
+        juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+        bool hasChanges = false;
+
+        if (username != meUsername)
+        {
+            payload->setProperty("username", username);
+            hasChanges = true;
+        }
+
+        if (displayName != meDisplayName)
+        {
+            payload->setProperty("display_name", displayName);
+            hasChanges = true;
+        }
+
+        if (!hasChanges)
+        {
+            showAlert("No changes to save.", UiColors::muted);
+            return;
+        }
+
+        saveProfileButton.setEnabled(false);
+        // A profile GET may still be in flight from a refresh; it must not
+        // overwrite the values returned by this PATCH when it completes later.
+        ++meRequestId;
+        beginRequest();
+        const int requestId = ++profileSaveRequestId;
+        juce::Component::SafePointer<AccountWindow> safeThis(this);
+
+        api.patchJson("/auth/me", juce::var(payload.get()), token, 5000,
+            [safeThis, requestId](ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+                if (self == nullptr)
+                    return;
+
+                self->endRequest();
+                if (requestId != self->profileSaveRequestId)
+                    return;
+
+                if (self->handleAuthFailure(response))
+                    return;
+
+                if (!response.transportOk || response.statusCode >= 400)
+                {
+                    self->showAlert(AccountWindowDetail::apiErrorMessage(response),
+                                    UiColors::red);
+                    return;
+                }
+
+                if (response.json.isObject())
+                {
+                    self->meUsername =
+                        response.json.getProperty("username", juce::var()).toString();
+                    self->meDisplayName =
+                        response.json.getProperty("display_name", juce::var()).toString();
+                    self->meEmail =
+                        response.json.getProperty("email", juce::var()).toString();
+                    self->meCreatedAt =
+                        response.json.getProperty("created_at", juce::var()).toString();
+                }
+
+                self->profileDirty = false;
+                self->usernameEditor.setText(self->meUsername, false);
+                self->displayNameEditor.setText(self->meDisplayName, false);
+                self->welcomeText = "Signed in as " + self->meUsername;
+                if (self->meEmail.isNotEmpty())
+                    self->welcomeText += "  |  " + self->meEmail;
+
+                if (self->callbacks.onProfileUpdated)
+                    self->callbacks.onProfileUpdated(self->meUsername,
+                                                     self->meDisplayName);
+
+                self->showAlert("Profile updated.", UiColors::green);
+                self->loadRating();
+                self->repaint();
+            });
+    }
+
+    void changePassword()
+    {
+        if (sessionExpired)
+            return;
+
+        const auto currentPassword = currentPasswordEditor.getText();
+        const auto newPassword = newPasswordEditor.getText();
+
+        if (currentPassword.isEmpty())
+        {
+            showAlert("Enter the current password.", UiColors::red);
+            return;
+        }
+
+        if (newPassword.length() < 10)
+        {
+            showAlert("The new password must be at least 10 characters.", UiColors::red);
+            return;
+        }
+
+        if (newPassword == currentPassword)
+        {
+            showAlert("The new password must differ from the current one.", UiColors::red);
+            return;
+        }
+
+        juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+        payload->setProperty("current_password", currentPassword);
+        payload->setProperty("new_password", newPassword);
+
+        changePasswordButton.setEnabled(false);
+        beginRequest();
+        juce::Component::SafePointer<AccountWindow> safeThis(this);
+
+        api.postJson("/auth/change-password", juce::var(payload.get()), token, 5000,
+            [safeThis](ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+                if (self == nullptr)
+                    return;
+
+                self->endRequest();
+
+                if (self->handleAuthFailure(response))
+                    return;
+
+                if (!self->responseIsSuccess(response))
+                {
+                    self->showAlert(AccountWindowDetail::apiErrorMessage(response),
+                                    UiColors::red);
+                    return;
+                }
+
+                self->currentPasswordEditor.clear();
+                self->newPasswordEditor.clear();
+                self->showAlert("Password changed. All sessions are signed out.",
+                                UiColors::green);
+
+                juce::Component::SafePointer<AccountWindow> safeForAlert(self);
+                juce::AlertWindow::showMessageBoxAsync(
+                    juce::MessageBoxIconType::NoIcon,
+                    "Password changed",
+                    "All sessions have been signed out. Please sign in again.",
+                    "OK",
+                    self,
+                    juce::ModalCallbackFunction::create(
+                        [safeForAlert](int)
+                        {
+                            if (auto* window = safeForAlert.getComponent())
+                            {
+                                if (window->callbacks.onLogout)
+                                    window->callbacks.onLogout();
+                                window->closeDialog();
+                            }
+                        }));
+            });
+    }
+
+    void logout()
+    {
+        if (callbacks.onLogout)
+            callbacks.onLogout();
+        closeDialog();
+    }
+
+    bool responseIsSuccess(const ApiClient::Response& response) const
+    {
+        return response.transportOk && response.statusCode >= 200
+            && response.statusCode < 300;
+    }
+
+    bool handleAuthFailure(const ApiClient::Response& response)
+    {
+        if (response.statusCode != 401)
+            return false;
+
+        if (!sessionExpired)
+        {
+            sessionExpired = true;
+            showAlert("Session expired. Please sign in again.", UiColors::red);
+            if (callbacks.onSessionExpired)
+                callbacks.onSessionExpired();
+
+            juce::Component::SafePointer<AccountWindow> safeThis(this);
+            juce::MessageManager::callAsync([safeThis]
+            {
+                if (auto* self = safeThis.getComponent())
+                    self->closeDialog();
+            });
+        }
+
+        return true;
+    }
+
+    void closeDialog()
+    {
+        if (auto* dialog = findParentComponentOfClass<juce::DialogWindow>())
+            dialog->exitModalState(0);
+    }
+
+    void showAlert(const juce::String& text, juce::Colour colour)
+    {
+        alertLabel.setText(text, juce::dontSendNotification);
+        alertLabel.setColour(juce::Label::textColourId, colour);
+        alertLabel.setVisible(text.isNotEmpty());
+    }
+
+    void beginRequest()
+    {
+        ++pendingRequests;
+        refreshButton.setEnabled(false);
+        // Do not start a destructive action while another request is in flight.
+        saveProfileButton.setEnabled(false);
+        changePasswordButton.setEnabled(false);
+    }
+
+    void endRequest()
+    {
+        pendingRequests = juce::jmax(0, pendingRequests - 1);
+        if (pendingRequests == 0)
+        {
+            refreshButton.setEnabled(true);
+            saveProfileButton.setEnabled(true);
+            changePasswordButton.setEnabled(true);
+            if (!refreshHadError && alertLabel.getText() == "Loading account...")
+                showAlert(juce::String(), UiColors::muted);
+        }
+    }
+
+    void updateRankFromRating()
+    {
+        int rank = 0;
+        for (const auto& row : ratingRows)
+        {
+            if (row.username == meUsername)
+            {
+                rank = row.rank;
+                break;
+            }
+        }
+
+        if (rank > 0)
+        {
+            rankValue = "#" + juce::String(rank);
+            rankNote = "in the global top 50";
+        }
+        else
+        {
+            rankValue = "-";
+            rankNote = "not in the top 50";
+        }
+
+        repaint();
+    }
+
+    // The main window owns the client and outlives this dialog; sharing it
+    // avoids destroying a ThreadPool (and waiting for in-flight requests) on
+    // the message thread when the window closes.
+    ApiClient& api;
+    juce::String token;
+    Callbacks callbacks;
+
+    juce::String meUsername;
+    juce::String meDisplayName;
+    juce::String meEmail;
+    juce::String meCreatedAt;
+    juce::String welcomeText = "Loading profile...";
+    juce::String ratingValue = "-";
+    juce::String rankValue = "-";
+    juce::String rankNote = "not in the top 50";
+    juce::String songsValue = "-";
+    juce::String attemptsValue = "-";
+
+    std::vector<RatingRow> ratingRows;
+    std::vector<HistoryRow> historyRows;
+    int historyOffset = 0;
+    bool historyHasMore = false;
+    bool profileDirty = false;
+    bool sessionExpired = false;
+    bool refreshHadError = false;
+    int pendingRequests = 0;
+    int meRequestId = 0;
+    int summaryRequestId = 0;
+    int ratingRequestId = 0;
+    int historyRequestId = 0;
+    int profileSaveRequestId = 0;
+
+    RatingModel ratingModel;
+    HistoryModel historyModel;
+    juce::TableListBox ratingTable { "Global rating", &ratingModel };
+    juce::TableListBox historyTable { "Attempt history", &historyModel };
+
+    juce::TextEditor usernameEditor;
+    juce::TextEditor displayNameEditor;
+    juce::TextEditor currentPasswordEditor;
+    juce::TextEditor newPasswordEditor;
+
+    juce::TextButton saveProfileButton { "SAVE PROFILE" };
+    juce::TextButton changePasswordButton { "CHANGE PASSWORD" };
+    juce::TextButton showMoreButton { "SHOW MORE" };
+    juce::TextButton refreshButton { "REFRESH" };
+    juce::TextButton logoutButton { "LOG OUT" };
+    juce::TextButton accountLogoutButton { "SIGN OUT" };
+    juce::Label alertLabel;
+    juce::Label ratingEmptyLabel;
+    juce::Label historyEmptyLabel;
+
+    juce::Rectangle<int> statsArea;
+    juce::Rectangle<int> ratingCard;
+    juce::Rectangle<int> historyCard;
+    juce::Rectangle<int> profileCard;
+    juce::Rectangle<int> passwordCard;
+    juce::Rectangle<int> accountCard;
+    juce::Rectangle<int> usernameEditorArea;
+    juce::Rectangle<int> displayNameEditorArea;
+    juce::Rectangle<int> saveProfileButtonArea;
+    juce::Rectangle<int> currentPasswordEditorArea;
+    juce::Rectangle<int> newPasswordEditorArea;
+    juce::Rectangle<int> changePasswordButtonArea;
+    juce::Rectangle<int> showMoreButtonArea;
+};
+
+void MainComponent::openAccountWindow()
+{
+    if (onlineAccessToken.isEmpty() || currentUsername.isEmpty())
+        return;
+
+    if (accountDialog != nullptr)
+    {
+        if (accountDialog->isVisible())
+        {
+            accountDialog->toFront(true);
+            return;
+        }
+
+        accountDialog = nullptr;
+    }
+
+    AccountWindow::Callbacks callbacks;
+    callbacks.onProfileUpdated =
+        [safeThis = juce::Component::SafePointer<MainComponent>(this)]
+        (const juce::String& username, const juce::String&)
+        {
+            if (auto* self = safeThis.getComponent())
+            {
+                self->currentUsername = username;
+                self->currentUserLabel.setText(username, juce::dontSendNotification);
+                self->resized();
+                self->repaint();
+            }
+        };
+    callbacks.onLogout =
+        [safeThis = juce::Component::SafePointer<MainComponent>(this)]
+        {
+            if (auto* self = safeThis.getComponent())
+                self->logoutCurrentUser();
+        };
+    callbacks.onSessionExpired =
+        [safeThis = juce::Component::SafePointer<MainComponent>(this)]
+        {
+            if (auto* self = safeThis.getComponent())
+                self->logoutCurrentUser();
+        };
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(
+        new AccountWindow(apiClient, onlineAccessToken, std::move(callbacks)));
+    options.dialogTitle = "Personal account - FretFight";
+    options.dialogBackgroundColour = UiColors::background;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+    options.componentToCentreAround = this;
+
+    if (auto* dialog = options.launchAsync())
+    {
+        dialog->setResizeLimits(1000, 860, 1800, 1200);
+        accountDialog = dialog;
+    }
+}
 
 //==============================================================================
 
@@ -3078,26 +4444,25 @@ void MainComponent::initialiseUi()
     logoutButton.setColour(juce::TextButton::buttonOnColourId, UiColors::surface2);
     logoutButton.setColour(juce::TextButton::textColourOffId, UiColors::muted);
     logoutButton.setColour(juce::TextButton::textColourOnId, UiColors::text);
-    logoutButton.onClick = [this]
-    {
-        // Invalidate a sign-in chain that may still be waiting for the server.
-        ++authRequestId;
-        // Server-reported best scores belong to the signed-in account; the
-        // locally saved values stay available after signing out.
-        ++bestScoresRequestId;
-        remoteBestScores.clear();
-        updateCatalogRows();
-        onlineAccessToken.clear();
-        onlineGameSessionUuid.clear();
-        currentUsername.clear();
-        currentUserLabel.setText("", juce::dontSendNotification);
-        accountStatusLabel.setText({}, juce::dontSendNotification);
-        showAuthScreen = true;
-        gameState = GameState::SongSelect;
-        resized();
-        repaint();
-    };
+    logoutButton.onClick = [this] { logoutCurrentUser(); };
     addAndMakeVisible(logoutButton);
+
+    // The signed-in username is clickable: a transparent button sits over the
+    // avatar/name cluster and opens the personal account window.
+    accountMenuButton.setButtonText("ACCOUNT");
+    accountMenuButton.setColour(juce::TextButton::buttonColourId,
+                                juce::Colours::transparentBlack);
+    accountMenuButton.setColour(juce::TextButton::buttonOnColourId,
+                                juce::Colours::transparentBlack);
+    accountMenuButton.setColour(juce::TextButton::textColourOffId,
+                                juce::Colours::transparentBlack);
+    accountMenuButton.setColour(juce::TextButton::textColourOnId,
+                                juce::Colours::transparentBlack);
+    accountMenuButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    accountMenuButton.setTooltip("Open personal account");
+    accountMenuButton.onClick = [this] { openAccountWindow(); };
+    addAndMakeVisible(accountMenuButton);
+    accountMenuButton.toFront(false);
 
     accountLoginButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
     accountLoginButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);

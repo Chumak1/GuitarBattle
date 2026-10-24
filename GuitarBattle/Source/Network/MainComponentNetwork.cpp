@@ -446,6 +446,26 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
         });
 }
 
+void MainComponent::logoutCurrentUser()
+{
+    // Invalidate a sign-in chain that may still be waiting for the server.
+    ++authRequestId;
+    // Server-reported best scores belong to the signed-in account; the
+    // locally saved values stay available after signing out.
+    ++bestScoresRequestId;
+    remoteBestScores.clear();
+    updateCatalogRows();
+    onlineAccessToken.clear();
+    onlineGameSessionUuid.clear();
+    currentUsername.clear();
+    currentUserLabel.setText(juce::String(), juce::dontSendNotification);
+    accountStatusLabel.setText(juce::String(), juce::dontSendNotification);
+    showAuthScreen = true;
+    gameState = GameState::SongSelect;
+    resized();
+    repaint();
+}
+
 void MainComponent::startOnlineGameSession()
 {
     onlineGameSessionUuid.clear();

@@ -81,6 +81,15 @@ public:
         return perform ("POST", apiPath, &jsonBody, bearerToken, timeoutMs);
     }
 
+    /** PATCH a JSON document. @p apiPath is relative to baseUrl, e.g. "/auth/me". */
+    static Response patch (const juce::String& apiPath,
+                           const juce::var& jsonBody,
+                           const juce::String& bearerToken,
+                           int timeoutMs)
+    {
+        return perform ("PATCH", apiPath, &jsonBody, bearerToken, timeoutMs);
+    }
+
     /** Downloads @p urlOrServerPath into memory (small files only). Empty on failure. */
     static juce::MemoryBlock download (const juce::String& urlOrServerPath, int timeoutMs)
     {
@@ -185,6 +194,19 @@ public:
         enqueue ([apiPath, jsonBody, bearerToken, timeoutMs, onResult]
         {
             deliver (onResult, post (apiPath, jsonBody, bearerToken, timeoutMs));
+        });
+    }
+
+    /** PATCH @p jsonBody to @p apiPath on the pool; @p onResult runs on the message thread. */
+    void patchJson (const juce::String& apiPath,
+                    const juce::var& jsonBody,
+                    const juce::String& bearerToken,
+                    int timeoutMs,
+                    ResponseCallback onResult)
+    {
+        enqueue ([apiPath, jsonBody, bearerToken, timeoutMs, onResult]
+        {
+            deliver (onResult, patch (apiPath, jsonBody, bearerToken, timeoutMs));
         });
     }
 

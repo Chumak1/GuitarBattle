@@ -25,3 +25,11 @@
     //     juce::TextButton newFeatureButton { "NEW FEATURE" };
     //     bool newFeatureOpen = false;
     //     void initialiseNewFeature();
+
+    // --- Account window ------------------------------------------------------
+    // Clicking the signed-in username opens a separate account window with the
+    // same structure as the web account page: rating summary, global top-50,
+    // attempt history, profile/password forms and sign-out.
+    juce::TextButton accountMenuButton;
+    juce::Component::SafePointer<juce::DialogWindow> accountDialog;
+    void openAccountWindow();
