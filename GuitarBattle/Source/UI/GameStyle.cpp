@@ -28,6 +28,10 @@ namespace UiColors
 
 namespace GameUi
 {
+    // One tracking value for every label in the client: headings, eyebrow
+    // captions, pills, buttons and body copy all share the same rhythm.
+    static constexpr float textTracking = 0.0f;
+
     juce::Font font(float height, bool bold, float tracking)
     {
         return juce::Font(juce::FontOptions()
@@ -39,12 +43,12 @@ namespace GameUi
 
     juce::Font heading(float height)
     {
-        return font(height, true, 0.15f);
+        return font(height, true, textTracking);
     }
 
     juce::Font eyebrow(float height)
     {
-        return font(height, true, 1.15f);
+        return font(height, true, textTracking);
     }
 
     void drawCard(juce::Graphics& g,
@@ -97,7 +101,7 @@ namespace GameUi
         g.drawRoundedRectangle(area, area.getHeight() * 0.5f, 1.0f);
 
         g.setColour(colour);
-        g.setFont(font(juce::jmax(8.5f, area.getHeight() * 0.34f), true, 0.55f));
+        g.setFont(font(juce::jmax(8.5f, area.getHeight() * 0.34f), true, textTracking));
         g.drawFittedText(label,
                          area.reduced(area.getHeight() * 0.38f, 0.0f).toNearestInt(),
                          juce::Justification::centred, 1, 0.78f);
@@ -192,7 +196,7 @@ GameLookAndFeel::GameLookAndFeel()
 juce::Font GameLookAndFeel::getTextButtonFont(juce::TextButton&, int buttonHeight)
 {
     return GameUi::font(juce::jlimit(9.5f, 15.0f, static_cast<float>(buttonHeight) * 0.40f),
-                        true, 0.45f);
+                        true, GameUi::textTracking);
 }
 
 juce::Font GameLookAndFeel::getLabelFont(juce::Label& label)

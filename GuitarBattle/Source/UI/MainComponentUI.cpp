@@ -476,7 +476,7 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
 
     // Fitted text with a horizontal-scale floor: never truncate the digits.
     g.setColour(best > 0 ? UiColors::accent : UiColors::muted.withAlpha(0.55f));
-    g.setFont(GameUi::font(10.0f, true, 0.55f));
+    g.setFont(GameUi::font(10.0f, true));
     g.drawFittedText(best > 0 ? "BEST: " + juce::String(best) : juce::String("NO SCORE"),
                      bestArea, juce::Justification::centredRight, 1, 0.65f);
 }
@@ -591,7 +591,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     if (width <= 0.0f || height <= 0.0f)
         return;
 
-    auto drawBrand = [&g](float x, float y, bool withBadge)
+    auto drawBrand = [&g](float x, float y)
     {
         g.setColour(UiColors::accent);
         g.fillRoundedRectangle(x, y, 32.0f, 32.0f, 10.0f);
@@ -605,13 +605,6 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         g.drawText("FRETFIGHT",
                    juce::Rectangle<float>(x + 44.0f, y + 1.0f, 190.0f, 30.0f),
                    juce::Justification::centredLeft, false);
-
-        if (withBadge)
-            GameUi::drawPill(g,
-                             juce::Rectangle<float>(x + 184.0f, y + 7.0f, 82.0f, 18.0f),
-                             "PLAYER",
-                             UiColors::accent,
-                             false);
     };
 
     //==========================================================================
@@ -620,16 +613,10 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 
     if (gameState == GameState::SongSelect && showAuthScreen)
     {
-        drawBrand(32.0f, 26.0f, true);
-
-        GameUi::drawPill(g,
-                         juce::Rectangle<float>(width - 194.0f, 31.0f, 162.0f, 22.0f),
-                         "DESKTOP CLIENT",
-                         UiColors::muted,
-                         false);
+        drawBrand(32.0f, 26.0f);
 
         const float cardWidth = juce::jmin(560.0f, width - 48.0f);
-        const float cardHeight = 400.0f;
+        const float cardHeight = 344.0f;
         const float cardX = (width - cardWidth) * 0.5f;
         const float cardY = juce::jmax(150.0f, (height - cardHeight) * 0.5f);
         const juce::Rectangle<float> card(cardX, cardY, cardWidth, cardHeight);
@@ -640,7 +627,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 
         const float iconSize = 58.0f;
         const juce::Rectangle<float> icon(cardX + (cardWidth - iconSize) * 0.5f,
-                                          cardY + 34.0f, iconSize, iconSize);
+                                          cardY + 30.0f, iconSize, iconSize);
         g.setColour(UiColors::accent.withAlpha(0.08f));
         g.fillEllipse(icon.expanded(8.0f));
         g.setColour(UiColors::surface2);
@@ -654,40 +641,11 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         g.setColour(UiColors::accent);
         g.setFont(GameUi::eyebrow(10.0f));
         g.drawText("PLAYER ACCESS",
-                   juce::Rectangle<float>(cardX, cardY + 101.0f, cardWidth, 17.0f),
+                   juce::Rectangle<float>(cardX, cardY + 94.0f, cardWidth, 16.0f),
                    juce::Justification::centred, false);
 
-        g.setColour(UiColors::muted);
-        g.setFont(GameUi::font(13.0f));
-        g.drawText("Sign in to sync your scores, unlock online songs and track your global rating.",
-                   juce::Rectangle<float>(cardX + 44.0f, cardY + 168.0f,
-                                          cardWidth - 88.0f, 36.0f),
-                   juce::Justification::centred, true);
-
-        g.setColour(UiColors::surface2.withAlpha(0.55f));
-        g.fillRoundedRectangle(cardX + 42.0f, cardY + 202.0f,
-                               cardWidth - 84.0f, 40.0f, 12.0f);
-        g.setColour(UiColors::border);
-        g.drawRoundedRectangle(cardX + 42.0f, cardY + 202.0f,
-                               cardWidth - 84.0f, 40.0f, 12.0f, 1.0f);
-
         GameUi::drawDivider(g, cardX + 42.0f, cardX + cardWidth - 42.0f,
-                            cardY + 258.0f);
-
-        const float pillY = cardY + cardHeight + 20.0f;
-        if (pillY + 26.0f < height - 20.0f)
-        {
-            const float total = 160.0f + 132.0f + 152.0f + 20.0f;
-            float x = (width - total) * 0.5f;
-            GameUi::drawPill(g, { x, pillY, 160.0f, 26.0f },
-                             "REAL-TIME PITCH", UiColors::green, false);
-            x += 170.0f;
-            GameUi::drawPill(g, { x, pillY, 132.0f, 26.0f },
-                             "TABLATURE", UiColors::accent, false);
-            x += 142.0f;
-            GameUi::drawPill(g, { x, pillY, 152.0f, 26.0f },
-                             "GLOBAL RATING", UiColors::blue, false);
-        }
+                            cardY + 178.0f);
 
         return;
     }
@@ -700,7 +658,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     {
         const juce::Rectangle<float> nav(24.0f, 20.0f, width - 48.0f, 78.0f);
         GameUi::drawCard(g, nav, 18.0f);
-        drawBrand(44.0f, 40.0f, true);
+        drawBrand(44.0f, 40.0f);
 
         if (currentUsername.isNotEmpty())
         {
@@ -778,7 +736,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         const double headerBpm = headerSong != nullptr ? headerSong->bpm : baseBpm;
 
         g.setColour(UiColors::muted);
-        g.setFont(GameUi::font(8.5f, true, 0.9f));
+        g.setFont(GameUi::font(8.5f, true));
         g.drawText(headerKind + "  /  " + juce::String(juce::roundToInt(headerBpm)) + " BPM",
                    juce::Rectangle<float>(art.getRight() + 20.0f,
                                           leftCard.getY() + 28.0f,
@@ -866,7 +824,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 
     if (gameState == GameState::Tuner)
     {
-        drawBrand(42.0f, 24.0f, true);
+        drawBrand(42.0f, 24.0f);
         const int tunedMaskTop = tuner.getTunedMask();
         int tunedCountTop = 0;
         for (int i = 0; i < 6; ++i)
@@ -1144,7 +1102,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 
     if (gameState == GameState::Finished)
     {
-        drawBrand(48.0f, 32.0f, true);
+        drawBrand(48.0f, 32.0f);
         GameUi::drawPill(g,
                          juce::Rectangle<float>(width - 154.0f, 36.0f, 106.0f, 22.0f),
                          "RESULTS",
@@ -1384,7 +1342,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 
     const juce::Rectangle<float> topBar(24.0f, topY, width - 48.0f, topH);
     GameUi::drawCard(g, topBar, 18.0f);
-    drawBrand(44.0f, 32.0f, false);
+    drawBrand(44.0f, 32.0f);
 
     g.setColour(UiColors::muted);
     g.setFont(GameUi::eyebrow(8.0f));
@@ -1454,7 +1412,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                         juce::Rectangle<float>(statsCard.getX() + 18.0f,
                                                statsCard.getY() + 9.0f,
                                                statsCard.getWidth() - 36.0f, 14.0f),
-                        UiColors::muted);
+                        UiColors::accent);
 
     {
         const float cellWidth = statsCard.getWidth() / 4.0f;
@@ -1466,10 +1424,6 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             juce::String(gameplayStats.getGoodCount())
         };
         const std::array<juce::String, 4> captions { "MISS", "PERFECT", "GREAT", "GOOD" };
-        const std::array<juce::Colour, 4> colours
-        {
-            UiColors::red, UiColors::accent, UiColors::green, UiColors::info
-        };
 
         for (int i = 0; i < 4; ++i)
         {
@@ -1479,14 +1433,16 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                 g.fillRect(statsCard.getX() + cellWidth * static_cast<float>(i),
                            statsCard.getY() + 28.0f, 1.0f, 52.0f);
             }
-            g.setColour(colours[static_cast<size_t>(i)]);
+            // The LIVE PERFORMANCE strip is monochrome gold: every judgement
+            // keeps the same accent colour instead of red/green/blue coding.
+            g.setColour(UiColors::accent);
             g.setFont(GameUi::heading(24.0f));
             g.drawText(values[static_cast<size_t>(i)],
                        juce::Rectangle<float>(statsCard.getX() + cellWidth * static_cast<float>(i),
                                               statsCard.getY() + 28.0f,
                                               cellWidth, 34.0f),
                        juce::Justification::centred, false);
-            g.setColour(UiColors::muted);
+            g.setColour(UiColors::accent);
             g.setFont(GameUi::eyebrow(8.0f));
             g.drawText(captions[static_cast<size_t>(i)],
                        juce::Rectangle<float>(statsCard.getX() + cellWidth * static_cast<float>(i),
@@ -1833,21 +1789,21 @@ void MainComponent::resized()
     if (authScreen)
     {
         const int cardWidth = juce::jmin(560, width - 48);
-        const int cardHeight = 400;
+        const int cardHeight = 344;
         const int cardX = (width - cardWidth) / 2;
         const int cardY = juce::jmax(150, (height - cardHeight) / 2);
 
-        loginScreenTitleLabel.setBounds(cardX + 40, cardY + 114, cardWidth - 80, 52);
+        loginScreenTitleLabel.setBounds(cardX + 40, cardY + 112, cardWidth - 80, 52);
         accountStatusLabel.setJustificationType(juce::Justification::centred);
-        accountStatusLabel.setBounds(cardX + 50, cardY + 198, cardWidth - 100, 38);
+        accountStatusLabel.setBounds(cardX + 40, cardY + 292, cardWidth - 80, 30);
 
         const int buttonWidth = (cardWidth - 92) / 2;
-        accountLoginButton.setBounds(cardX + 40, cardY + 276, buttonWidth, 44);
-        accountRegisterButton.setBounds(cardX + 52 + buttonWidth, cardY + 276,
+        accountLoginButton.setBounds(cardX + 40, cardY + 194, buttonWidth, 44);
+        accountRegisterButton.setBounds(cardX + 52 + buttonWidth, cardY + 194,
                                         buttonWidth, 44);
 
-        verifyEmailButton.setBounds(cardX + 40, cardY + 338, buttonWidth, 28);
-        forgotPasswordButton.setBounds(cardX + 52 + buttonWidth, cardY + 338,
+        verifyEmailButton.setBounds(cardX + 40, cardY + 250, buttonWidth, 28);
+        forgotPasswordButton.setBounds(cardX + 52 + buttonWidth, cardY + 250,
                                        buttonWidth, 28);
     }
 
@@ -2332,7 +2288,7 @@ void MainComponent::initialiseUi()
         juce::dontSendNotification);
 
     tunerStatusLabel.setFont(
-        GameUi::font(13.5f, true, 0.8f));
+        GameUi::font(13.5f, true));
 
     tunerStatusLabel.setColour(
         juce::Label::textColourId,
@@ -3101,8 +3057,7 @@ void MainComponent::initialiseUi()
     refreshLeaderboardButton.setButtonText("REFRESH");
     addAndMakeVisible(refreshLeaderboardButton);
 
-    accountStatusLabel.setText("Sign in or create an account. Email confirmation is required.",
-                               juce::dontSendNotification);
+    accountStatusLabel.setText({}, juce::dontSendNotification);
     accountStatusLabel.setFont(GameUi::font(12.0f));
     accountStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
     accountStatusLabel.setJustificationType(juce::Justification::centredLeft);
@@ -3136,7 +3091,7 @@ void MainComponent::initialiseUi()
         onlineGameSessionUuid.clear();
         currentUsername.clear();
         currentUserLabel.setText("", juce::dontSendNotification);
-        accountStatusLabel.setText("Please sign in to continue.", juce::dontSendNotification);
+        accountStatusLabel.setText({}, juce::dontSendNotification);
         showAuthScreen = true;
         gameState = GameState::SongSelect;
         resized();
