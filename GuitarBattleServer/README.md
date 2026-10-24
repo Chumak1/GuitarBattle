@@ -70,8 +70,11 @@ Passwords are Argon2-hashed and access tokens are JWTs. Codes are stored only as
 The server sends verification and password-reset codes over SMTP. Yandex Cloud
 Postbox is the reference production provider; the full setup, DNS records and
 troubleshooting guide is in [`docs/YANDEX_POSTBOX.md`](docs/YANDEX_POSTBOX.md).
-Real delivery through Postbox must still be verified with production
-credentials and DNS (see the checklist in that document).
+The `fretfight.online` address is verified in Postbox (Easy DKIM, status
+`SUCCESS`), and real delivery was tested: SPF, DKIM and DMARC pass at
+mail-tester.com. The registration -> email code -> verification flow also
+passed. For production, set `APP_ENV=production` and use the production
+secrets/HTTPS domain; see the remaining checklist in that document.
 
 Set these variables in `.env` (see `.env.example`) and restart the `api` container:
 

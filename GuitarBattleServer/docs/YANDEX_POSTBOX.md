@@ -4,13 +4,19 @@
 восстановления пароля через Yandex Cloud Postbox. Отправитель:
 `noreply@fretfight.online`, домен: `fretfight.online`.
 
-> **Статус проверки.** Код и конфигурация подготовлены, но **реальная отправка
-> не подтверждена**: в среде разработки нет доступа к консоли Yandex Cloud,
-> API-ключу Postbox и DNS-панели домена. Проверено только сетевое подключение к
-> `postbox.cloud.yandex.net` (порты 587/465, TLS 1.3, сервер предлагает
-> `AUTH PLAIN LOGIN`). Аутентификация, отправка письма и прохождение
-> SPF/DKIM/DMARC требуют ручного теста по разделу
-> [«Проверка реальной отправкой»](#проверка-реальной-отправкой).
+> **Статус проверки (24.10.2026): настроено и проверено.**
+> Адрес `fretfight.online` создан в Postbox с Easy DKIM; статус
+> `DkimAttributes.Status=SUCCESS`, `VerifiedForSendingStatus=true`.
+> SMTP AUTH отвечает `235 Authentication succeeded`, тестовое письмо принято
+> (`SEND: accepted by the SMTP server`). Реальная доставка проверена через
+> mail-tester.com: `spf=pass`, `dkim=pass` (selector
+> `egt1jl687anp7humuulh-1`), `dmarc=pass (p=none dis=none)`.
+> Полный сценарий приложения `/auth/register` → письмо с кодом →
+> `/auth/verify-email` → `/auth/login` также проверен.
+>
+> Оценка mail-tester `5.9/10`; SpamAssassin `-4.1` — это репутационные
+> факторы нового домена и TLD `.online`, а не ошибка аутентификации.
+> Секрет API-ключа в документе не приводится: он хранится только в `.env`.
 
 ## 1. Что уже есть в проекте
 
@@ -89,21 +95,17 @@ API имеет смысл, если понадобятся шаблоны, bulk-
 
 ### Важное замечание про NS
 
-На момент проверки (24.10.2026) публичные NS домена `fretfight.online`:
-`ns1.yandexcloud.net` и `ns2.yandexcloud.net`, то есть зона, вероятно, уже
-обслуживается Yandex Cloud DNS. Если вы ожидали другого DNS-провайдера,
-проверьте делегирование у регистратора. В любом случае:
+Публичные NS домена `fretfight.online` — `ns1.yandexcloud.net` и
+`ns2.yandexcloud.net`; авторитетная зона находится в Yandex Cloud DNS
+(zone ID `dnscvjdo4gcnkrolt5bj`). NS-серверы **не менялись**, зона **не
+переносилась**. Все записи добавлены в текущую зону через Cloud DNS API.
+
+Если вы ожидали другого DNS-провайдера, проверьте делегирование у
+регистратора. В любом случае:
 
 - **не меняйте NS-серверы**;
 - **не переносите зону**;
-- добавляйте записи туда, где сейчас лежит авторитетная зона: в Cloud DNS,
-  если зона там, или в панель текущего DNS-провайдера.
-
-Я не менял NS и не переносил зону; результат выше — только наблюдение.
-Если вы уверены, что зона обслуживается другим провайдером, проверьте
-делегирование у регистратора: возможно, NS изменились или ответ закэширован.
-План работ от этого не меняется — записи добавляются в текущую авторитетную
-зону.
+- добавляйте записи туда, где сейчас лежит авторитетная зона.
 
 Проверить NS можно так:
 
@@ -117,11 +119,28 @@ Resolve-DnsName -Name fretfight.online -Type NS -Server 1.1.1.1
    Postbox. Сервисный аккаунт и адрес должны быть **в одном каталоге**, иначе
    отправка завершится ошибкой.
 2. Создайте сервисный аккаунт, например `postbox-sender`.
-3. Назначьте ему роль `postbox.sender`.
+3. На время создания адреса назначьте ему роль `postbox.admin` (или
+   `postbox.editor`). После создания адреса **понизьте роль до
+   `postbox.sender`**: для отправки писем этого достаточно, а управление
+   адресами больше не нужно.
 4. Создайте **API-ключ**:
    - при создании укажите scope `yc.postbox.send`;
    - сохраните **ID ключа** и **секретную часть**. Секрет показывается один раз;
    - ID ключа — это `SMTP_USERNAME`, секрет — `SMTP_PASSWORD`.
+
+Фактическая конфигурация для `fretfight.online`:
+
+| Параметр | Значение |
+|---|---|
+| Каталог | `b1gbcgltke5fir20ond3` |
+| Сервисный аккаунт | `postbox-sender` (`aje8bpbghcqb97kbqutt`) |
+| Роль на runtime | `postbox.sender` |
+| API-ключ | scope `yc.postbox.send`; ID и секрет — только в `.env` |
+| Секрет API-ключа | только в `.env`, в документе и Git отсутствует |
+
+> Если API-ключ когда-либо попал в лог, чат или коммит, удалите его
+> (`yc iam api-key delete --id <ID>`) и создайте новый. Не переиспользуйте
+> скомпрометированный секрет.
 
 Не используйте для SMTP статический ключ доступа напрямую: для него нужен
 отдельный скрипт `generate.py`, который преобразует секрет в SMTP-пароль.
@@ -133,7 +152,27 @@ IAM-токен тоже не подходит для постоянно рабо
 
 ## 5. Шаг 2. Адрес Postbox
 
-1. В консоли откройте **Cloud Postbox**.
+Адрес можно создать в консоли (**Cloud Postbox** → **Create address**) или
+через AWS-совместимый API. В CLI 1.39.0 команды `yc postbox` нет, поэтому
+адрес создавался через API:
+
+```http
+POST https://postbox.cloud.yandex.net/v2/email/identities
+X-YaCloud-SubjectToken: <IAM-токен сервисного аккаунта>
+Content-Type: application/json
+
+{"EmailIdentity":"fretfight.online"}
+```
+
+Ответ содержит `DkimAttributes.Tokens` — селекторы Easy DKIM. Для
+`fretfight.online` получены:
+
+- `egt1jl687anp7humuulh-1`
+- `egt1jl687anp7humuulh-2`
+
+В консоли:
+
+1. Откройте **Cloud Postbox**.
 2. Нажмите **Create address**.
 3. В поле **Domain** укажите `fretfight.online` (без `@` и без `www`).
 4. Выберите способ настройки DKIM:
@@ -148,7 +187,7 @@ IAM-токен тоже не подходит для постоянно рабо
 
 После создания откройте адрес и раздел **Email signature configuration (DKIM)**.
 Именно там находятся реальные значения DNS-записей. **Не выдумывайте их и не
-копируйте из этого документа** — в документе только плейсхолдеры.
+копируйте из примеров** — используйте значения из консоли или из ответа API.
 
 ## 6. Шаг 3. DNS-записи
 
@@ -164,17 +203,30 @@ IAM-токен тоже не подходит для постоянно рабо
 Если консоль показывает **дополнительную** запись подтверждения — добавьте её
 точно так, как показано в консоли; не подставляйте значения из этого документа.
 
+> **Если статус всё равно `FAILED`.** Проверка могла пройти до появления
+> CNAME и закэшировать ошибку. Надёжный способ сбросить её — удалить адрес и
+> создать заново, затем сразу заменить CNAME на новые селекторы из ответа API.
+> В нашем случае после пересоздания адреса и замены CNAME статус стал
+> `SUCCESS` примерно за 30 секунд. Кнопка **Run verification** в консоли также
+> может помочь.
+
 #### Вариант Easy DKIM (две CNAME)
 
-| Тип | Имя | Значение | Назначение | Где взять |
-|---|---|---|---|---|
-| CNAME | `<DKIM_CNAME_1_NAME_ИЗ_КОНСОЛИ>` (обычно `<selector>._domainkey`) | `<DKIM_CNAME_1_VALUE_ИЗ_КОНСОЛИ>` | Публикация DKIM-ключа и подтверждение домена | Postbox → адрес → **Email signature configuration (DKIM)** |
-| CNAME | `<DKIM_CNAME_2_NAME_ИЗ_КОНСОЛИ>` (обычно второй `<selector>._domainkey`) | `<DKIM_CNAME_2_VALUE_ИЗ_КОНСОЛИ>` | Вторая запись для автоматической ротации ключей | Там же |
+Для `fretfight.online` используются реальные записи (TTL 600):
+
+| Тип | Имя | Значение | Назначение |
+|---|---|---|---|
+| CNAME | `egt1jl687anp7humuulh-1._domainkey.fretfight.online.` | `egt1jl687anp7humuulh-1.dkim.pstbx.ru.` | Публикация DKIM-ключа и подтверждение домена |
+| CNAME | `egt1jl687anp7humuulh-2._domainkey.fretfight.online.` | `egt1jl687anp7humuulh-2.dkim.pstbx.ru.` | Вторая запись для автоматической ротации ключей |
 
 Обе CNAME-записи обязательны. Их нельзя удалять после успешной проверки:
 Postbox периодически меняет DKIM-ключи, и CNAME-записи делегируют ему право
 публиковать новый открытый ключ. Во время ротации TXT-ключ может быть доступен
 по обеим CNAME-записям, в остальное время — по одной. Это нормально.
+
+Старые селекторы `egtfl4nn3idigpaghrgh-1/2` были созданы при первой попытке и
+удалены после пересоздания адреса. Если вы пересоздаёте адрес, всегда
+заменяйте CNAME на новые значения из ответа API/консоли.
 
 #### Вариант Advanced DKIM (одна TXT)
 
@@ -188,9 +240,9 @@ Postbox периодически меняет DKIM-ключи, и CNAME-запи
 
 #### Практические замечания по CNAME
 
-- В Yandex Cloud DNS имя указывается без домена, например
-  `<selector>._domainkey`; у других провайдеров может требоваться полное имя
-  `<selector>._domainkey.fretfight.online.`.
+- В Yandex Cloud DNS можно указывать полное имя с точкой, например
+  `egt1jl687anp7humuulh-1._domainkey.fretfight.online.`; CLI и DNS API
+  принимают такое имя. У других провайдеров формат может отличаться.
 - CNAME не может сосуществовать с другими записями с тем же именем.
 - Если DNS-провайдер поддерживает proxy/CDN (например, Cloudflare), для
   DKIM CNAME включите **DNS only**, иначе проверка DKIM может не пройти.
@@ -204,12 +256,31 @@ SPF — TXT-запись в корне домена (`fretfight.online`). Нуж
 серверы Postbox. Официальная рекомендация Postbox:
 `include:spf.postbox.yandexcloud.net`.
 
-**Если SPF-записи ещё нет** (на момент проверки в корне домена TXT-записи не
-было, но проверьте перед изменением):
+**Фактическая запись для `fretfight.online`** (TTL 600):
 
 | Тип | Имя | Значение | Назначение |
 |---|---|---|---|
-| TXT | `@` (корень `fretfight.online`) | `v=spf1 include:spf.postbox.yandexcloud.net ~all` | Разрешить отправку через Postbox |
+| TXT | `fretfight.online.` (корень) | `v=spf1 include:spf.postbox.yandexcloud.net ~all` | Разрешить отправку через Postbox |
+
+Важно: в Yandex Cloud DNS значение TXT нужно передавать **вместе с внешними
+двойными кавычками** в поле `data` при вызове DNS API. Если передать строку без
+кавычек, Cloud DNS разобьёт её на несколько character-string, и SPF-валидаторы
+получат `v=spf1include:spf.postbox.yandexcloud.net~all` без пробелов. Пример
+через `upsertRecordSets`:
+
+```powershell
+$body = @{
+  replacements = @(@{
+    name = "fretfight.online."
+    type = "TXT"
+    ttl  = "600"
+    data = @('"v=spf1 include:spf.postbox.yandexcloud.net ~all"')
+  })
+} | ConvertTo-Json -Depth 10
+```
+
+`yc dns zone add-records` для TXT со пробелами ненадёжен: он либо разбивает
+значение, либо сохраняет лишние кавычки. Используйте DNS API.
 
 **Если SPF-запись уже есть**, не создавайте вторую. Добавьте
 `include:spf.postbox.yandexcloud.net` в существующую запись **перед**
@@ -246,11 +317,15 @@ DMARC — TXT-запись с именем `_dmarc.fretfight.online` (в пан�
 указывается просто `_dmarc`). Она говорит получателям, что делать с письмами,
 не прошедшими SPF/DKIM, и куда отправлять отчёты.
 
-Минимальный безопасный старт:
+**Фактическая запись для `fretfight.online`** (TTL 600):
 
 | Тип | Имя | Значение | Назначение |
 |---|---|---|---|
-| TXT | `_dmarc` (`_dmarc.fretfight.online`) | `v=DMARC1;p=none` | Мониторинг без блокировки |
+| TXT | `_dmarc.fretfight.online.` (`_dmarc`) | `v=DMARC1;p=none` | Мониторинг без блокировки |
+
+В DNS API значение также передаётся с внешними кавычками:
+`data = @('"v=DMARC1;p=none"')`. Без кавычек Cloud DNS может сохранить только
+часть значения (например, `v=DMARC1` без `;p=none`).
 
 Рекомендуемый вариант с отчётами:
 
@@ -356,8 +431,9 @@ docker compose exec api python -c "from app.config import settings; print(settin
 ### 8.1. Проверка DNS
 
 ```powershell
-# DKIM CNAME (подставьте имя из консоли)
-Resolve-DnsName -Name <DKIM_CNAME_NAME>.fretfight.online -Type CNAME -Server 1.1.1.1
+# DKIM CNAME (Easy DKIM)
+Resolve-DnsName -Name egt1jl687anp7humuulh-1._domainkey.fretfight.online -Type CNAME -Server 1.1.1.1
+Resolve-DnsName -Name egt1jl687anp7humuulh-2._domainkey.fretfight.online -Type CNAME -Server 1.1.1.1
 
 # SPF
 Resolve-DnsName -Name fretfight.online -Type TXT -Server 1.1.1.1
@@ -372,9 +448,15 @@ Resolve-DnsName -Name _dmarc.fretfight.online -Type TXT -Server 1.1.1.1
 Resolve-DnsName -Name <DKIM_SELECTOR>._domainkey.fretfight.online -Type TXT -Server 1.1.1.1
 ```
 
-Ожидаемо: CNAME резолвится в имя Postbox; TXT содержит `v=DKIM1`, SPF содержит
-`include:spf.postbox.yandexcloud.net`, DMARC содержит `v=DMARC1`. После
-добавления записей статус в Postbox должен стать `Success`.
+Ожидаемо: CNAME резолвятся в `<selector>.dkim.pstbx.ru.`; TXT содержит
+`v=DKIM1`; SPF содержит `v=spf1 include:spf.postbox.yandexcloud.net ~all`
+одной строкой; DMARC содержит `v=DMARC1;p=none`. Статус в Postbox —
+`SUCCESS`, `VerifiedForSendingStatus=true`.
+
+`Resolve-DnsName`/`nslookup` на Windows могут показывать TXT как несколько
+строк. Для проверки фактического значения используйте DNS-over-HTTPS:
+`https://cloudflare-dns.com/dns-query?name=fretfight.online&type=TXT` с
+заголовком `Accept: application/dns-json` или `https://dns.google/resolve?...`.
 
 ### 8.2. Проверка SMTP без отправки письма
 
@@ -425,6 +507,26 @@ No message sent (use --send --to <address> for a real test).
 В Gmail: открыть письмо → три точки → **Show original**. В Outlook/Yandex Mail:
 **Свойства** / **Показать исходное письмо**.
 
+**Результат проверки 24.10.2026.** Письмо отправлено на
+`test-sts2uw3f7@srv1.mail-tester.com` и на адрес регистрации
+`test-mhut7ntsn@srv1.mail-tester.com`. Mail-tester показал:
+
+- `spf=pass` (`Received-SPF: Pass`, envelope-from
+  `feedback+...@postbox.yandexcloud.net`);
+- `dkim=pass` для `d=fretfight.online`, selector
+  `egt1jl687anp7humuulh-1`, ключ 2048-bit;
+- `dmarc=pass (p=none dis=none) header.from=fretfight.online`;
+- `X-Spam-Status: No/4.1/5.0`; score `5.9/10`.
+
+SpamAssassin снизил оценку за `FROM_FMBLA_NEWDOM`, `PDS_OTHER_BAD_TLD`,
+`FROM_SUSPICIOUS_NTLD` — это репутация нового домена и TLD `.online`, а не
+ошибка SPF/DKIM/DMARC. Со временем и при прогреве домена эти факторы
+уменьшатся.
+
+Публичные отчёты: <https://mail-tester.com/test-sts2uw3f7> и
+<https://mail-tester.com/test-mhut7ntsn> (могут быть недоступны после
+истечения срока хранения).
+
 Если `dkim=pass`, но `dmarc=fail`, проверьте alignment: домен в `DKIM-Signature`
 должен быть `fretfight.online` (или поддомен, настроенный как отдельный адрес
 Postbox). Если `spf=pass`, но `dmarc=fail`, проверьте envelope-домен и
@@ -462,6 +564,14 @@ curl.exe -s -X POST http://localhost:8000/api/v1/auth/verify-email `
 
 Ожидаемо: `200` и access token. Если `503` — письмо не ушло; смотрите
 `docker compose logs api` (код подтверждения в production в лог не пишется).
+
+**Результат проверки 24.10.2026.** Регистрация `postbox_final_20261024` с
+адресом mail-tester вернула `201`; письмо с темой
+«GuitarBattle: подтверждение почты» пришло, код `930853` принят
+`/auth/verify-email` (`200`, access token); `/auth/login` также вернул
+`200`. Тест выполнен после понижения роли сервисного аккаунта до
+`postbox.sender`. Тестовый пользователь создан только для проверки; в
+production его нужно удалить или использовать отдельную тестовую БД.
 
 ### 8.5. Симуляторы доставки Postbox
 
@@ -535,65 +645,74 @@ SPF/DKIM/DMARC у реального почтового провайдера.
 
 ## 11. Что проверено, а что нет
 
-Проверено в этой среде:
+Проверено 24.10.2026:
 
 - `python -m compileall app` — синтаксис Python-кода.
 - Юнит-тесты email-сервиса с фейковым SMTP (STARTTLS, SMTPS, AUTH, заголовки,
   обработка ошибок, dev/prod/test-поведение).
-- Сетевая доступность `postbox.cloud.yandex.net`:
-  - порт 587: EHLO, `STARTTLS 220`, после TLS `AUTH PLAIN LOGIN`, TLS 1.3;
-  - порт 465: implicit TLS, `AUTH PLAIN LOGIN`, TLS 1.3.
-- Публичные DNS-записи домена на момент проверки: NS — Yandex Cloud; TXT в
-  корне и `_dmarc` не найдены; распространённые DKIM-selectors не найдены.
+- Сетевая доступность `postbox.cloud.yandex.net`: порт 587 STARTTLS, TLS 1.3,
+  `AUTH PLAIN LOGIN`.
+- Реальная аутентификация с API-ключом: `235 2.0.0 Authentication succeeded`.
+- Реальная отправка: `SEND: accepted by the SMTP server`.
+- Домен в Postbox: `DkimAttributes.Status=SUCCESS`,
+  `VerificationStatus=SUCCESS`, `VerifiedForSendingStatus=true`.
+- DNS: две CNAME Easy DKIM, SPF и DMARC опубликованы и проверены через
+  Cloudflare/Google DoH.
+- Реальная доставка через mail-tester.com: `spf=pass`, `dkim=pass`,
+  `dmarc=pass`.
+- Полный сценарий `/auth/register` → код из письма → `/auth/verify-email` →
+  `/auth/login`.
+- Контейнер `api` пересоздан с реальным `.env`; `/health/ready` — `200`.
 
-Не проверено (нужен доступ пользователя):
+Не проверено / осталось на production:
 
-- реальная аутентификация с API-ключом Postbox;
-- реальная отправка письма и доставка;
-- статус `Success` для домена в Postbox;
-- прохождение SPF/DKIM/DMARC у получателя;
-- работа в production-контейнере с реальным `.env`.
+- `APP_ENV=production` с боевыми `SECRET_KEY`, `POSTGRES_PASSWORD` и
+  HTTPS-доменом (Caddy/443).
+- DMARC `rua`-ящик и переход к `p=quarantine`/`p=reject` после периода
+  мониторинга.
+- Ограничение allowed senders в Postbox и увеличение квоты для production.
+- Мониторинг статистики/логов Postbox и алерты на `550`/`535`.
+- Ротация API-ключа по регламенту (и немедленно — если ключ где-то
+  засветился).
 
-## 12. Что нужно от пользователя
+## 12. Что осталось сделать
 
-1. Доступ к консоли Yandex Cloud (или администратор, который выполнит шаги
-   раздела 4–5) и активный платёжный аккаунт.
-2. Подтверждение, что домен `fretfight.online` можно добавить в Postbox.
-3. Доступ к DNS-провайдеру авторитетной зоны (NS не меняем) для добавления
-   записей.
-4. Значения из консоли Postbox:
-   - для Easy DKIM — имена и значения **двух CNAME**;
-   - для Advanced DKIM — selector и значение **одной TXT**;
-   - статус проверки домена.
-5. ID и секрет API-ключа со scope `yc.postbox.send`; сервисный аккаунт с ролью
-   `postbox.sender` в том же каталоге, что и адрес. Секрет передавайте только
-   через `.env`, не в чат.
-6. Реальный тестовый ящик для `--send --to`.
-7. Текущее содержимое SPF-записи, если оно есть (на момент проверки SPF не
-   найдено — перепроверьте), и адрес для DMARC-отчётов `rua`, если нужен.
-8. После настройки — вывод `scripts/check_smtp.py` (без секретов) и исходные
-   заголовки тестового письма, если что-то не проходит.
+1. На production-сервере выставить `APP_ENV=production`, боевые
+   `SECRET_KEY`/`POSTGRES_PASSWORD` и HTTPS-домен через Caddy.
+2. При желании добавить `rua=mailto:...` в DMARC и создать ящик для отчётов.
+3. Ограничить allowed senders в Postbox адресом `noreply@fretfight.online`.
+4. Запросить увеличение квоты `postbox.emails_sent.count`, если 200 писем/24 ч
+   недостаточно.
+5. Настроить мониторинг логов Postbox и ответов SMTP; хранить `RequestID` для
+   поддержки.
+6. Ротировать API-ключ при подозрении на утечку. Секрет хранится только в
+   `.env`/секрет-менеджере.
+7. Если тестовые пользователи `postbox_test_20261024`/`postbox_final_20261024`
+   попали в production-БД, удалить их.
 
 ## 13. Краткий чек-лист
 
-- [ ] Платёжный аккаунт Yandex Cloud активен.
-- [ ] Сервисный аккаунт создан в том же каталоге, что и адрес Postbox.
-- [ ] Роль `postbox.sender` назначена.
-- [ ] API-ключ со scope `yc.postbox.send` создан; ID и секрет сохранены.
-- [ ] В Postbox создан адрес `fretfight.online` (Easy или Advanced DKIM).
-- [ ] DNS: добавлены две CNAME (Easy) или одна TXT (Advanced) из консоли.
-- [ ] DNS: SPF содержит `include:spf.postbox.yandexcloud.net` ровно в одной
-      записи; существующие механизмы сохранены.
-- [ ] DNS: `_dmarc` содержит одну запись `v=DMARC1;p=none` (или с `rua`).
-- [ ] В Postbox статус домена `Success`.
-- [ ] `.env`: заполнены `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`,
+- [x] Платёжный аккаунт Yandex Cloud активен.
+- [x] Сервисный аккаунт создан в том же каталоге, что и адрес Postbox.
+- [x] Роль `postbox.sender` назначена (после временного `postbox.admin`).
+- [x] API-ключ со scope `yc.postbox.send` создан; ID и секрет сохранены.
+- [x] В Postbox создан адрес `fretfight.online` (Easy DKIM).
+- [x] DNS: добавлены две CNAME Easy DKIM из ответа API.
+- [x] DNS: SPF содержит `include:spf.postbox.yandexcloud.net` ровно в одной
+      записи.
+- [x] DNS: `_dmarc` содержит одну запись `v=DMARC1;p=none`.
+- [x] В Postbox статус домена `SUCCESS`, `VerifiedForSendingStatus=true`.
+- [x] `.env`: заполнены `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURITY`,
       `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM_EMAIL`.
-- [ ] `scripts/check_smtp.py` показывает `AUTH: 235`.
-- [ ] `scripts/check_smtp.py --send --to ...` показывает `SEND: accepted`.
-- [ ] Тестовое письмо получено; `Authentication-Results` содержит
+- [x] `scripts/check_smtp.py` показывает `AUTH: 235`.
+- [x] `scripts/check_smtp.py --send --to ...` показывает `SEND: accepted`.
+- [x] Тестовое письмо получено; `Authentication-Results` содержит
       `spf=pass`, `dkim=pass`, `dmarc=pass`.
-- [ ] Полный сценарий `/auth/register` → `/auth/verify-email` работает.
-- [ ] NS-серверы и DNS-зона не менялись.
+- [x] Полный сценарий `/auth/register` → `/auth/verify-email` работает.
+- [x] NS-серверы и DNS-зона не менялись.
+- [ ] Production: `APP_ENV=production`, HTTPS, боевые секреты.
+- [ ] DMARC `rua` и переход к `p=quarantine`/`p=reject`.
+- [ ] Allowed senders и квота Postbox для production.
 
 ## 14. Официальные источники
 
@@ -606,3 +725,6 @@ SPF/DKIM/DMARC у реального почтового провайдера.
 - [SMTP responses](https://yandex.cloud/en/docs/postbox/api-ref/smtp-errors)
 - [Quotas and limits](https://yandex.cloud/en/docs/postbox/concepts/limits)
 - [Email delivery simulator](https://yandex.cloud/en/docs/postbox/concepts/mail-simulator)
+- [Postbox API authentication](https://yandex.cloud/en/docs/postbox/api-ref/authentication)
+- [CreateDomainIdentity](https://yandex.cloud/en/docs/postbox/aws-compatible-api/api-ref/create-domain-identity)
+- [Yandex Cloud DNS API: upsertRecordSets](https://yandex.cloud/en/docs/dns/api-ref/DnsZone/upsertRecordSets)
