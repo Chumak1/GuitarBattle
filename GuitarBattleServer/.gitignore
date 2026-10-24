@@ -7,3 +7,5 @@ __pycache__/
 .ruff_cache/
 .idea/
 .vscode/
+# Generated client asset bundle and manifest (build with scripts/build_client_assets.py)
+client_assets/

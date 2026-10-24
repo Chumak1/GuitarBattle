@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     secret_key: str
     access_token_expire_minutes: int = 60 * 24
     song_files_dir: Path = Path("/data/song_files")
+    # Generated manifest.json + bundle.zip served by /client-assets.
+    client_assets_dir: Path = Path("/data/client_assets")
     max_midi_upload_bytes: int = 20 * 1024 * 1024
     max_audio_upload_bytes: int = 100 * 1024 * 1024
 

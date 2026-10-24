@@ -47,7 +47,7 @@ double Metronome::getSampleRate() const
 
 //==============================================================================
 
-uint64_t Metronome::getBeatLengthSamples() const
+double Metronome::getBeatLengthSamples() const
 {
     const double currentBpm =
         bpm.load(
@@ -60,13 +60,12 @@ uint64_t Metronome::getBeatLengthSamples() const
     if (currentBpm <= 0.0
         || currentSampleRate <= 0.0)
     {
-        return 0;
+        return 0.0;
     }
 
-    return static_cast<uint64_t>(
-        currentSampleRate
+    return currentSampleRate
         * 60.0
-        / currentBpm);
+        / currentBpm;
 }
 
 //==============================================================================
@@ -83,15 +82,14 @@ uint64_t Metronome::getBeatSample(
     const auto beatLength =
         getBeatLengthSamples();
 
-    if (beatLength == 0)
+    if (beatLength <= 0.0)
         return startSample;
 
     return startSample
         + static_cast<uint64_t>(
             std::llround(
                 beat
-                * static_cast<double>(
-                    beatLength)));
+                * beatLength));
 }
 
 //==============================================================================
@@ -103,7 +101,7 @@ double Metronome::getBeatFromSamples(
     const auto beatLength =
         getBeatLengthSamples();
 
-    if (beatLength == 0
+    if (beatLength <= 0.0
         || currentSample < startSample)
     {
         return 0.0;
@@ -111,8 +109,7 @@ double Metronome::getBeatFromSamples(
 
     return static_cast<double>(
         currentSample - startSample)
-        / static_cast<double>(
-            beatLength);
+        / beatLength;
 }
 
 //==============================================================================
@@ -131,7 +128,7 @@ void Metronome::resetScheduler(
         std::memory_order_relaxed);
 
     nextBeatSample.store(
-        startSample,
+        static_cast<double>(startSample),
         std::memory_order_relaxed);
 
     metronomeTrigger.store(
@@ -159,7 +156,8 @@ void Metronome::pauseScheduler()
 //==============================================================================
 
 void Metronome::resumeScheduler(
-    uint64_t currentSample)
+    uint64_t currentSample,
+    uint64_t songStartSample)
 {
     const auto beatLength =
         getBeatLengthSamples();
@@ -172,52 +170,85 @@ void Metronome::resumeScheduler(
         false,
         std::memory_order_relaxed);
 
-    if (beatLength == 0)
+    if (beatLength <= 0.0)
     {
         nextBeatSample.store(
-            currentSample,
+            static_cast<double>(currentSample),
             std::memory_order_relaxed);
 
         return;
     }
 
-    // Первый click после RESUME — через один полный beat.
+    // Resume on the song's beat grid. The old implementation always waited
+    // exactly one beat from the resume sample, which shifted the metronome
+    // relative to the MIDI/audio timeline when the pause happened between
+    // beats. ceil() gives the next grid beat strictly after currentSample.
+    const double elapsed =
+        static_cast<double>(currentSample)
+        - static_cast<double>(songStartSample);
+
+    const double nextBeatIndex =
+        std::ceil(elapsed / beatLength + 1.0e-9);
+
     nextBeatSample.store(
-        currentSample + beatLength,
+        static_cast<double>(songStartSample)
+            + nextBeatIndex * beatLength,
         std::memory_order_relaxed);
 }
 
 //==============================================================================
 
-void Metronome::processScheduler(
-    uint64_t currentSample)
+int Metronome::processScheduler(
+    uint64_t currentSample,
+    int numSamples)
 {
     const auto beatLength =
         getBeatLengthSamples();
 
-    if (beatLength == 0)
-        return;
+    if (beatLength <= 0.0 || numSamples <= 0)
+        return -1;
 
-    auto nextBeat =
+    const double blockStart =
+        static_cast<double>(currentSample);
+
+    const double blockEnd =
+        blockStart + static_cast<double>(numSamples);
+
+    const double nextBeat =
         nextBeatSample.load(
             std::memory_order_relaxed);
 
-    if (currentSample < nextBeat)
-        return;
+    // A beat exactly on the block end belongs to the next block. This avoids
+    // playing the same click twice at a block boundary.
+    if (nextBeat >= blockEnd)
+        return -1;
 
-    do
-    {
-        nextBeat += beatLength;
+    int triggerOffset = 0;
 
-    } while (currentSample >= nextBeat);
+    if (nextBeat > blockStart)
+        triggerOffset = static_cast<int>(
+            std::llround(nextBeat - blockStart));
+
+    triggerOffset = std::max(
+        0,
+        std::min(triggerOffset, numSamples - 1));
+
+    // Advance to the first beat after this block. Keeping the fractional
+    // beat length here prevents cumulative drift against the MIDI timeline.
+    const double delta =
+        blockEnd - nextBeat;
+
+    const auto beatsToSkip =
+        static_cast<uint64_t>(
+            std::floor(delta / beatLength) + 1.0);
 
     nextBeatSample.store(
-        nextBeat,
+        nextBeat + static_cast<double>(beatsToSkip) * beatLength,
         std::memory_order_relaxed);
 
     const auto beat =
         beatCounter.fetch_add(
-            1,
+            beatsToSkip,
             std::memory_order_relaxed)
         + 1;
 
@@ -236,6 +267,8 @@ void Metronome::processScheduler(
     metronomeTrigger.store(
         true,
         std::memory_order_release);
+
+    return triggerOffset;
 }
 
 //==============================================================================

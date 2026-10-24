@@ -17,6 +17,9 @@
     <Filter Include="GuitarBattle\Source\Audio">
       <UniqueIdentifier>{B2FA1AF8-6F4D-754F-CD97-934DA737417C}</UniqueIdentifier>
     </Filter>
+    <Filter Include="GuitarBattle\Source\Network">
+      <UniqueIdentifier>{106384A8-55ED-F1C7-FC1F-C4C3E5E614F6}</UniqueIdentifier>
+    </Filter>
     <Filter Include="GuitarBattle\Source">
       <UniqueIdentifier>{F36BB5F9-8BD5-7BBA-F63A-3736FBA77CED}</UniqueIdentifier>
     </Filter>
@@ -883,6 +886,9 @@
     <ClCompile Include="..\..\Source\Gameplay\GameplayEngine.cpp">
       <Filter>GuitarBattle\Source\Gameplay</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\Gameplay\MainComponentGameplay.cpp">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\UI\GameStyle.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
@@ -890,6 +896,9 @@
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\UI\TunerComponent.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\MainComponentUI.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Midi\MidiParser.cpp">
@@ -903,6 +912,15 @@
     </ClCompile>
     <ClCompile Include="..\..\Source\Audio\PitchDetector.cpp">
       <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Audio\MainComponentAudio.cpp">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Network\MainComponentNetwork.cpp">
+      <Filter>GuitarBattle\Source\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Network\MainComponentAssets.cpp">
+      <Filter>GuitarBattle\Source\Network</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Main.cpp">
       <Filter>GuitarBattle\Source</Filter>
@@ -4205,6 +4223,12 @@
     </ClInclude>
     <ClInclude Include="..\..\Source\Audio\PitchDetector.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Network\ApiClient.h">
+      <Filter>GuitarBattle\Source\Network</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Network\ClientAssets.h">
+      <Filter>GuitarBattle\Source\Network</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\MainComponent.h">
       <Filter>GuitarBattle\Source</Filter>
@@ -9143,6 +9167,9 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\..\Source\UI\MainComponentUi.inc">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </None>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_audio_devices\native\asio\LICENSE.txt">
       <Filter>JUCE Modules\juce_audio_devices\native\asio</Filter>
     </None>

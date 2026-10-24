@@ -58,22 +58,50 @@ curl.exe -s http://localhost:8000/health/ready
 1. **Аудио-поток.** В `getNextAudioBlock` и `prepareToPlay` нельзя: выделять память, блокировки, файловый/сетевой I/O, логирование, `juce::String`, `callAsync`, `AlertWindow`. Только атомики, заранее выделенные буферы и lock-free FIFO.
 2. **UI-поток.** Сетевые запросы нельзя выполнять синхронно из обработчиков кнопок: текущие вызовы `juce::URL::createInputStream` с таймаутом 4–5 с блокируют message thread. Новый сетевой код — в `juce::Thread`/`ThreadPool`, результат — через `MessageManager::callAsync`.
 3. **Проектные файлы.** Источник истины — `GuitarBattle/GuitarBattle.jucer`. После добавления/удаления файлов обновляйте `.jucer` и пересобирайте VS-проект. Не правьте `.vcxproj` вручную без синхронизации с `.jucer`.
-4. **Include-cpp.** `MainComponent.cpp` включает `Generation/MidiMelodyGenerator.cpp` и `Generation/SongArrangement.cpp`, потому что их нет в `.jucer`. Не добавляйте эти файлы в проект, пока не удалили соответствующие `#include`.
-5. **`PitchDetectionThread.h`** — заголовок с реализацией, включён в `MainComponent.cpp`; не добавляйте его в `.jucer` как отдельный compile unit.
+4. **Include-cpp.** `Generation/MidiMelodyGenerator.cpp` и `Generation/SongArrangement.cpp` включаются только из `Source/Gameplay/MainComponentGameplay.cpp`, потому что их нет в `.jucer`. Не добавляйте эти файлы в проект и не включайте их в другие `.cpp` — иначе duplicate symbols.
+5. **`PitchDetectionThread.h`** — заголовок с реализацией. Включается из `MainComponent.cpp` (создание/остановка потока) и `MainComponentAudio.cpp` (`initialiseAudio()`); не добавляйте его в `.jucer` как отдельный compile unit.
 6. **API-контракт.** Production-базовый URL `https://fretfight.online/api/v1` захардкожен в `Source/Network/ApiClient.h` (`ApiClient::baseUrl`), ассеты скачиваются от `ApiClient::serverOrigin`. Наружу открыты только 80/443 через Caddy; FastAPI слушает `127.0.0.1:8000`. При изменении API обновляйте обе стороны и skill `api-contract`.
 7. **Секреты.** Не коммитить `.env`, токены, пароли, `Backup Server/`, `GuitarBattle/Backup/`, `Builds/**/x64`, `Source.zip`.
 8. **Не трогать без задачи:** `competitions.py` и миграцию `0004` (не подключены к роутеру), архивы в `Backup*`, сгенерированные файлы в `Builds`.
 
 ## Архитектура клиента
 
-- `Source/MainComponent.*` — основной экран, состояние игры, аудио, сеть. Большой монолит; новые функции по возможности выносите в отдельные классы.
-- `Source/Audio/PitchDetectionThread.h` — worker-поток анализа питча.
-- `Source/Audio/PitchDetector.*` — детектор высоты тона.
-- `Source/Midi/MidiParser.*`, `TabMapper.h`, `TablatureComponent.*` — MIDI → табы.
-- `Source/Gameplay/` — сессия, метроном, scoring, game engine.
-- `Source/Generation/` — генератор MIDI и аранжировок.
-- `Source/UI/` — стиль и вспомогательные компоненты.
-- `Source/Audio/AudioEngine.*`, `Source/Gameplay/GameController.*`, `Source/UI/SelectComponent.*`, `Source/UI/TunerComponent.*` — пустые заглушки; не считать их рабочей логикой.
+`MainComponent` — один класс, но его реализация разделена по ответственности.
+`MainComponent.cpp` — только composition root: конструктор, `timerCallback()`,
+деструктор. Конструктор вызывает `initialiseUi()` и `initialiseAudio()`.
+
+| Файл | Ответственность |
+|---|---|
+| `Source/MainComponent.h` | Объявления класса, состояние игры/аудио/сети. В конце private-секции включает `UI/MainComponentUi.inc`. |
+| `Source/MainComponent.cpp` | Composition root: конструктор, `timerCallback()`, деструктор. |
+| `Source/UI/MainComponentUI.cpp` | `initialiseUi()`, `resized()`, `paint()`, `paintOverlay()`, `paintModalOverlay()`, диалоги, `AudioSettingsPanel`, UI-хелперы. |
+| `Source/UI/MainComponentUi.inc` | Точка расширения frontend: новые виджеты, frontend-состояние, объявления UI-хелперов. Включается внутрь класса, без include guard. |
+| `Source/UI/GameStyle.*` | Тема, цвета, шрифты, общие UI-хелперы. |
+| `Source/Audio/MainComponentAudio.cpp` | Аудио-устройство, `prepareToPlay()`, `getNextAudioBlock()`, банки сэмплов, выбор входа, `initialiseAudio()`. |
+| `Source/Network/MainComponentNetwork.cpp` | Авторизация, каталог, лидерборд, скачивание песен, онлайн-сессии. |
+| `Source/Network/MainComponentAssets.cpp` | Жизненный цикл серверного sound-pack. |
+| `Source/Gameplay/MainComponentGameplay.cpp` | Сессия, тюнинг, MIDI-цели, scoring. Здесь же компилируются `Generation/MidiMelodyGenerator.cpp` и `SongArrangement.cpp`. |
+| `Source/Audio/PitchDetectionThread.h` | Worker-поток анализа питча (заголовок с реализацией, не compile unit). |
+| `Source/Audio/PitchDetector.*` | Детектор высоты тона. |
+| `Source/Midi/MidiParser.*`, `TabMapper.h`, `TablatureComponent.*` | MIDI → табы. |
+| `Source/Gameplay/` | Сессия, метроном, scoring, game engine. |
+| `Source/Generation/` | Генератор MIDI и аранжировок. |
+| `Source/Audio/AudioEngine.*`, `Source/Gameplay/GameController.*`, `Source/UI/SelectComponent.*`, `Source/UI/TunerComponent.*` | Пустые заглушки; не считать их рабочей логикой. |
+
+### Разделение frontend/backend
+
+- **Frontend-агент** владеет `Source/UI/**` и `Source/UI/MainComponentUi.inc`.
+  Новые экраны, виджеты, layout, paint и диалоги — только туда.
+  Подробные инструкции: `docs/FRONTEND_AGENT.md`.
+- **Backend-агент (`juce-dev`)** владеет `MainComponent.cpp`, `MainComponent.h`,
+  `Audio/**`, `Network/**`, `Gameplay/**`, `Generation/**`, `Midi/**`,
+  `Tuner/**`.
+- Frontend не редактирует `MainComponent.cpp`, `MainComponent.h`,
+  `Audio/**`, `Network/**`, `Gameplay/**`. Если нужен новый backend-хук,
+  backend-агент добавляет объявление в `MainComponent.h` и реализацию в своём
+  модуле, после чего frontend вызывает метод.
+- `MainComponentUi.inc` включается только из `MainComponent.h` и только внутри
+  класса. В нём нет `#pragma once`; не включайте его в другие файлы.
 
 ## Архитектура сервера
 

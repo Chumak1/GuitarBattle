@@ -46,6 +46,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/games/best-scores` | Bearer | лучший счёт по каждой опубликованной песне + сумма рейтинга |
 | GET | `/leaderboard` | `song_slug?`, `limit`, `offset` | результаты |
 | GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков (сумма лучших результатов по песням) |
+| GET | `/client-assets/manifest` | — (публичный) | `schema`, `version`, `archive_url`, `archive_size_bytes`, `archive_sha256`, `files[]`; 503, если manifest или bundle отсутствует |
+| GET/HEAD | `/client-assets/bundle.zip` | — (публичный) | zip `guitarbattle-sounds.zip`; 503, если архив отсутствует |
 
 Админские маршруты `/admin/songs...` требуют `is_admin`.
 
@@ -104,12 +106,51 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   Публикация не блокируется при неполном наборе стемов, чтобы не ломать MIDI-only
   песни; администратор видит `publish_ready` и `missing_roles` до публикации.
 
+## Клиентские ассеты (метроном и сэмплы)
+
+Клиент больше не читает `GuitarBattle/Sounds` с диска: метрономные клики и
+MIDI-банки гитары/баса/фортепиано/барабанов скачиваются с сервера одним
+версионированным zip-архивом. Оба эндпоинта публичные, без `Authorization`.
+
+- `GET /client-assets/manifest` отдаёт JSON:
+  - `schema` — целое, сейчас `1`;
+  - `version` — SHA-256 архива в lowercase hex (он же `archive_sha256`);
+  - `archive_url` — путь от `serverOrigin`, сейчас
+    `/api/v1/client-assets/bundle.zip`;
+  - `archive_size_bytes`, `archive_sha256`;
+  - `files[]` — `{path, size_bytes, sha256}` для каждого файла в архиве.
+- `GET /client-assets/bundle.zip` отдаёт `application/zip` с именем
+  `guitarbattle-sounds.zip`; `HEAD` поддерживается и возвращает `Content-Length`.
+- Оба ответа идут с `Cache-Control: no-cache`. Если `manifest.json` или
+  `bundle.zip` нет в `CLIENT_ASSETS_DIR`, сервер возвращает 503 с `detail`
+  (`Client asset manifest is not available` / `Client asset bundle is not available`).
+  Manifest-эндпоинт также проверяет наличие архива, чтобы клиент не начинал
+  скачивание заведомо отсутствующего файла.
+- Архив и манифест генерирует `GuitarBattleServer/scripts/build_client_assets.py`
+  (не импортируется приложением). В Docker Compose каталог
+  `/data/client_assets` — named volume `client_assets_data`; переменная
+  окружения — `CLIENT_ASSETS_DIR`.
+- Раскладка архива: `metronome/*.wav`, `guitar/` (SFZ + `samples/`),
+  `drums/*.wav`, `bass/` (SFZ `FingerBassYR 20190930.sfz` + `samples/`),
+  `piano/` (SFZ `UprightPianoKW-small-20190703.sfz` + `samples/`).
+  `jlearman.SteelDrum-main` не включается.
+- Zip детерминированный: пути отсортированы, timestamps фиксированы, поэтому
+  SHA-256/`version` не меняется при неизменных исходниках.
+- Клиент хранит `manifest.json` и `version.txt` в
+  `%APPDATA%/GuitarBattle/ClientAssets/`. Если `version` совпадает с
+  `version.txt` и все файлы на месте, архив не скачивается. `archive_url`
+  резолвится от `serverOrigin` (`ApiClient::downloadToFile`), а не от `baseUrl`.
+
 ## Где искать в клиенте
 
 `Source/Network/ApiClient.h` — единственное место HTTP-запросов (`get`, `post`, `getJson`,
 `postJson`, `download`, `downloadToFile`, `runAsync`). Запросы выполняются на
 `juce::ThreadPool` внутри `ApiClient`, результат приходит в UI через
 `juce::MessageManager::callAsync`; синхронных вызовов из обработчиков кнопок нет.
+
+`Source/Network/ClientAssets.h` — манифест, проверка кэша, скачивание и
+распаковка `bundle.zip`; `MainComponent::refreshClientAssets` /
+`reloadClientAssets` вызывают его с worker-потока и применяют результат в UI.
 
 `Source/MainComponent.cpp`:
 

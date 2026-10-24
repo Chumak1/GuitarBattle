@@ -24,6 +24,8 @@
               file="Source/Gameplay/GameplayEngine.cpp"/>
         <FILE id="APfuqV" name="GameplayEngine.h" compile="0" resource="0"
               file="Source/Gameplay/GameplayEngine.h"/>
+        <FILE id="McGame1" name="MainComponentGameplay.cpp" compile="1" resource="0"
+              file="Source/Gameplay/MainComponentGameplay.cpp"/>
       </GROUP>
       <GROUP id="{85A8759B-236A-5392-9897-45659AFD7DD1}" name="UI">
         <FILE id="t9kAyH" name="GameStyle.cpp" compile="1" resource="0" file="Source/UI/GameStyle.cpp"/>
@@ -36,6 +38,10 @@
               file="Source/UI/TunerComponent.cpp"/>
         <FILE id="Wi0ve9" name="TunerComponent.h" compile="0" resource="0"
               file="Source/UI/TunerComponent.h"/>
+        <FILE id="McUi01" name="MainComponentUI.cpp" compile="1" resource="0"
+              file="Source/UI/MainComponentUI.cpp"/>
+        <FILE id="McUiInc" name="MainComponentUi.inc" compile="0" resource="0"
+              file="Source/UI/MainComponentUi.inc"/>
       </GROUP>
       <GROUP id="{A35EFB33-1A02-30F8-880B-74B0F642A9AB}" name="Game"/>
       <GROUP id="{D979068A-8FDE-55FB-384B-D6AEAAF8B1A2}" name="Midi">
@@ -54,6 +60,18 @@
         <FILE id="colv8R" name="PitchDetector.cpp" compile="1" resource="0"
               file="Source/Audio/PitchDetector.cpp"/>
         <FILE id="HOHEdQ" name="PitchDetector.h" compile="0" resource="0" file="Source/Audio/PitchDetector.h"/>
+        <FILE id="McAud1" name="MainComponentAudio.cpp" compile="1" resource="0"
+              file="Source/Audio/MainComponentAudio.cpp"/>
+      </GROUP>
+      <GROUP id="{4B2A6C1E-7F3D-4A9B-8C2E-1D5F6A7B8C9D}" name="Network">
+        <FILE id="McNet1" name="MainComponentNetwork.cpp" compile="1" resource="0"
+              file="Source/Network/MainComponentNetwork.cpp"/>
+        <FILE id="McAst1" name="MainComponentAssets.cpp" compile="1" resource="0"
+              file="Source/Network/MainComponentAssets.cpp"/>
+        <FILE id="McApiH1" name="ApiClient.h" compile="0" resource="0"
+              file="Source/Network/ApiClient.h"/>
+        <FILE id="McAstH1" name="ClientAssets.h" compile="0" resource="0"
+              file="Source/Network/ClientAssets.h"/>
       </GROUP>
       <FILE id="arNDKD" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>
       <FILE id="PvmoSG" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
