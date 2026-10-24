@@ -1,8 +1,9 @@
 """Transactional email delivery for account verification and password recovery.
 
-Production uses SMTP. In development (when SMTP is not configured) the message
-is written to the application log so the flow can be tested locally. Test runs
-keep messages in an in-memory outbox that the pytest helpers can inspect.
+Production uses SMTP (Yandex Cloud Postbox in the reference deployment). In
+development (when SMTP is not configured) the message is written to the
+application log so the flow can be tested locally. Test runs keep messages in
+an in-memory outbox that the pytest helpers can inspect.
 
 Codes are never logged in production: an unconfigured production deployment
 raises ``EmailDeliveryError`` instead of silently creating accounts that cannot
@@ -16,7 +17,7 @@ import smtplib
 import ssl
 from dataclasses import dataclass
 from email.message import EmailMessage
-from email.utils import formataddr
+from email.utils import formataddr, formatdate, make_msgid
 
 from app.config import settings
 
@@ -52,6 +53,10 @@ def _send_via_smtp(message: EmailMessage) -> None:
     host = settings.smtp_host
     if not host:
         raise EmailDeliveryError("SMTP is not configured")
+    if settings.smtp_username and not settings.smtp_password:
+        # Postbox always requires SMTP AUTH. Fail before connecting so a
+        # half-configured deployment cannot accidentally send unauthenticated.
+        raise EmailDeliveryError("SMTP password is not configured")
 
     context = ssl.create_default_context()
 
@@ -78,6 +83,11 @@ def _send_via_smtp(message: EmailMessage) -> None:
             if settings.smtp_username:
                 server.login(settings.smtp_username, settings.smtp_password or "")
             server.send_message(message)
+    except smtplib.SMTPAuthenticationError as exc:
+        # Keep the numeric code for diagnostics; never include credentials.
+        raise EmailDeliveryError(
+            f"SMTP authentication failed ({exc.smtp_code})"
+        ) from exc
     except (OSError, smtplib.SMTPException) as exc:
         raise EmailDeliveryError("SMTP delivery failed") from exc
 
@@ -100,10 +110,13 @@ def send_email(*, to: str, subject: str, text: str, html_body: str | None = None
             return
         raise EmailDeliveryError("SMTP is not configured")
 
+    from_email = str(settings.smtp_from_email)
     message = EmailMessage()
     message["Subject"] = subject
-    message["From"] = formataddr((settings.smtp_from_name, settings.smtp_from_email))
+    message["From"] = formataddr((settings.smtp_from_name, from_email))
     message["To"] = to
+    message["Date"] = formatdate(localtime=False)
+    message["Message-ID"] = make_msgid(domain=from_email.rsplit("@", 1)[-1])
     message.set_content(text)
     if html_body:
         message.add_alternative(html_body, subtype="html")

@@ -52,19 +52,35 @@ Passwords are Argon2-hashed and access tokens are JWTs. Codes are stored only as
 
 ### Email delivery (SMTP)
 
+The server sends verification and password-reset codes over SMTP. Yandex Cloud
+Postbox is the reference production provider; the full setup, DNS records and
+troubleshooting guide is in [`docs/YANDEX_POSTBOX.md`](docs/YANDEX_POSTBOX.md).
+Real delivery through Postbox must still be verified with production
+credentials and DNS (see the checklist in that document).
+
 Set these variables in `.env` (see `.env.example`) and restart the `api` container:
 
 ```text
-SMTP_HOST=smtp.example.com
+SMTP_HOST=postbox.cloud.yandex.net
 SMTP_PORT=587
-SMTP_USERNAME=noreply@fretfight.online
-SMTP_PASSWORD=your-app-password
-SMTP_SECURITY=starttls      # starttls | ssl | none
+SMTP_USERNAME=<YANDEX_CLOUD_API_KEY_ID>
+SMTP_PASSWORD=<YANDEX_CLOUD_API_KEY_SECRET>
+SMTP_SECURITY=starttls
 SMTP_FROM_EMAIL=noreply@fretfight.online
 SMTP_FROM_NAME=GuitarBattle
 ```
 
-`SMTP_SECURITY=ssl` is typically used with port 465; `starttls` with port 587. If `SMTP_HOST` is empty in development, the code is written to the `api` container log instead of being sent. Production does not fall back to logs: registration returns 503 until SMTP is configured. Never enable log fallback on a public deployment because the code is account-access material.
+`SMTP_USERNAME` is the ID of a Yandex Cloud API key with the `yc.postbox.send`
+scope; `SMTP_PASSWORD` is its secret part. `SMTP_SECURITY=ssl` is typically used
+with port 465; `starttls` with port 587. If `SMTP_HOST` is empty in development,
+the code is written to the `api` container log instead of being sent. Production
+does not fall back to logs: registration returns 503 until SMTP is configured.
+Never enable log fallback on a public deployment because the code is
+account-access material.
+
+To verify connectivity and credentials without sending a message, run
+`python scripts/check_smtp.py`; add `--send --to <mailbox>` for a real test
+message. The script never prints `SMTP_PASSWORD`.
 
 The API currently relies on this application-level resend cooldown and code attempt limit. Put a rate limiter (Caddy, nginx, or a dedicated service) in front of `/auth/*` before opening registration to a large public audience.
 

@@ -1,8 +1,8 @@
+from pathlib import Path
 from typing import Literal
 from urllib.parse import quote_plus
-from pathlib import Path
 
-from pydantic import field_validator
+from pydantic import EmailStr, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,14 +25,17 @@ class Settings(BaseSettings):
     max_audio_upload_bytes: int = 100 * 1024 * 1024
 
     # Transactional email. Empty values are treated as "not configured".
+    # Yandex Cloud Postbox: SMTP_HOST=postbox.cloud.yandex.net, SMTP_PORT=587
+    # with SMTP_SECURITY=starttls (or 465 with "ssl"). SMTP_USERNAME is the
+    # API key ID and SMTP_PASSWORD is its secret part.
     smtp_host: str | None = None
-    smtp_port: int = 587
+    smtp_port: int = Field(default=587, ge=1, le=65535)
     smtp_username: str | None = None
     smtp_password: str | None = None
     smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
-    smtp_from_email: str = "noreply@fretfight.online"
+    smtp_from_email: EmailStr = "noreply@fretfight.online"
     smtp_from_name: str = "GuitarBattle"
-    smtp_timeout_seconds: int = 10
+    smtp_timeout_seconds: int = Field(default=10, ge=1)
 
     # One-time codes for email verification and password recovery.
     email_code_expire_minutes: int = 15
