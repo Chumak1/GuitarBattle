@@ -137,6 +137,12 @@
       box-shadow: 0 0 10px rgba(243, 196, 81, 0.9);
     }
 
+    .header-login {
+      padding: 9px 16px;
+      font-size: 0.86rem;
+      white-space: nowrap;
+    }
+
     /* ---------- hero ---------- */
 
     .hero {
@@ -583,10 +589,15 @@
 
     @media (max-width: 720px) {
       .nav { display: none; }
-      .site-header .wrap { justify-content: space-between; }
-      .status-chip { margin-left: auto; }
+      .site-header .wrap { justify-content: space-between; gap: 12px; }
+      .header-login { margin-left: auto; }
+      .status-chip { margin-left: 0; }
       .hero-visual { order: -1; min-height: 220px; }
       .guitar { width: min(44vh, 240px); }
+    }
+
+    @media (max-width: 520px) {
+      .status-chip { display: none; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -606,6 +617,7 @@
       <a href="#features">Возможности</a>
       <a href="#requirements">Требования</a>
     </nav>
+    <a class="btn btn-ghost header-login" href="/login">Войти</a>
     <span class="status-chip"><span class="dot"></span>в разработке</span>
   </div>
 </header>
@@ -894,8 +906,8 @@
           времени и общий рейтинг появятся здесь же — на fretfight.online.
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="#how">Как это работает</a>
-          <a class="btn btn-ghost" href="#top">Наверх</a>
+          <a class="btn btn-primary" href="/register">Создать аккаунт</a>
+          <a class="btn btn-ghost" href="#how">Как это работает</a>
         </div>
       </div>
     </div>

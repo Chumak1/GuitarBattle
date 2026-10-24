@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, model_validator
 
 
 class RegisterRequest(BaseModel):
@@ -86,15 +86,42 @@ class UserResponse(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
-    display_name: str = Field(min_length=1, max_length=64)
+    """Partial profile update: send only the fields that change.
+
+    The desktop client still sends just ``display_name``; ``username`` was added
+    for the web account page and is normalised the same way as at registration.
+    """
+
+    display_name: str | None = Field(default=None, max_length=64)
+    username: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=32,
+        pattern=r"^[A-Za-z0-9_.-]+$",
+    )
 
     @field_validator("display_name")
     @classmethod
-    def normalize_profile_name(cls, value: str) -> str:
+    def normalize_profile_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
         cleaned = value.strip()
         if not cleaned:
             raise ValueError("Display name cannot be blank")
         return cleaned
+
+    @field_validator("username")
+    @classmethod
+    def normalize_profile_username(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip().lower()
+
+    @model_validator(mode="after")
+    def require_at_least_one_field(self) -> "ProfileUpdateRequest":
+        if self.username is None and self.display_name is None:
+            raise ValueError("Nothing to update")
+        return self
 
 
 class PasswordChangeRequest(BaseModel):

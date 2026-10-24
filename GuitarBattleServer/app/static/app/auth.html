@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#070b10">
+  <meta name="description" content="Вход и регистрация fretfight — гитарные битвы онлайн.">
+  <meta name="robots" content="noindex">
+  <title>Вход — fretfight</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b10'/%3E%3Cpath d='M24 16h25v9H34v7h13v9H34v17h-10z' fill='%23f3c451'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/app/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" href="/"><span class="brand__mark">♪</span>fretfight</a>
+    <span class="topbar__spacer"></span>
+    <a class="btn btn--ghost btn--sm" href="/">На главную</a>
+  </div>
+</header>
+
+<main class="auth-shell">
+  <div class="card auth-card">
+    <div class="card__head">
+      <h1 id="cardTitle">С возвращением</h1>
+      <p id="cardSubtitle">Войдите, чтобы смотреть рейтинг и историю попыток.</p>
+    </div>
+
+    <div id="alert" class="alert hidden" role="status" aria-live="polite"></div>
+
+    <div class="tabs" id="tabs" role="tablist">
+      <button class="tab is-active" type="button" data-tab="login" role="tab" aria-selected="true">Вход</button>
+      <button class="tab" type="button" data-tab="register" role="tab" aria-selected="false">Регистрация</button>
+    </div>
+
+    <!-- Вход -->
+    <form id="loginForm" class="panel" data-panel="login" novalidate>
+      <div class="field">
+        <label for="loginIdentifier">Email или логин</label>
+        <input class="input" id="loginIdentifier" name="identifier" autocomplete="username"
+               spellcheck="false" placeholder="you@example.com" required>
+      </div>
+      <div class="field">
+        <label for="loginPassword">Пароль</label>
+        <input class="input" id="loginPassword" name="password" type="password"
+               autocomplete="current-password" placeholder="••••••••••" required>
+      </div>
+      <button class="btn btn--primary btn--block" type="submit">
+        <span class="btn__spinner hidden"></span><span class="btn__label">Войти</span>
+      </button>
+      <div class="link-row">
+        <button type="button" data-goto="forgot">Забыли пароль?</button>
+        <button type="button" data-goto="verify">Подтвердить почту</button>
+      </div>
+    </form>
+
+    <!-- Регистрация -->
+    <form id="registerForm" class="panel hidden" data-panel="register" novalidate>
+      <div class="field">
+        <label for="regUsername">Логин</label>
+        <input class="input" id="regUsername" name="username" autocomplete="username"
+               spellcheck="false" placeholder="guitarhero" minlength="3" maxlength="32" required>
+        <p class="hint">3–32 символа: латиница, цифры, точка, дефис, подчёркивание.</p>
+      </div>
+      <div class="field">
+        <label for="regEmail">Email</label>
+        <input class="input" id="regEmail" name="email" type="email" autocomplete="email"
+               spellcheck="false" placeholder="you@example.com" required>
+      </div>
+      <div class="field">
+        <label for="regDisplayName">Отображаемое имя <span class="muted">(необязательно)</span></label>
+        <input class="input" id="regDisplayName" name="display_name" autocomplete="nickname"
+               maxlength="64" placeholder="Как вас показывать в рейтинге">
+      </div>
+      <div class="field">
+        <label for="regPassword">Пароль</label>
+        <input class="input" id="regPassword" name="password" type="password"
+               autocomplete="new-password" placeholder="Минимум 10 символов" minlength="10" required>
+      </div>
+      <button class="btn btn--primary btn--block" type="submit">
+        <span class="btn__spinner hidden"></span><span class="btn__label">Создать аккаунт</span>
+      </button>
+      <p class="hint">После регистрации пришлём на почту шестизначный код подтверждения.</p>
+    </form>
+
+    <!-- Подтверждение почты -->
+    <form id="verifyForm" class="panel hidden" data-panel="verify" novalidate>
+      <div class="field">
+        <label for="verifyEmail">Email</label>
+        <input class="input" id="verifyEmail" name="email" type="email" autocomplete="email"
+               spellcheck="false" placeholder="you@example.com" required>
+      </div>
+      <div class="field">
+        <label for="verifyCode">Код из письма</label>
+        <input class="input input--code" id="verifyCode" name="code" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="6" pattern="\d{6}" placeholder="000000" required>
+      </div>
+      <button class="btn btn--primary btn--block" type="submit">
+        <span class="btn__spinner hidden"></span><span class="btn__label">Подтвердить и войти</span>
+      </button>
+      <div class="link-row">
+        <button type="button" id="resendVerify">Отправить код ещё раз</button>
+        <button type="button" data-goto="login">Назад ко входу</button>
+      </div>
+    </form>
+
+    <!-- Забыли пароль -->
+    <form id="forgotForm" class="panel hidden" data-panel="forgot" novalidate>
+      <div class="field">
+        <label for="forgotEmail">Email аккаунта</label>
+        <input class="input" id="forgotEmail" name="email" type="email" autocomplete="email"
+               spellcheck="false" placeholder="you@example.com" required>
+      </div>
+      <button class="btn btn--primary btn--block" type="submit">
+        <span class="btn__spinner hidden"></span><span class="btn__label">Отправить код</span>
+      </button>
+      <p class="hint">Пришлём шестизначный код для смены пароля. Сам пароль по почте не отправляется.</p>
+      <div class="link-row">
+        <button type="button" data-goto="login">Назад ко входу</button>
+      </div>
+    </form>
+
+    <!-- Новый пароль -->
+    <form id="resetForm" class="panel hidden" data-panel="reset" novalidate>
+      <div class="field">
+        <label for="resetEmail">Email</label>
+        <input class="input" id="resetEmail" name="email" type="email" autocomplete="email"
+               spellcheck="false" placeholder="you@example.com" required>
+      </div>
+      <div class="field">
+        <label for="resetCode">Код из письма</label>
+        <input class="input input--code" id="resetCode" name="code" inputmode="numeric"
+               autocomplete="one-time-code" maxlength="6" pattern="\d{6}" placeholder="000000" required>
+      </div>
+      <div class="field">
+        <label for="resetPassword">Новый пароль</label>
+        <input class="input" id="resetPassword" name="new_password" type="password"
+               autocomplete="new-password" placeholder="Минимум 10 символов" minlength="10" required>
+      </div>
+      <button class="btn btn--primary btn--block" type="submit">
+        <span class="btn__spinner hidden"></span><span class="btn__label">Сохранить пароль и войти</span>
+      </button>
+      <div class="link-row">
+        <button type="button" data-goto="forgot">Отправить код ещё раз</button>
+      </div>
+    </form>
+  </div>
+</main>
+
+<footer class="shell" style="padding-top: 0;">
+  <div class="footer">© 2026 fretfight · <a href="/">fretfight.online</a></div>
+</footer>
+
+<script src="/app/api.js"></script>
+<script src="/app/auth.js"></script>
+</body>
+</html>

@@ -26,19 +26,44 @@ app.include_router(v1_router, prefix=settings.api_v1_prefix)
 admin_static_dir = Path(__file__).resolve().parent / "static" / "admin"
 app.mount("/admin", StaticFiles(directory=admin_static_dir, html=True), name="admin")
 
+# Player-facing web pages: sign in, registration with email confirmation and the
+# personal account page. They are plain static files that talk to the public
+# API from the same origin, so no CORS or second deployment target is needed.
+web_static_dir = Path(__file__).resolve().parent / "static" / "app"
+app.mount("/app", StaticFiles(directory=web_static_dir, html=True), name="web")
+
+auth_page = web_static_dir / "auth.html"
+account_page = web_static_dir / "account.html"
+
 landing_page = Path(__file__).resolve().parent / "static" / "landing" / "index.html"
 
 
 @app.middleware("http")
 async def html_no_cache(request: Request, call_next):
-    """Always revalidate the landing page and admin SPA."""
+    """Always revalidate the landing page and the web apps."""
     response = await call_next(request)
-    if request.url.path == "/" or request.url.path.startswith("/admin"):
+    path = request.url.path
+    if path == "/" or path.startswith(("/admin", "/app", "/login", "/register", "/account")):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
 
 @app.get("/", include_in_schema=False)
 def root() -> FileResponse:
-    """Serve the public placeholder page until the full site ships."""
+    """Public landing page."""
     return FileResponse(landing_page, media_type="text/html")
+
+
+@app.get("/login", include_in_schema=False)
+def login_page() -> FileResponse:
+    return FileResponse(auth_page, media_type="text/html")
+
+
+@app.get("/register", include_in_schema=False)
+def register_page() -> FileResponse:
+    return FileResponse(auth_page, media_type="text/html")
+
+
+@app.get("/account", include_in_schema=False)
+def account_page_route() -> FileResponse:
+    return FileResponse(account_page, media_type="text/html")

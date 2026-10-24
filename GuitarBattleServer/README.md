@@ -20,9 +20,13 @@ FastAPI + PostgreSQL + SQLAlchemy + Alembic + Docker Compose.
 ## Public pages
 
 - `GET /` — the landing page at `app/static/landing/index.html` (hero, project overview, how it works, features, requirements, CTA).
+- `GET /login`, `GET /register` — sign-in, registration with email confirmation, and password reset at `app/static/app/auth.html`.
+- `GET /account` — the signed-in player page at `app/static/app/account.html`: global rating, attempt history, username/display name and password changes.
 - `GET /admin/` — the admin SPA at `app/static/admin/`.
 
-Both are served by FastAPI from inside the API image. Caddy only needs to reverse-proxy `fretfight.online` to `127.0.0.1:8000`; no separate static-site root is required.
+All of them are served by FastAPI from inside the API image. Caddy only needs to reverse-proxy `fretfight.online` to `127.0.0.1:8000`; no separate static-site root is required.
+
+Registration, email confirmation and password reset need SMTP. In development without `SMTP_*` the message (including the 6-digit code) is written to the `api` container log; with `APP_ENV=production` and no SMTP these endpoints return 503, so configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_SECURITY` in the production `.env`.
 
 ## Deploying to production
 
@@ -56,7 +60,7 @@ The API returns JSON in UTF-8. PowerShell 5.1 can misdecode response bodies when
 - `POST /auth/forgot-password` — `{ "email": "..." }`; always returns 202 and sends a reset code when appropriate.
 - `POST /auth/reset-password` — `{ "email": "...", "code": "123456", "new_password": "..." }`; returns an access token.
 - `GET /auth/me` — authenticated profile.
-- `PATCH /auth/me` — authenticated display name update, `{ "display_name": "Player One" }`.
+- `PATCH /auth/me` — authenticated partial profile update: `{ "display_name": "Player One" }` and/or `{ "username": "player_one" }` (3–32 characters `[A-Za-z0-9_.-]`, lowercased, 409 if taken).
 - `POST /auth/change-password` — Bearer, `{ "current_password": "...", "new_password": "..." }`; returns 204.
 
 Passwords are Argon2-hashed and access tokens are JWTs. Codes are stored only as HMAC-SHA256 hashes, expire after 15 minutes, are single-use, and allow at most five failed attempts. Registration is rejected with 503 if the verification email cannot be sent, so an unreachable account is not created. Changing or resetting a password increments the user's token version and invalidates all older JWTs. Existing accounts are marked verified by migration `0005` so they are not locked out when this feature is deployed.

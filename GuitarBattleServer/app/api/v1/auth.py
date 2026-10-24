@@ -327,8 +327,30 @@ def me(current_user: User = Depends(get_current_user)) -> User:
 @router.patch("/me", response_model=UserResponse)
 def update_me(payload: ProfileUpdateRequest, current_user: User = Depends(get_current_user),
               db: Session = Depends(get_db)) -> User:
-    current_user.display_name = payload.display_name
-    db.commit()
+    if payload.username is not None and payload.username != current_user.username:
+        taken = db.scalar(
+            select(User.id)
+            .where(func.lower(User.username) == payload.username, User.id != current_user.id)
+            .limit(1)
+        )
+        if taken is not None:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Username is already taken",
+            )
+        current_user.username = payload.username
+
+    if payload.display_name is not None:
+        current_user.display_name = payload.display_name
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username is already taken",
+        )
     db.refresh(current_user)
     return current_user
 

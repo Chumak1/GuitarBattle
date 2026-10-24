@@ -23,7 +23,7 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | POST | `/auth/forgot-password` | `email` | 202, всегда одинаковый ответ |
 | POST | `/auth/reset-password` | `email`, `code`, `new_password` | `access_token`; старые токены инвалидируются |
 | GET | `/auth/me` | Bearer | профиль |
-| PATCH | `/auth/me` | `display_name` | профиль |
+| PATCH | `/auth/me` | `display_name?`, `username?` (хотя бы одно поле; `username` — 3–32 символа `[A-Za-z0-9_.-]`, приводится к нижнему регистру, 409 если занят) | профиль |
 | POST | `/auth/change-password` | Bearer, `current_password`, `new_password` | 204, без тела; старые токены инвалидируются |
 | GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных; у каждого элемента `readiness` |
 | GET | `/songs/{slug}` | — | детали + `version` + `files` + `assets` + `readiness` |
