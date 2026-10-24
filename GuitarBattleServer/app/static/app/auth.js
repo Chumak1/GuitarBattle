@@ -42,6 +42,7 @@
     var copy = TITLES[name] || TITLES.login;
     titleEl.textContent = copy[0];
     subtitleEl.textContent = copy[1];
+    document.title = copy[0] + ' — fretfight';
 
     var showTabs = name === 'login' || name === 'register';
     tabs.classList.toggle('hidden', !showTabs);
@@ -60,7 +61,11 @@
     if (firstInput) firstInput.focus();
 
     if (window.history && history.replaceState) {
-      var url = name === 'login' ? '/login' : '/login?mode=' + name;
+      var url = name === 'login'
+        ? '/login'
+        : name === 'register'
+          ? '/register'
+          : '/login?mode=' + name;
       history.replaceState(null, '', url);
     }
   }
@@ -283,6 +288,7 @@
   var mode = params.get('mode') || params.get('tab');
   var email = params.get('email') || '';
   if (mode && TITLES[mode]) showPanel(mode, { email: email });
+  else if (location.pathname === '/register') showPanel('register', { email: email });
   else if (email) showPanel('login', { email: email });
 
   if (params.get('changed') === '1') {
