@@ -107,6 +107,7 @@
     .nav a {
       color: var(--muted);
       text-decoration: none;
+      white-space: nowrap;
       transition: color 160ms ease;
     }
 
@@ -587,17 +588,21 @@
 
     /* ---------- motion / small screens ---------- */
 
-    @media (max-width: 720px) {
+    @media (max-width: 960px) {
+      .status-chip { display: none; }
+      .site-header .wrap { gap: 16px; }
+      .nav { gap: 16px; }
+    }
+
+    @media (max-width: 760px) {
       .nav { display: none; }
       .site-header .wrap { justify-content: space-between; gap: 12px; }
       .header-login { margin-left: auto; }
-      .status-chip { margin-left: 0; }
-      .hero-visual { order: -1; min-height: 220px; }
-      .guitar { width: min(44vh, 240px); }
     }
 
-    @media (max-width: 520px) {
-      .status-chip { display: none; }
+    @media (max-width: 720px) {
+      .hero-visual { order: -1; min-height: 220px; }
+      .guitar { width: min(44vh, 240px); }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -635,8 +640,8 @@
           <strong>общем мировом рейтинге</strong>.
         </p>
         <div class="hero-actions">
-          <a class="btn btn-primary" href="#how">Как это работает</a>
-          <a class="btn btn-ghost" href="#features">Возможности</a>
+          <a class="btn btn-primary" href="/register">Создать аккаунт</a>
+          <a class="btn btn-ghost" href="#how">Как это работает</a>
         </div>
       </div>
 
