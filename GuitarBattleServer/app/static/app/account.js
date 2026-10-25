@@ -4,6 +4,11 @@
   'use strict';
 
   var FF = window.FF;
+  var I18N = window.FFI18N;
+
+  function t(key, vars) {
+    return I18N ? I18N.t(key, vars) : key;
+  }
 
   var alertBox = document.getElementById('alert');
   var ratingBody = document.getElementById('ratingBody');
@@ -63,7 +68,7 @@
       state.me = me;
       document.getElementById('chipName').textContent = me.display_name || me.username;
       document.getElementById('welcomeLine').textContent =
-        'Вы вошли как ' + me.username + ' · ' + me.email;
+        t('account.welcome', { username: me.username, email: me.email });
       document.getElementById('profileUsername').value = me.username;
       document.getElementById('profileDisplayName').value = me.display_name || '';
       document.getElementById('accountEmail').textContent = me.email;
@@ -120,10 +125,10 @@
         : null;
       if (mine) {
         rankValue.textContent = '#' + mine.rank;
-        rankNote.textContent = 'в топ-50';
+        rankNote.textContent = t('account.stat.rankTop');
       } else {
         rankValue.textContent = '—';
-        rankNote.textContent = 'нет в топ-50';
+        rankNote.textContent = t('account.stat.rankNone');
       }
     });
   }
@@ -141,10 +146,10 @@
     var status = item.status || '';
     if (status === 'finished') {
       badge.className = 'badge badge--done';
-      badge.textContent = 'завершена';
+      badge.textContent = t('account.history.finished');
     } else if (status === 'started') {
       badge.className = 'badge badge--live';
-      badge.textContent = 'в игре';
+      badge.textContent = t('account.history.playing');
     } else {
       badge.className = 'badge badge--slow';
       badge.textContent = status || '—';
@@ -156,7 +161,7 @@
     tr.appendChild(cell(FF.formatPercent(item.accuracy_percent), { className: 'num' }));
     tr.appendChild(cell(item.max_combo === null ? '—' : FF.formatNumber(item.max_combo), { className: 'num' }));
 
-    if (item.finished_at) tr.title = 'Завершена: ' + FF.formatDateTime(item.finished_at);
+    if (item.finished_at) tr.title = t('account.history.finishedAt', { date: FF.formatDateTime(item.finished_at) });
     return tr;
   }
 
@@ -191,7 +196,7 @@
     if (!state.me || displayName !== (state.me.display_name || '')) payload.display_name = displayName;
 
     if (!Object.keys(payload).length) {
-      showAlert('info', 'Изменений нет.');
+      showAlert('info', t('account.msg.noChanges'));
       return;
     }
 
@@ -202,8 +207,8 @@
         state.me = me;
         document.getElementById('chipName').textContent = me.display_name || me.username;
         document.getElementById('welcomeLine').textContent =
-          'Вы вошли как ' + me.username + ' · ' + me.email;
-        showAlert('ok', 'Профиль обновлён.');
+          t('account.welcome', { username: me.username, email: me.email });
+        showAlert('ok', t('account.msg.profileUpdated'));
         return loadRating();
       })
       .catch(function (error) {
@@ -288,20 +293,38 @@
 
   /* ---------- boot ---------- */
 
-  if (!FF.getToken()) {
-    location.replace('/login');
-    return;
+  if (I18N) {
+    I18N.onChange(function () {
+      if (!FF.getToken()) return;
+      if (state.me) loadMe().catch(function () { /* ignore */ });
+      loadSummary().catch(function () { /* ignore */ });
+      loadRating().catch(function () { /* ignore */ });
+      loadHistory(true).catch(function () { /* ignore */ });
+    });
   }
 
-  loadMe()
-    .then(function () {
-      return Promise.all([
-        loadSummary().catch(function (error) { if (!handleAuthError(error)) throw error; }),
-        loadRating().catch(function (error) { if (!handleAuthError(error)) throw error; }),
-        loadHistory(true).catch(function (error) { if (!handleAuthError(error)) throw error; })
-      ]);
-    })
-    .catch(function (error) {
-      if (!handleAuthError(error)) showAlert('error', FF.errorMessage(error));
-    });
+  function boot() {
+    if (!FF.getToken()) {
+      location.replace('/login');
+      return;
+    }
+
+    loadMe()
+      .then(function () {
+        return Promise.all([
+          loadSummary().catch(function (error) { if (!handleAuthError(error)) throw error; }),
+          loadRating().catch(function (error) { if (!handleAuthError(error)) throw error; }),
+          loadHistory(true).catch(function (error) { if (!handleAuthError(error)) throw error; })
+        ]);
+      })
+      .catch(function (error) {
+        if (!handleAuthError(error)) showAlert('error', FF.errorMessage(error));
+      });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
+  }
 })();

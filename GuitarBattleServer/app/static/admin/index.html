@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ru" data-bs-theme="dark">
+<html lang="ru" data-bs-theme="dark" data-i18n-off>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -100,6 +100,26 @@
 
     <main class="container-xxl py-4 py-lg-5">
       <div id="appAlert" class="alert alert-danger" role="alert" hidden></div>
+
+      <ul class="nav admin-sections mb-4" id="adminSections" role="tablist">
+        <li class="nav-item" role="presentation">
+          <button class="nav-link active" type="button" role="tab" aria-selected="true" data-admin-section="songs">
+            <i class="bi bi-music-note-list me-1"></i>Песни
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="landing">
+            <i class="bi bi-window-desktop me-1"></i>Лендинг
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="builds">
+            <i class="bi bi-download me-1"></i>Сборка игры
+          </button>
+        </li>
+      </ul>
+
+      <div id="sectionSongs" data-admin-panel="songs">
 
       <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
         <div>
@@ -205,6 +225,119 @@
           </div>
         </div>
       </section>
+
+      </div>
+
+      <div id="sectionLanding" data-admin-panel="landing" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Публичный сайт</div>
+            <h1 class="page-title">Контент лендинга</h1>
+            <p class="page-subtitle">Скрывайте блоки, меняйте тексты на русском и английском, загружайте фон первого экрана.</p>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="landingReload" class="btn btn-outline-light" type="button">
+              <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+            </button>
+            <button id="landingSave" class="btn btn-warning fw-semibold" type="button">
+              <span id="landingSaveSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+              <i class="bi bi-check2 me-1"></i>Сохранить
+            </button>
+          </div>
+        </div>
+
+        <div id="landingAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <section class="card content-card mb-4">
+          <div class="card-body p-4">
+            <h2 class="h5 mb-1">Фон первого экрана</h2>
+            <p class="text-secondary small mb-3">Изображение или видео на всю ширину. Если не задан, используется стандартный фон.</p>
+            <div id="landingBgPreview" class="landing-bg-preview mb-3"><span class="text-secondary small">Фон не задан</span></div>
+            <div class="row g-2 align-items-end">
+              <div class="col-12 col-lg">
+                <input id="landingBgFile" class="form-control" type="file"
+                       accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm">
+              </div>
+              <div class="col-12 col-lg-auto d-flex gap-2">
+                <button id="landingBgUpload" class="btn btn-outline-light" type="button">
+                  <span id="landingBgSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                  Загрузить
+                </button>
+                <button id="landingBgRemove" class="btn btn-outline-danger" type="button">Удалить</button>
+              </div>
+            </div>
+            <p class="form-hint mt-2 mb-0">JPG, PNG, WebP, GIF, MP4 или WebM. До 50 МБ.</p>
+          </div>
+        </section>
+
+        <div id="landingBlocks" class="vstack gap-3"></div>
+        <p class="form-hint mt-3 mb-0">Пустое поле означает стандартный текст. Изменения появятся на сайте сразу после сохранения.</p>
+      </div>
+
+      <div id="sectionBuilds" data-admin-panel="builds" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Публичный сайт</div>
+            <h1 class="page-title">Сборка игры</h1>
+            <p class="page-subtitle">Загрузите ZIP, EXE или MSI и активируйте сборку — на лендинге появится кнопка скачивания.</p>
+          </div>
+          <button id="buildsReload" class="btn btn-outline-light" type="button">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+          </button>
+        </div>
+
+        <div id="buildAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <section class="card content-card mb-4">
+          <div class="card-body p-4">
+            <h2 class="h5 mb-3">Загрузить новую сборку</h2>
+            <form id="buildForm" class="row g-2 align-items-end">
+              <div class="col-12 col-md-3">
+                <label class="form-label" for="buildVersion">Версия</label>
+                <input id="buildVersion" class="form-control" type="text" maxlength="64" placeholder="0.9.0">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="buildFile">Файл</label>
+                <input id="buildFile" class="form-control" type="file" accept=".exe,.zip,.msi" required>
+              </div>
+              <div class="col-12 col-md-3">
+                <button id="buildUpload" class="btn btn-warning fw-semibold w-100" type="submit">
+                  <span id="buildSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                  Загрузить
+                </button>
+              </div>
+            </form>
+            <p class="form-hint mt-2 mb-0">ZIP, EXE или MSI. До 500 МБ. Новая сборка не публикуется автоматически.</p>
+          </div>
+        </section>
+
+        <section class="card content-card">
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table songs-table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Версия</th>
+                    <th scope="col">Файл</th>
+                    <th scope="col">Размер</th>
+                    <th scope="col" class="d-none d-lg-table-cell">Загружена</th>
+                    <th scope="col">Статус</th>
+                    <th scope="col" class="text-end">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="buildsBody">
+                  <tr><td colspan="6" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="buildsEmpty" class="empty-state" hidden>
+              <div class="empty-icon"><i class="bi bi-box-seam"></i></div>
+              <h2>Сборок пока нет</h2>
+              <p>Загрузите ZIP, EXE или MSI выше, затем активируйте сборку.</p>
+            </div>
+          </div>
+        </section>
+      </div>
 
       <footer class="app-footer">
         <span>GuitarBattle admin</span>
@@ -412,5 +545,8 @@
 
   <script src="./vendor/bootstrap.bundle.min.js"></script>
   <script src="./admin.js?v=20261022-1"></script>
+  <script src="/app/i18n.js"></script>
+  <script src="/app/landing-i18n.js"></script>
+  <script src="./admin-site.js?v=20261025-1"></script>
 </body>
 </html>

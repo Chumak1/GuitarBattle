@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="ru">
+<html lang="ru" data-title="account.docTitle">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#070b10">
-  <meta name="description" content="Личный кабинет fretfight: рейтинг, история попыток и настройки аккаунта.">
+  <meta name="description" content="Личный кабинет fretfight: рейтинг, история попыток и настройки аккаунта." data-i18n-content="account.meta">
   <meta name="robots" content="noindex">
   <title>Личный кабинет — fretfight</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b10'/%3E%3Cpath d='M24 16h25v9H34v7h13v9H34v17h-10z' fill='%23f3c451'/%3E%3C/svg%3E">
@@ -16,20 +16,25 @@
   <div class="topbar__inner">
     <a class="brand" href="/"><span class="brand__mark">♪</span>fretfight</a>
     <span class="topbar__spacer"></span>
+    <div class="lang-switch" data-lang-switch aria-label="Язык сайта / Site language">
+      <button type="button" data-lang="ru" aria-pressed="true">RU</button>
+      <span class="lang-switch__sep" aria-hidden="true">/</span>
+      <button type="button" data-lang="en" aria-pressed="false">EN</button>
+    </div>
     <span class="user-chip"><span class="user-chip__dot"></span><span class="user-chip__name" id="chipName">загрузка…</span></span>
-    <button class="btn btn--ghost btn--sm" type="button" id="logoutBtn">Выйти</button>
+    <button class="btn btn--ghost btn--sm" type="button" id="logoutBtn" data-i18n="account.logout">Выйти</button>
   </div>
 </header>
 
 <main class="shell">
   <div class="page-head">
     <div>
-      <h1>Личный кабинет</h1>
-      <p id="welcomeLine">Рейтинг, история попыток и настройки аккаунта.</p>
+      <h1 data-i18n="account.title">Личный кабинет</h1>
+      <p id="welcomeLine" data-i18n="account.subtitle">Рейтинг, история попыток и настройки аккаунта.</p>
     </div>
     <div class="page-head__actions">
       <button class="btn btn--ghost btn--sm" type="button" id="refreshBtn">
-        <span class="btn__spinner hidden"></span><span class="btn__label">Обновить</span>
+        <span class="btn__spinner hidden"></span><span class="btn__label" data-i18n="account.refresh">Обновить</span>
       </button>
     </div>
   </div>
@@ -38,24 +43,24 @@
 
   <div class="stats">
     <div class="stat">
-      <div class="stat__label">Рейтинг</div>
+      <div class="stat__label" data-i18n="account.stat.rating">Рейтинг</div>
       <div class="stat__value" id="statRating">—</div>
-      <div class="stat__note">лучшие результаты по песням</div>
+      <div class="stat__note" data-i18n="account.stat.ratingNote">лучшие результаты по песням</div>
     </div>
     <div class="stat">
-      <div class="stat__label">Место в рейтинге</div>
+      <div class="stat__label" data-i18n="account.stat.rank">Место в рейтинге</div>
       <div class="stat__value" id="statRank">—</div>
-      <div class="stat__note" id="statRankNote">среди всех игроков</div>
+      <div class="stat__note" id="statRankNote" data-i18n="account.stat.rankNote">среди всех игроков</div>
     </div>
     <div class="stat">
-      <div class="stat__label">Песен в зачёте</div>
+      <div class="stat__label" data-i18n="account.stat.songs">Песен в зачёте</div>
       <div class="stat__value" id="statSongs">—</div>
-      <div class="stat__note">минимум одна попытка</div>
+      <div class="stat__note" data-i18n="account.stat.songsNote">минимум одна попытка</div>
     </div>
     <div class="stat">
-      <div class="stat__label">Попыток</div>
+      <div class="stat__label" data-i18n="account.stat.attempts">Попыток</div>
       <div class="stat__value" id="statAttempts">—</div>
-      <div class="stat__note">всего сыграно</div>
+      <div class="stat__note" data-i18n="account.stat.attemptsNote">всего сыграно</div>
     </div>
   </div>
 
@@ -63,113 +68,117 @@
     <div class="layout__main">
       <section class="section">
         <div class="section__head">
-          <h2>Глобальный рейтинг</h2>
+          <h2 data-i18n="account.rating.title">Глобальный рейтинг</h2>
           <button class="btn btn--ghost btn--sm" type="button" id="ratingRefresh">
-            <span class="btn__spinner hidden"></span><span class="btn__label">Обновить</span>
+            <span class="btn__spinner hidden"></span><span class="btn__label" data-i18n="account.refresh">Обновить</span>
           </button>
         </div>
-        <p class="section__hint">Сумма лучших результатов по каждой песне. Топ-50.</p>
+        <p class="section__hint" data-i18n="account.rating.hint">Сумма лучших результатов по каждой песне. Топ-50.</p>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
                 <th>#</th>
-                <th>Игрок</th>
-                <th class="num">Рейтинг</th>
-                <th class="num">Песен</th>
-                <th class="num">Точность</th>
+                <th data-i18n="account.rating.player">Игрок</th>
+                <th class="num" data-i18n="account.rating.points">Рейтинг</th>
+                <th class="num" data-i18n="account.rating.songs">Песен</th>
+                <th class="num" data-i18n="account.rating.accuracy">Точность</th>
               </tr>
             </thead>
             <tbody id="ratingBody"></tbody>
           </table>
         </div>
-        <div class="empty hidden" id="ratingEmpty">Пока никто не играл — самое время быть первым.</div>
+        <div class="empty hidden" id="ratingEmpty" data-i18n="account.rating.empty">Пока никто не играл — самое время быть первым.</div>
       </section>
 
       <section class="section">
         <div class="section__head">
-          <h2>История попыток</h2>
+          <h2 data-i18n="account.history.title">История попыток</h2>
         </div>
-        <p class="section__hint">Ваши последние игры: очки, точность и максимальное комбо.</p>
+        <p class="section__hint" data-i18n="account.history.hint">Ваши последние игры: очки, точность и максимальное комбо.</p>
         <div class="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Песня</th>
-                <th>Начата</th>
-                <th>Статус</th>
-                <th class="num">Очки</th>
-                <th class="num">Точность</th>
-                <th class="num">Комбо</th>
+                <th data-i18n="account.history.song">Песня</th>
+                <th data-i18n="account.history.started">Начата</th>
+                <th data-i18n="account.history.status">Статус</th>
+                <th class="num" data-i18n="account.history.score">Очки</th>
+                <th class="num" data-i18n="account.rating.accuracy">Точность</th>
+                <th class="num" data-i18n="account.history.combo">Комбо</th>
               </tr>
             </thead>
             <tbody id="historyBody"></tbody>
           </table>
         </div>
-        <div class="empty hidden" id="historyEmpty">Попыток пока нет. Запустите песню в клиенте — результат появится здесь.</div>
+        <div class="empty hidden" id="historyEmpty" data-i18n="account.history.empty">Попыток пока нет. Запустите песню в клиенте — результат появится здесь.</div>
         <div class="link-row">
-          <button type="button" id="historyMore" class="hidden">Показать ещё</button>
+          <button type="button" id="historyMore" class="hidden" data-i18n="account.history.more">Показать ещё</button>
         </div>
       </section>
     </div>
 
     <aside class="layout__side">
       <section class="section">
-        <div class="section__head"><h2>Профиль</h2></div>
-        <p class="section__hint">Логин и имя видны в общем рейтинге.</p>
+        <div class="section__head"><h2 data-i18n="account.profile.title">Профиль</h2></div>
+        <p class="section__hint" data-i18n="account.profile.hint">Логин и имя видны в общем рейтинге.</p>
         <form id="profileForm" novalidate>
           <div class="field">
-            <label for="profileUsername">Логин</label>
+            <label for="profileUsername" data-i18n="account.profile.username">Логин</label>
             <input class="input" id="profileUsername" name="username" autocomplete="username"
                    spellcheck="false" minlength="3" maxlength="32" required>
-            <p class="hint">3–32 символа: латиница, цифры, точка, дефис, подчёркивание.</p>
+            <p class="hint" data-i18n="auth.register.usernameHint">3–32 символа: латиница, цифры, точка, дефис, подчёркивание.</p>
           </div>
           <div class="field">
-            <label for="profileDisplayName">Отображаемое имя</label>
+            <label for="profileDisplayName" data-i18n="account.profile.displayName">Отображаемое имя</label>
             <input class="input" id="profileDisplayName" name="display_name"
                    autocomplete="nickname" maxlength="64" required>
           </div>
           <button class="btn btn--primary btn--block" type="submit">
-            <span class="btn__spinner hidden"></span><span class="btn__label">Сохранить профиль</span>
+            <span class="btn__spinner hidden"></span><span class="btn__label" data-i18n="account.profile.save">Сохранить профиль</span>
           </button>
         </form>
       </section>
 
       <section class="section">
-        <div class="section__head"><h2>Пароль</h2></div>
-        <p class="section__hint">После смены пароля все сессии завершатся.</p>
+        <div class="section__head"><h2 data-i18n="account.password.title">Пароль</h2></div>
+        <p class="section__hint" data-i18n="account.password.hint">После смены пароля все сессии завершатся.</p>
         <form id="passwordForm" novalidate>
           <div class="field">
-            <label for="currentPassword">Текущий пароль</label>
+            <label for="currentPassword" data-i18n="account.password.current">Текущий пароль</label>
             <input class="input" id="currentPassword" type="password" autocomplete="current-password" required>
           </div>
           <div class="field">
-            <label for="newPassword">Новый пароль</label>
+            <label for="newPassword" data-i18n="account.password.new">Новый пароль</label>
             <input class="input" id="newPassword" type="password" autocomplete="new-password"
-                   minlength="10" placeholder="Минимум 10 символов" required>
+                   minlength="10" placeholder="Минимум 10 символов" data-i18n-placeholder="auth.register.passwordPlaceholder" required>
           </div>
           <button class="btn btn--ghost btn--block" type="submit">
-            <span class="btn__spinner hidden"></span><span class="btn__label">Сменить пароль</span>
+            <span class="btn__spinner hidden"></span><span class="btn__label" data-i18n="account.password.submit">Сменить пароль</span>
           </button>
         </form>
       </section>
 
       <section class="section">
-        <div class="section__head"><h2>Аккаунт</h2></div>
+        <div class="section__head"><h2 data-i18n="account.account.title">Аккаунт</h2></div>
         <div class="spec" style="display:flex;justify-content:space-between;gap:12px;font-size:.9rem;">
-          <span class="muted">Email</span><b id="accountEmail">—</b>
+          <span class="muted" data-i18n="account.account.email">Email</span><b id="accountEmail">—</b>
         </div>
         <div class="spec" style="display:flex;justify-content:space-between;gap:12px;font-size:.9rem;margin-top:8px;">
-          <span class="muted">С нами с</span><b id="accountSince">—</b>
+          <span class="muted" data-i18n="account.account.since">С нами с</span><b id="accountSince">—</b>
         </div>
-        <button class="btn btn--ghost btn--block" type="button" id="logoutBtn2" style="margin-top:16px;">Выйти из аккаунта</button>
+        <button class="btn btn--ghost btn--block" type="button" id="logoutBtn2" style="margin-top:16px;" data-i18n="account.logoutFull">Выйти из аккаунта</button>
       </section>
     </aside>
   </div>
 
-  <div class="footer">© 2026 fretfight · <a href="/">fretfight.online</a></div>
+  <div class="footer">
+    © 2026 fretfight · <a href="/">fretfight.online</a> ·
+    <a href="/policy" data-i18n="common.policy">Политика конфиденциальности</a>
+  </div>
 </main>
 
+<script src="/app/i18n.js"></script>
 <script src="/app/api.js"></script>
 <script src="/app/account.js"></script>
 </body>

@@ -23,6 +23,14 @@ class Settings(BaseSettings):
     client_assets_dir: Path = Path("/data/client_assets")
     max_midi_upload_bytes: int = 20 * 1024 * 1024
     max_audio_upload_bytes: int = 100 * 1024 * 1024
+    # Landing page CMS: hero image/video uploads, served at /media/landing/<name>.
+    landing_media_dir: Path = Path("/data/landing_media")
+    # Desktop game installers offered at /api/v1/downloads/game.
+    game_builds_dir: Path = Path("/data/game_builds")
+    # DB-IP Lite country database used for IP-based language detection.
+    geoip_db_path: Path = Path("/data/geoip/dbip-country-lite.mmdb")
+    max_landing_media_bytes: int = 50 * 1024 * 1024
+    max_game_build_bytes: int = 500 * 1024 * 1024
 
     # Transactional email. Empty values are treated as "not configured".
     # Yandex Cloud Postbox: SMTP_HOST=postbox.cloud.yandex.net, SMTP_PORT=587
