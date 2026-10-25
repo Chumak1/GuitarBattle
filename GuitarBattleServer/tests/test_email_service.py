@@ -211,3 +211,31 @@ def test_test_environment_uses_in_memory_outbox(
     assert len(outbox) == 1
     assert outbox[0].to == "test@example.com"
     assert outbox[0].subject == "Test"
+
+
+def test_email_configuration_log_has_flags_but_no_credentials(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _configure(monkeypatch)
+
+    with caplog.at_level(logging.INFO, logger=email_service.__name__):
+        email_service.log_email_configuration()
+
+    assert "smtp_configured=True" in caplog.text
+    assert "postbox.cloud.yandex.net" in caplog.text
+    assert "noreply@fretfight.online" in caplog.text
+    assert "api-key-id" not in caplog.text
+    assert "api-key-secret" not in caplog.text
+
+
+def test_production_without_smtp_logs_actionable_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    _configure(monkeypatch, smtp_host=None)
+
+    with caplog.at_level(logging.ERROR, logger=email_service.__name__):
+        email_service.log_email_configuration()
+
+    assert "SMTP_HOST is empty in production" in caplog.text
+    assert "503" in caplog.text
+    assert "api-key-secret" not in caplog.text

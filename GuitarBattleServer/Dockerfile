@@ -7,6 +7,8 @@ COPY app ./app
 COPY migrations ./migrations
 COPY scripts ./scripts
 COPY alembic.ini .
+# Out-of-band SMTP diagnostics: docker compose exec api python scripts/check_smtp.py
+COPY scripts/check_smtp.py ./scripts/check_smtp.py
 COPY docker/entrypoint.sh /entrypoint.sh
 RUN chmod +x /entrypoint.sh
 EXPOSE 8000
