@@ -74,6 +74,10 @@ cd "`$TGT"
 echo '== 5/5 build'
 $build
 sudo docker compose ps
+echo '== email config (no secrets) =='
+sudo docker compose exec -T api python -c "from app.config import settings as s; print('app_env=', s.app_env, 'smtp_configured=', bool(s.smtp_host), 'smtp_port=', s.smtp_port, 'smtp_security=', s.smtp_security, 'from=', s.smtp_from_email, 'username_set=', bool(s.smtp_username), 'password_set=', bool(s.smtp_password))" || true
+echo '== smtp check (no message sent) =='
+sudo docker compose exec -T api python scripts/check_smtp.py || true
 "@
 
 Write-Host "== 3-5/5 remote"

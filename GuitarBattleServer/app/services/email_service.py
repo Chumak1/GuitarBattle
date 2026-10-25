@@ -49,6 +49,41 @@ def clear_test_outbox() -> None:
     _TEST_OUTBOX.clear()
 
 
+def log_email_configuration() -> None:
+    """Log the effective email mode at startup without exposing credentials.
+
+    A production deployment that silently runs without SMTP only fails later,
+    on the first registration (HTTP 503), which is hard to diagnose from the
+    outside. This line makes the effective configuration visible in
+    ``docker compose logs api`` right after a deploy.
+    """
+    smtp_configured = bool(settings.smtp_host)
+    logger.info(
+        "Transactional email: app_env=%s smtp_configured=%s host=%s port=%s "
+        "security=%s from=%s username_set=%s password_set=%s",
+        settings.app_env,
+        smtp_configured,
+        settings.smtp_host or "<empty>",
+        settings.smtp_port,
+        settings.smtp_security,
+        settings.smtp_from_email,
+        bool(settings.smtp_username),
+        bool(settings.smtp_password),
+    )
+    if not smtp_configured and settings.app_env == "production":
+        logger.error(
+            "SMTP_HOST is empty in production: registration and password "
+            "recovery return 503 and no email is sent. Set SMTP_* in .env, "
+            "then recreate the api container (docker compose up -d api); a "
+            "plain 'restart' keeps the old environment."
+        )
+    elif not smtp_configured and settings.app_env == "development":
+        logger.warning(
+            "SMTP_HOST is empty: verification and password-reset codes are "
+            "written to this log instead of being sent."
+        )
+
+
 def _send_via_smtp(message: EmailMessage) -> None:
     host = settings.smtp_host
     if not host:

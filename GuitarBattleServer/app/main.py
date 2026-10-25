@@ -8,9 +8,11 @@ from fastapi.staticfiles import StaticFiles
 from app.api.health import router as health_router
 from app.api.v1.router import router as v1_router
 from app.config import settings
+from app.services.email_service import log_email_configuration
 from app.services.geo import country_for_ip, language_for_country
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
+log_email_configuration()
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",

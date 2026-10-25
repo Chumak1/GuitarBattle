@@ -100,6 +100,21 @@ To verify connectivity and credentials without sending a message, run
 `python scripts/check_smtp.py`; add `--send --to <mailbox>` for a real test
 message. The script never prints `SMTP_PASSWORD`.
 
+On a production server, check the effective configuration after every deploy:
+
+```powershell
+docker compose exec -T api python -c "from app.config import settings as s; print('app_env=', s.app_env); print('smtp_configured=', bool(s.smtp_host)); print('smtp_port=', s.smtp_port); print('smtp_security=', s.smtp_security); print('smtp_username_set=', bool(s.smtp_username)); print('smtp_password_set=', bool(s.smtp_password))"
+docker compose exec -T api python scripts/check_smtp.py
+```
+
+Changing `SMTP_*` in `.env` requires recreating the container
+(`docker compose up -d api`), not just `docker compose restart api`: a restart
+keeps the environment captured when the container was created. The API logs
+the effective email mode at startup without printing credentials. A `503` from
+`/auth/register` means the verification email could not be handed to Postbox;
+`docker compose logs api` contains the SMTP exception, and
+`scripts/check_smtp.py` shows the SMTP/AUTH response.
+
 The API currently relies on this application-level resend cooldown and code attempt limit. Put a rate limiter (Caddy, nginx, or a dedicated service) in front of `/auth/*` before opening registration to a large public audience.
 
 ### Game sessions and scores
