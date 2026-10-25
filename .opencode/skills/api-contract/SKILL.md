@@ -48,6 +48,44 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков (сумма лучших результатов по песням) |
 | GET | `/client-assets/manifest` | — (публичный) | `schema`, `version`, `archive_url`, `archive_size_bytes`, `archive_sha256`, `files[]`; 503, если manifest или bundle отсутствует |
 | GET/HEAD | `/client-assets/bundle.zip` | — (публичный) | zip `guitarbattle-sounds.zip`; 503, если архив отсутствует |
+| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` для лендинга |
+| GET | `/downloads/game` | — (публичный) | активная сборка игры; 404, если активной сборки нет |
+| GET | `/geo` | — (публичный) | `country`, `language` (`ru`/`en`/`null`) по IP из локальной DB-IP Lite |
+| GET | `/admin/site/landing` | Bearer admin | `blocks`, `hero_background` |
+| PUT | `/admin/site/landing` | Bearer admin, `blocks`, `hero_background` | сохранённый контент; блоки ≤ 256 КиБ, строки ≤ 5000, глубина ≤ 8 |
+| POST | `/admin/site/landing/background` | Bearer admin, multipart `file` | 201, `hero_background`; JPEG/PNG/WebP/GIF/MP4/WebM |
+| DELETE | `/admin/site/landing/background` | Bearer admin | 200, `hero_background.type = "none"` |
+| GET | `/admin/site/game-builds` | Bearer admin | список загруженных сборок |
+| POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `version?` | 201, сборка создаётся неактивной; `.exe/.zip/.msi` |
+| POST | `/admin/site/game-builds/{id}/activate` | Bearer admin | 200, сборка становится единственной активной |
+| DELETE | `/admin/site/game-builds/{id}` | Bearer admin | 204 |
+
+Публичные страницы сайта: `/` (лендинг), `/policy` (политика конфиденциальности),
+`/login`, `/register`, `/account`, `/admin/` (только администраторы). Медиа лендинга
+отдаётся по `/media/landing/<name>`.
+
+## Сайт, лендинг и язык
+
+- Лендинг — статический `app/static/landing/index.html`; `app/static/app/landing.js`
+  запрашивает `/landing` и накладывает CMS-переопределения. Если переопределения
+  для языка нет, остаётся статический перевод из `landing-i18n.js`.
+- `blocks` — объект `{hero, facts, about, how, features, requirements, cta}`; каждый
+  блок: `{visible: bool, ru: {...}, en: {...}}`. Админ-редактор всегда сохраняет
+  оба языка целиком, поэтому публичный ответ содержит полный снимок.
+- `hero_background`: `{type: "none" | "image" | "video", url, poster_url}`. Файлы
+  лежат в `LANDING_MEDIA_DIR` (`/data/landing_media`), лимит 50 МиБ, сигнатуры
+  проверяются на сервере.
+- Сборки игры лежат в `GAME_BUILDS_DIR` (`/data/game_builds`), лимит 500 МиБ.
+  Активна максимум одна сборка; `/downloads/game` отдаёт её с
+  `Content-Disposition: attachment`.
+- Язык публичного сайта — cookie `ff_lang` (`ru`/`en`). Middleware на первом HTML-
+  запросе определяет страну по локальной базе DB-IP Lite (`GEOIP_DB_PATH`,
+  обновляется `scripts/fetch_geoip.py`) и ставит cookie для России/СНГ → `ru`,
+  остальные → `en`. Если IP неизвестен, `i18n.js` запрашивает `/geo`, затем
+  использует язык браузера. Админ-панель всегда русская (`data-i18n-off`).
+- Политика `/policy` содержит русский и английский тексты в одном документе;
+  CSS показывает нужный по `html[lang]`. Формы входа и регистрации требуют
+  согласия со ссылкой на `/policy`.
 
 Админские маршруты `/admin/songs...` требуют `is_admin`.
 

@@ -4,14 +4,13 @@
   'use strict';
 
   var FF = window.FF;
+  var I18N = window.FFI18N;
 
-  var TITLES = {
-    login: ['С возвращением', 'Войдите, чтобы смотреть рейтинг и историю попыток.'],
-    register: ['Создать аккаунт', 'Пара минут — и вы в общем рейтинге.'],
-    verify: ['Подтвердите почту', 'Мы отправили шестизначный код на ваш email.'],
-    forgot: ['Забыли пароль?', 'Пришлём код для смены пароля на почту аккаунта.'],
-    reset: ['Новый пароль', 'Введите код из письма и придумайте новый пароль.']
-  };
+  function t(key, vars) {
+    return I18N ? I18N.t(key, vars) : key;
+  }
+
+  var PANELS = ['login', 'register', 'verify', 'forgot', 'reset'];
 
   var alertBox = document.getElementById('alert');
   var titleEl = document.getElementById('cardTitle');
@@ -20,6 +19,7 @@
   var panels = Array.prototype.slice.call(document.querySelectorAll('[data-panel]'));
 
   var cooldowns = {};
+  var currentPanel = 'login';
 
   function showAlert(kind, text) {
     alertBox.className = 'alert alert--' + kind;
@@ -33,16 +33,18 @@
 
   function showPanel(name, options) {
     options = options || {};
+    currentPanel = name;
     clearAlert();
 
     panels.forEach(function (panel) {
       panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== name);
     });
 
-    var copy = TITLES[name] || TITLES.login;
-    titleEl.textContent = copy[0];
-    subtitleEl.textContent = copy[1];
-    document.title = copy[0] + ' — fretfight';
+    titleEl.textContent = t('auth.panel.' + name + '.title');
+    subtitleEl.textContent = t('auth.panel.' + name + '.subtitle');
+    document.title = t('auth.docTitle.' + name) === 'auth.docTitle.' + name
+      ? t('auth.panel.' + name + '.title') + ' — fretfight'
+      : t('auth.docTitle.' + name);
 
     var showTabs = name === 'login' || name === 'register';
     tabs.classList.toggle('hidden', !showTabs);
@@ -76,21 +78,21 @@
     if (spinner) spinner.classList.toggle('hidden', !busy);
   }
 
-  function startCooldown(button, seconds, label) {
+  function startCooldown(button, seconds, labelKey) {
     if (cooldowns[button.id]) clearInterval(cooldowns[button.id]);
     var end = Date.now() + seconds * 1000;
     button.disabled = true;
-    button.textContent = label + ' (' + seconds + ' с)';
+    button.textContent = t('auth.msg.cooldown', { label: t(labelKey), seconds: seconds });
     cooldowns[button.id] = setInterval(function () {
       var left = Math.ceil((end - Date.now()) / 1000);
       if (left <= 0) {
         clearInterval(cooldowns[button.id]);
         delete cooldowns[button.id];
         button.disabled = false;
-        button.textContent = label;
+        button.textContent = t(labelKey);
         return;
       }
-      button.textContent = label + ' (' + left + ' с)';
+      button.textContent = t('auth.msg.cooldown', { label: t(labelKey), seconds: left });
     }, 250);
   }
 
@@ -100,12 +102,19 @@
       : '';
   }
 
+  function requireConsent(form) {
+    if (form.reportValidity()) return true;
+    var consent = form.querySelector('input[type="checkbox"]');
+    if (consent && !consent.checked) showAlert('info', t('auth.consentRequired'));
+    return false;
+  }
+
   /* ---------- login ---------- */
 
   var loginForm = document.getElementById('loginForm');
   loginForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (!loginForm.reportValidity()) return;
+    if (!requireConsent(loginForm)) return;
     clearAlert();
 
     var button = loginForm.querySelector('button[type="submit"]');
@@ -122,7 +131,7 @@
       var detail = detailsOf(error);
       if (error.status === 403 && /not verified/i.test(detail)) {
         showPanel('verify', { email: identifier.indexOf('@') > 0 ? identifier : '' });
-        showAlert('info', 'Почта ещё не подтверждена. Введите код из письма или запросите новый.');
+        showAlert('info', t('auth.msg.unverified'));
         return;
       }
       showAlert('error', FF.errorMessage(error));
@@ -135,7 +144,7 @@
   var registerForm = document.getElementById('registerForm');
   registerForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (!registerForm.reportValidity()) return;
+    if (!requireConsent(registerForm)) return;
     clearAlert();
 
     var button = registerForm.querySelector('button[type="submit"]');
@@ -152,8 +161,8 @@
     FF.api('/auth/register', { method: 'POST', body: payload })
       .then(function () {
         showPanel('verify', { email: email });
-        showAlert('ok', 'Аккаунт создан. Код подтверждения отправлен на ' + email + '.');
-        startCooldown(document.getElementById('resendVerify'), 60, 'Отправить код ещё раз');
+        showAlert('ok', t('auth.msg.registered', { email: email }));
+        startCooldown(document.getElementById('resendVerify'), 60, 'auth.verify.resend');
       })
       .catch(function (error) {
         showAlert('error', FF.errorMessage(error));
@@ -190,15 +199,15 @@
     var button = this;
     var email = document.getElementById('verifyEmail').value.trim();
     if (!email) {
-      showAlert('error', 'Сначала укажите email, на который пришёл код.');
+      showAlert('error', t('auth.msg.emailRequired'));
       document.getElementById('verifyEmail').focus();
       return;
     }
     clearAlert();
     FF.api('/auth/resend-verification', { method: 'POST', body: { email: email } })
       .then(function () {
-        showAlert('ok', 'Новый код отправлен на ' + email + '.');
-        startCooldown(button, 60, 'Отправить код ещё раз');
+        showAlert('ok', t('auth.msg.resent', { email: email }));
+        startCooldown(button, 60, 'auth.verify.resend');
       })
       .catch(function (error) {
         showAlert('error', FF.errorMessage(error));
@@ -219,7 +228,7 @@
     FF.api('/auth/forgot-password', { method: 'POST', body: { email: email } })
       .then(function () {
         showPanel('reset', { email: email });
-        showAlert('ok', 'Если аккаунт с таким email существует, код уже отправлен.');
+        showAlert('ok', t('auth.msg.resetSent'));
       })
       .catch(function (error) {
         showAlert('error', FF.errorMessage(error));
@@ -277,6 +286,12 @@
     });
   });
 
+  if (I18N) {
+    I18N.onChange(function () {
+      if (currentPanel) showPanel(currentPanel);
+    });
+  }
+
   // Already signed in? Go straight to the account page.
   if (FF.getToken()) {
     FF.api('/auth/me', { auth: true })
@@ -284,14 +299,22 @@
       .catch(function () { FF.clearSession(); });
   }
 
-  var params = new URLSearchParams(location.search);
-  var mode = params.get('mode') || params.get('tab');
-  var email = params.get('email') || '';
-  if (mode && TITLES[mode]) showPanel(mode, { email: email });
-  else if (location.pathname === '/register') showPanel('register', { email: email });
-  else if (email) showPanel('login', { email: email });
+  function boot() {
+    var params = new URLSearchParams(location.search);
+    var mode = params.get('mode') || params.get('tab');
+    var email = params.get('email') || '';
+    if (mode && PANELS.indexOf(mode) !== -1) showPanel(mode, { email: email });
+    else if (location.pathname === '/register') showPanel('register', { email: email });
+    else showPanel('login', { email: email });
 
-  if (params.get('changed') === '1') {
-    showAlert('ok', 'Пароль изменён. Войдите с новым паролем.');
+    if (params.get('changed') === '1') {
+      showAlert('ok', t('auth.msg.passwordChanged'));
+    }
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', boot);
+  } else {
+    boot();
   }
 })();

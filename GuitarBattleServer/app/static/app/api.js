@@ -7,6 +7,14 @@ window.FF = (function () {
   var TOKEN_KEY = 'ff.token';
   var EXPIRES_KEY = 'ff.tokenExpires';
 
+  function L(key, vars) {
+    return window.FFI18N ? window.FFI18N.t(key, vars) : key;
+  }
+
+  function locale() {
+    return window.FFI18N && window.FFI18N.language() === 'en' ? 'en-US' : 'ru-RU';
+  }
+
   function ApiError(status, payload) {
     this.name = 'ApiError';
     this.status = status;
@@ -78,53 +86,51 @@ window.FF = (function () {
   }
 
   var KNOWN_DETAILS = {
-    'Incorrect email/username or password': 'Неверный email/логин или пароль.',
-    'Email address is not verified': 'Почта ещё не подтверждена. Введите код из письма.',
-    'Username or email is already registered': 'Этот логин или email уже заняты.',
-    'Username is already taken': 'Этот логин уже занят.',
-    'Current password is incorrect': 'Текущий пароль неверен.',
-    'Invalid or expired code': 'Неверный или просроченный код.',
-    'Email address is already verified': 'Почта уже подтверждена — можно войти.',
-    'Could not send the verification email. Try again later.':
-      'Не удалось отправить письмо: почтовый сервис недоступен. Попробуйте позже.',
-    'Could not send the email. Try again later.':
-      'Не удалось отправить письмо: почтовый сервис недоступен. Попробуйте позже.',
-    'Registration is temporarily unavailable': 'Регистрация временно недоступна.',
-    'Too many attempts. Try again later.': 'Слишком много попыток. Попробуйте позже.'
+    'Incorrect email/username or password': 'errors.badCredentials',
+    'Email address is not verified': 'errors.emailNotVerified',
+    'Username or email is already registered': 'errors.usernameTaken',
+    'Username is already taken': 'errors.usernameOnlyTaken',
+    'Current password is incorrect': 'errors.currentPassword',
+    'Invalid or expired code': 'errors.invalidCode',
+    'Email address is already verified': 'errors.alreadyVerified',
+    'Could not send the verification email. Try again later.': 'errors.emailUnavailable',
+    'Could not send the email. Try again later.': 'errors.emailUnavailable',
+    'Registration is temporarily unavailable': 'errors.registrationUnavailable',
+    'Too many attempts. Try again later.': 'errors.tooMany'
   };
 
   var FIELD_NAMES = {
-    username: 'логин',
-    email: 'email',
-    password: 'пароль',
-    display_name: 'имя',
-    code: 'код',
-    new_password: 'новый пароль',
-    current_password: 'текущий пароль',
-    identifier: 'email или логин'
+    username: 'errors.field.username',
+    email: 'errors.field.email',
+    password: 'errors.field.password',
+    display_name: 'errors.field.display_name',
+    code: 'errors.field.code',
+    new_password: 'errors.field.new_password',
+    current_password: 'errors.field.current_password',
+    identifier: 'errors.field.identifier'
   };
 
   function validationMessage(items) {
     if (!Array.isArray(items)) return null;
     var parts = items.map(function (item) {
       var field = item.loc && item.loc.length ? item.loc[item.loc.length - 1] : '';
-      var name = FIELD_NAMES[field] || field;
+      var name = FIELD_NAMES[field] ? L(FIELD_NAMES[field]) : field;
       var ctx = item.ctx || {};
       var text;
       switch (item.type) {
-        case 'missing': text = 'обязательное поле'; break;
-        case 'string_too_short': text = 'минимум ' + (ctx.min_length || '?') + ' символов'; break;
-        case 'string_too_long': text = 'максимум ' + (ctx.max_length || '?') + ' символов'; break;
-        case 'string_pattern_mismatch': text = 'недопустимые символы'; break;
+        case 'missing': text = L('errors.fieldRequired'); break;
+        case 'string_too_short': text = L('errors.fieldMin', { n: ctx.min_length || '?' }); break;
+        case 'string_too_long': text = L('errors.fieldMax', { n: ctx.max_length || '?' }); break;
+        case 'string_pattern_mismatch': text = L('errors.fieldPattern'); break;
         case 'value_error':
-          if (field === 'email') text = 'неверный email';
-          else if (/at least/i.test(item.msg || '')) text = 'слишком короткий';
-          else text = 'неверное значение';
+          if (field === 'email') text = L('errors.fieldEmail');
+          else if (/at least/i.test(item.msg || '')) text = L('errors.fieldShort');
+          else text = L('errors.fieldValue');
           break;
         case 'bool_type':
         case 'int_type':
-        case 'string_type': text = 'неверный формат'; break;
-        default: text = item.msg || 'неверное значение';
+        case 'string_type': text = L('errors.fieldFormat'); break;
+        default: text = item.msg || L('errors.fieldValue');
       }
       return name ? name + ': ' + text : text;
     });
@@ -132,40 +138,41 @@ window.FF = (function () {
   }
 
   function errorMessage(error) {
-    if (!error || error.name !== 'ApiError') return 'Что-то пошло не так. Попробуйте ещё раз.';
-    if (error.status === 0) return 'Нет связи с сервером. Проверьте интернет и попробуйте снова.';
+    if (!error || error.name !== 'ApiError') return L('errors.generic');
+    if (error.status === 0) return L('errors.network');
 
     var payload = error.payload;
     var detail = payload && payload.detail;
 
     if (error.status === 422) {
       var validation = validationMessage(detail);
-      if (validation) return 'Проверьте поля — ' + validation + '.';
+      if (validation) return L('errors.checkFields', { details: validation });
     }
-    if (typeof detail === 'string' && KNOWN_DETAILS[detail]) return KNOWN_DETAILS[detail];
+    if (typeof detail === 'string' && KNOWN_DETAILS[detail]) return L(KNOWN_DETAILS[detail]);
     if (Array.isArray(detail)) {
       var message = validationMessage(detail);
-      if (message) return 'Проверьте поля — ' + message + '.';
+      if (message) return L('errors.checkFields', { details: message });
     }
 
     var byStatus = {
-      400: 'Проверьте введённые данные.',
-      401: 'Неверный email/логин или пароль.',
-      403: 'Доступ запрещён. Возможно, нужно подтвердить почту.',
-      404: 'Не найдено.',
-      409: 'Этот логин или email уже заняты.',
-      429: 'Слишком много попыток. Подождите немного.',
-      500: 'Ошибка на сервере. Попробуйте позже.',
-      503: 'Сервис временно недоступен. Попробуйте позже.'
+      400: 'errors.badRequest',
+      401: 'errors.badCredentials',
+      403: 'errors.forbidden',
+      404: 'errors.notFound',
+      409: 'errors.conflict',
+      429: 'errors.tooMany',
+      500: 'errors.server',
+      503: 'errors.unavailable'
     };
-    return byStatus[error.status] || (typeof detail === 'string' ? detail : 'Ошибка запроса.');
+    if (byStatus[error.status]) return L(byStatus[error.status]);
+    return typeof detail === 'string' ? detail : L('errors.request');
   }
 
   function formatDateTime(value) {
     if (!value) return '—';
     var date = new Date(value);
     if (isNaN(date.getTime())) return '—';
-    return new Intl.DateTimeFormat('ru-RU', {
+    return new Intl.DateTimeFormat(locale(), {
       day: '2-digit', month: '2-digit', year: '2-digit',
       hour: '2-digit', minute: '2-digit'
     }).format(date);
@@ -173,14 +180,16 @@ window.FF = (function () {
 
   function formatNumber(value) {
     var number = Number(value || 0);
-    return new Intl.NumberFormat('ru-RU').format(number);
+    return new Intl.NumberFormat(locale()).format(number);
   }
 
   function formatPercent(value) {
     if (value === null || value === undefined) return '—';
     var number = Number(value);
     if (isNaN(number)) return '—';
-    return number.toFixed(1).replace('.', ',') + '%';
+    var text = number.toFixed(1);
+    if (locale() !== 'en-US') text = text.replace('.', ',');
+    return text + '%';
   }
 
   return {

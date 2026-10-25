@@ -138,6 +138,37 @@ Log in again after the role change, then use the new access token in Swagger's A
 
 To add a track, open `http://localhost:8000/docs`, authorize as admin, choose `POST /api/v1/admin/songs/{song_id}/files/audio/{role}`, enter the song UUID and one role (`drums`, `bass`, `guitar`, or `others`), then attach an `.mp3` file. The MIDI remains uploaded through `POST /api/v1/admin/songs/{song_id}/files/midi`. Upload aligned stems exported from the same timeline/start point so the four mixer channels remain synchronized.
 
+## Landing page CMS, game builds and GeoIP
+
+Three extra directories are mounted into the API container:
+
+| Directory | Volume | Used for |
+|---|---|---|
+| `/data/landing_media` | `landing_media_data` | Hero image/video uploaded from the admin panel, served at `/media/landing/<name>`. Max 50 MiB (`MAX_LANDING_MEDIA_BYTES`). |
+| `/data/game_builds` | `game_builds_data` | Desktop builds (`.exe`, `.zip`, `.msi`), one active build served at `/api/v1/downloads/game`. Max 500 MiB (`MAX_GAME_BUILD_BYTES`). |
+| `/data/geoip` | `geoip_data` | DB-IP Lite country database for `GET /api/v1/geo`. |
+
+Both upload directories are backed by named volumes, so `docker compose up --build` keeps the files; do not replace the volumes. The landing page reads its content from `GET /api/v1/landing` (blocks, hero background and the active build), so text and the download link change without a redeploy.
+
+Administrator endpoints (`Bearer` token with `is_admin`, same as `/admin/songs`):
+
+- `GET /api/v1/admin/site/landing`, `PUT /api/v1/admin/site/landing` — read/replace the CMS blocks (max 256 KiB serialized, 5000 characters per string, nesting depth 8).
+- `POST /api/v1/admin/site/landing/background` (multipart `file`), `DELETE /api/v1/admin/site/landing/background` — hero JPEG/PNG/WebP/GIF/MP4/WebM.
+- `GET /api/v1/admin/site/game-builds`, `POST /api/v1/admin/site/game-builds` (multipart `file` + optional `version`), `POST /api/v1/admin/site/game-builds/{id}/activate`, `DELETE /api/v1/admin/site/game-builds/{id}`.
+
+`GET /api/v1/geo` returns `{"country": "DE", "language": "en"}` for a public client IP (CIS countries get `ru`). Without the database it returns `null` values and the page falls back to its default language. Download or refresh the database with:
+
+```powershell
+# Download straight to the default GEOIP_DB_PATH (works inside the container).
+python scripts/fetch_geoip.py
+
+# Or download on the host and copy the file into the geoip_data volume.
+python scripts/fetch_geoip.py --out .\geoip\dbip-country-lite.mmdb
+docker compose cp .\geoip\dbip-country-lite.mmdb api:/data/geoip/dbip-country-lite.mmdb
+```
+
+The script fetches `dbip-country-lite-{YYYY-MM}.mmdb.gz` for the current month, falls back to the previous month when it is not published yet, decompresses it and replaces the file atomically. It prints only the destination path.
+
 ## JUCE client
 
 The updated `Source/MainComponent.cpp` adds **LOAD ONLINE SONG**, **SIGN IN**, **CREATE ACCOUNT**, **VERIFY EMAIL**, and **FORGOT PASSWORD?** controls on the welcome/song-selection screens. Registration asks for username, email, and password, then opens a 6-digit confirmation dialog; the code can be resent from the same dialog. Password recovery uses a second 6-digit code and a new password, then signs the player in. The client requests the public catalog from `ApiClient::baseUrl` (`https://fretfight.online/api/v1` in production), downloads published MIDI and `drums.mp3` / `bass.mp3` / `guitar.mp3` / `others.mp3` stems into the current user's application-data cache, then passes the cached MIDI file through the existing `MidiParser`. Instrumental MP3 stems are loaded into the existing four-channel mixer; the microphone/pitch-detection path remains separate from backing-track playback. After sign-in, a player starting an online song gets an authenticated game session; the final score is submitted when the song finishes and the global ranking is refreshed. Network requests are made from UI/game-state code, never from the real-time audio callback. The access token remains in memory only and is lost when the application exits.

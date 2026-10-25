@@ -29,6 +29,11 @@ services:
       SECRET_KEY: ${SECRET_KEY}
       SONG_FILES_DIR: /data/song_files
       CLIENT_ASSETS_DIR: /data/client_assets
+      LANDING_MEDIA_DIR: /data/landing_media
+      GAME_BUILDS_DIR: /data/game_builds
+      GEOIP_DB_PATH: /data/geoip/dbip-country-lite.mmdb
+      MAX_LANDING_MEDIA_BYTES: ${MAX_LANDING_MEDIA_BYTES:-52428800}
+      MAX_GAME_BUILD_BYTES: ${MAX_GAME_BUILD_BYTES:-524288000}
       MAX_MIDI_UPLOAD_BYTES: 20971520
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -44,6 +49,9 @@ services:
     volumes:
       - song_files_data:/data/song_files
       - client_assets_data:/data/client_assets
+      - landing_media_data:/data/landing_media
+      - game_builds_data:/data/game_builds
+      - geoip_data:/data/geoip
     ports:
       - "${API_BIND_HOST:-127.0.0.1}:8000:8000"
     depends_on:
@@ -53,3 +61,6 @@ volumes:
   postgres_data:
   song_files_data:
   client_assets_data:
+  landing_media_data:
+  game_builds_data:
+  geoip_data:
