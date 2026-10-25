@@ -74,7 +74,7 @@ def _configure(monkeypatch: pytest.MonkeyPatch, **overrides: object) -> None:
         "smtp_password": "api-key-secret",
         "smtp_security": "starttls",
         "smtp_from_email": "noreply@fretfight.online",
-        "smtp_from_name": "GuitarBattle",
+        "smtp_from_name": "FretFight",
         "smtp_timeout_seconds": 10,
     }
     values.update(overrides)
@@ -98,7 +98,7 @@ def test_starttls_login_and_message_headers(monkeypatch: pytest.MonkeyPatch) -> 
 
     email_service.send_email(
         to="player@example.com",
-        subject="GuitarBattle: test",
+        subject="FretFight: test",
         text="Plain body",
         html_body="<p>HTML body</p>",
     )
@@ -111,7 +111,7 @@ def test_starttls_login_and_message_headers(monkeypatch: pytest.MonkeyPatch) -> 
 
     message = smtp.message
     assert message is not None
-    assert message["From"] == "GuitarBattle <noreply@fretfight.online>"
+    assert message["From"] == "FretFight <noreply@fretfight.online>"
     assert message["To"] == "player@example.com"
     assert message["Date"]
     assert message["Message-ID"].endswith("@fretfight.online>")

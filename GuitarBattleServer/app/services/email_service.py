@@ -139,7 +139,7 @@ def _code_email_html(*, title: str, greeting: str, code: str, expiry_minutes: in
         <td align="center">
           <table role="presentation" width="520" cellspacing="0" cellpadding="0" style="max-width:520px;background:#101821;border:1px solid #24313d;border-radius:18px;padding:32px;">
             <tr>
-              <td style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#f3c451;font-weight:700;">GuitarBattle</td>
+              <td style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#f3c451;font-weight:700;">FretFight</td>
             </tr>
             <tr>
               <td style="padding-top:18px;font-size:26px;line-height:1.2;font-weight:700;color:#e9eff6;">{safe_title}</td>
@@ -169,12 +169,12 @@ def _code_email_html(*, title: str, greeting: str, code: str, expiry_minutes: in
 
 def send_verification_email(*, to: str, username: str, code: str) -> None:
     minutes = settings.email_code_expire_minutes
-    subject = "GuitarBattle: подтверждение почты"
+    subject = "FretFight: подтверждение почты"
     text = (
         f"Здравствуйте, {username}!\n\n"
-        f"Код подтверждения GuitarBattle: {code}\n\n"
+        f"Код подтверждения FretFight: {code}\n\n"
         f"Введите его в приложении. Код действует {minutes} минут.\n"
-        "Если вы не регистрировались в GuitarBattle, проигнорируйте это письмо.\n"
+        "Если вы не регистрировались в FretFight, проигнорируйте это письмо.\n"
     )
     html_body = _code_email_html(
         title="Подтвердите почту",
@@ -188,10 +188,10 @@ def send_verification_email(*, to: str, username: str, code: str) -> None:
 
 def send_password_reset_email(*, to: str, username: str, code: str) -> None:
     minutes = settings.email_code_expire_minutes
-    subject = "GuitarBattle: восстановление пароля"
+    subject = "FretFight: восстановление пароля"
     text = (
         f"Здравствуйте, {username}!\n\n"
-        f"Код для восстановления пароля GuitarBattle: {code}\n\n"
+        f"Код для восстановления пароля FretFight: {code}\n\n"
         f"Введите его в приложении и задайте новый пароль. Код действует {minutes} минут.\n"
         "Если вы не запрашивали восстановление, просто проигнорируйте это письмо.\n"
     )

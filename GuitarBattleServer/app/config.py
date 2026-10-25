@@ -42,7 +42,7 @@ class Settings(BaseSettings):
     smtp_password: str | None = None
     smtp_security: Literal["starttls", "ssl", "none"] = "starttls"
     smtp_from_email: EmailStr = "noreply@fretfight.online"
-    smtp_from_name: str = "GuitarBattle"
+    smtp_from_name: str = "FretFight"
     smtp_timeout_seconds: int = Field(default=10, ge=1)
 
     # One-time codes for email verification and password recovery.

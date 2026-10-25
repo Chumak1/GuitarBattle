@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Check SMTP connectivity and credentials for the GuitarBattle server.
+"""Check SMTP connectivity and credentials for the FretFight server.
 
 The script reads the same SMTP_* variables as the API (environment first,
-then GuitarBattleServer/.env). It never prints SMTP_PASSWORD.
+then FretFightServer/.env). It never prints SMTP_PASSWORD.
 
 Examples:
   python scripts/check_smtp.py
@@ -78,13 +78,13 @@ def _make_client(settings: Settings) -> tuple[smtplib.SMTP, ssl.SSLContext]:
 def _build_message(settings: Settings, recipient: str) -> EmailMessage:
     from_email = str(settings.smtp_from_email)
     message = EmailMessage()
-    message["Subject"] = "GuitarBattle Postbox test"
+    message["Subject"] = "FretFight Postbox test"
     message["From"] = formataddr((settings.smtp_from_name, from_email))
     message["To"] = recipient
     message["Date"] = formatdate(localtime=False)
     message["Message-ID"] = make_msgid(domain=from_email.rsplit("@", 1)[-1])
     message.set_content(
-        "This is a test message from the GuitarBattle server SMTP check.\n"
+        "This is a test message from the FretFight server SMTP check.\n"
         "If you received it, Postbox accepted the message for delivery.\n"
     )
     return message
