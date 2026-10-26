@@ -248,7 +248,7 @@ void MainComponent::showPasswordResetDialog(const juce::String& email)
     auto* prompt = new juce::AlertWindow(
         "Choose a new password",
         "Enter the 6-digit code sent to " + normalizedEmail
-            + " and choose a new password of at least 10 characters.",
+            + " and choose a new password of at least 6 characters.",
         juce::AlertWindow::NoIcon);
 
     prompt->addTextEditor("code", "", "6-digit reset code");
@@ -309,9 +309,9 @@ void MainComponent::showPasswordResetDialog(const juce::String& email)
             return;
         }
 
-        if (newPassword.length() < 10)
+        if (newPassword.length() < 6)
         {
-            showError("Reset failed", "The new password must be at least 10 characters.");
+            showError("Reset failed", "The new password must be at least 6 characters.");
             return;
         }
 
@@ -1611,6 +1611,56 @@ void MainComponent::paintModalOverlay(juce::Graphics& g)
         }
     }
 
+    // Ready screen. The song is loaded but the timeline has not started.
+    if (gameState == GameState::Ready)
+    {
+        g.setColour(UiColors::background.withAlpha(0.82f));
+        g.fillAll();
+
+        const juce::Rectangle<float> readyCard(
+            width * 0.5f - 270.0f,
+            height * 0.5f - 190.0f,
+            540.0f, 380.0f);
+        GameUi::drawCard(g, readyCard, 24.0f, true);
+        g.setColour(UiColors::accent);
+        g.fillRoundedRectangle(readyCard.getX() + 28.0f, readyCard.getY(),
+                               84.0f, 3.0f, 1.5f);
+        GameUi::drawEyebrow(g, "READY TO PLAY",
+                            juce::Rectangle<float>(readyCard.getX() + 28.0f,
+                                                   readyCard.getY() + 32.0f,
+                                                   300.0f, 16.0f));
+
+        g.setColour(UiColors::text);
+        g.setFont(GameUi::heading(34.0f));
+        const auto songTitle = gameSongTitleLabel.getText().isNotEmpty()
+            ? gameSongTitleLabel.getText()
+            : juce::String("Selected song");
+        g.drawText(songTitle,
+                   juce::Rectangle<float>(readyCard.getX() + 28.0f,
+                                          readyCard.getY() + 56.0f,
+                                          readyCard.getWidth() - 56.0f, 46.0f),
+                   juce::Justification::centredLeft, true);
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(14.0f));
+        g.drawFittedText("Tuning is complete. Nothing is playing yet: the "
+                         "music, the metronome and the 3-2-1 count-in start "
+                         "only after you press START.",
+                         juce::Rectangle<int>(static_cast<int>(readyCard.getX() + 28.0f),
+                                              static_cast<int>(readyCard.getY() + 112.0f),
+                                              static_cast<int>(readyCard.getWidth() - 56.0f),
+                                              72),
+                         juce::Justification::topLeft, 3);
+
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(readyCard.getX() + 28.0f,
+                                                readyCard.getBottom() - 56.0f,
+                                                readyCard.getWidth() - 56.0f, 30.0f),
+                         "PRESS START WHEN YOU ARE READY",
+                         UiColors::accent,
+                         true);
+    }
+
     // Pause overlay.
     if (gameState == GameState::Paused)
     {
@@ -1697,6 +1747,7 @@ void MainComponent::resized()
     const bool finishedScreen = gameState == GameState::Finished;
     const bool showGame = gameState == GameState::Playing
         || gameState == GameState::Paused;
+    const bool readyScreen = gameState == GameState::Ready;
 
     //==========================================================================
     // Visibility
@@ -1707,7 +1758,7 @@ void MainComponent::resized()
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
     logoutButton.setVisible(songSelect && currentUsername.isNotEmpty());
     accountSettingsButton.setVisible(songSelect && currentUsername.isNotEmpty());
-    gameSongTitleLabel.setVisible(showGame);
+    gameSongTitleLabel.setVisible(showGame || readyScreen);
 
     songPridumayButton.setVisible(songSelect);
     onlineCatalogButton.setVisible(songSelect);
@@ -1754,8 +1805,9 @@ void MainComponent::resized()
     targetNoteLabel.setVisible(showGame);
 
     gameStartButton.setVisible(showGame || finishedScreen);
+    readyStartButton.setVisible(readyScreen);
     pauseButton.setVisible(showGame);
-    menuButton.setVisible(showGame || finishedScreen);
+    menuButton.setVisible(showGame || finishedScreen || readyScreen);
     distortionButton.setVisible(false);
     midiBackingButton.setVisible(showGame);
     midiBackingVolumeSlider.setVisible(showGame);
@@ -1919,6 +1971,18 @@ void MainComponent::resized()
     //==========================================================================
     // Results
     //==========================================================================
+
+    // Ready screen: one clear START button, nothing else is running yet.
+    if (readyScreen)
+    {
+        gameSongTitleLabel.setBounds(210, 45,
+                                     juce::jmax(200, width - 640), 28);
+        const int buttonWidth = juce::jmin(260, width - 120);
+        readyStartButton.setBounds((width - buttonWidth) / 2,
+                                   height / 2 + 48,
+                                   buttonWidth, 52);
+        menuButton.setBounds(24, 46, 100, 36);
+    }
 
     if (finishedScreen)
     {
@@ -2094,7 +2158,7 @@ public:
           deviceManager(manager),
           inputChannelChanged(onInputChannelChanged)
     {
-        setSize(760, 600);
+        setSize(760, 680);
         addAndMakeVisible(selector);
         addAndMakeVisible(inputChannelLabel);
         addAndMakeVisible(inputChannelBox);
@@ -2126,6 +2190,37 @@ public:
         inputChannelLabel.setJustificationType(juce::Justification::centredLeft);
         inputChannelLabel.setColour(juce::Label::textColourId, UiColors::text);
         inputChannelLabel.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
+
+        // Explicit buffer-size control. The device selector's own combo does
+        // not always push the value to the ASIO driver, so the size is applied
+        // here and then verified against what the driver actually opened.
+        bufferLabel.setText("BUFFER SIZE", juce::dontSendNotification);
+        bufferLabel.setJustificationType(juce::Justification::centredLeft);
+        bufferLabel.setColour(juce::Label::textColourId, UiColors::text);
+        bufferLabel.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
+        addAndMakeVisible(bufferLabel);
+
+        for (int size : { 16, 32, 64, 128, 256, 512, 1024, 2048 })
+            bufferBox.addItem(juce::String(size) + " samples", size);
+
+        bufferBox.setColour(juce::ComboBox::textColourId, UiColors::text);
+        bufferBox.setColour(juce::ComboBox::backgroundColourId, UiColors::card);
+        bufferBox.setColour(juce::ComboBox::outlineColourId, UiColors::border);
+        bufferBox.setColour(juce::ComboBox::arrowColourId, UiColors::accent);
+        bufferBox.setTooltip("Audio buffer size. The value is sent to the driver; "
+                             "if the driver rejects it, the previous size is kept.");
+        bufferBox.onChange = [this]
+        {
+            if (! syncingBufferBox)
+                applySelectedBufferSize();
+        };
+        addAndMakeVisible(bufferBox);
+
+        bufferStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
+        bufferStatusLabel.setFont(juce::FontOptions().withHeight(11.0f));
+        bufferStatusLabel.setJustificationType(juce::Justification::centredLeft);
+        addAndMakeVisible(bufferStatusLabel);
+        syncBufferBoxFromDevice();
 
         inputChannelBox.setColour(juce::ComboBox::textColourId, UiColors::text);
         inputChannelBox.setColour(juce::ComboBox::backgroundColourId, UiColors::card);
@@ -2190,7 +2285,10 @@ public:
     void resized() override
     {
         selector.setBounds(30, 108, getWidth() - 60,
-                           juce::jmax(80, getHeight() - 204));
+                           juce::jmax(80, getHeight() - 268));
+        bufferLabel.setBounds(30, getHeight() - 146, 130, 24);
+        bufferBox.setBounds(168, getHeight() - 148, 200, 28);
+        bufferStatusLabel.setBounds(380, getHeight() - 148, getWidth() - 410, 28);
         inputChannelLabel.setBounds(30, getHeight() - 76, 130, 24);
         inputChannelBox.setBounds(168, getHeight() - 78, 320, 28);
     }
@@ -2199,6 +2297,77 @@ private:
     void changeListenerCallback(juce::ChangeBroadcaster*) override
     {
         rebuildInputChannelChoices(-1);
+        syncBufferBoxFromDevice();
+    }
+
+    // Sends the selected size to the driver and verifies the result. A driver
+    // may reject the request or silently substitute a different size; in both
+    // cases the UI must show what is actually running.
+    void applySelectedBufferSize()
+    {
+        const int requested = bufferBox.getSelectedId();
+
+        if (requested <= 0)
+            return;
+
+        auto* device = deviceManager.getCurrentAudioDevice();
+
+        if (device == nullptr)
+            return;
+
+        auto setup = deviceManager.getAudioDeviceSetup();
+        const auto previousSetup = setup;
+
+        setup.bufferSize = requested;
+
+        const auto error = deviceManager.setAudioDeviceSetup(setup, true);
+
+        if (error.isNotEmpty())
+        {
+            deviceManager.setAudioDeviceSetup(previousSetup, true);
+            bufferStatusLabel.setText(
+                "Driver rejected " + juce::String(requested)
+                    + " samples. Kept the previous size.",
+                juce::dontSendNotification);
+            syncBufferBoxFromDevice();
+            return;
+        }
+
+        const int actual = device->getCurrentBufferSizeSamples();
+
+        if (actual > 0 && actual != requested)
+        {
+            bufferStatusLabel.setText(
+                "Driver opened " + juce::String(actual)
+                    + " samples instead of " + juce::String(requested) + ".",
+                juce::dontSendNotification);
+        }
+        else
+        {
+            bufferStatusLabel.setText(
+                "Running with " + juce::String(actual) + " samples.",
+                juce::dontSendNotification);
+        }
+
+        syncBufferBoxFromDevice();
+    }
+
+    void syncBufferBoxFromDevice()
+    {
+        const juce::ScopedValueSetter<bool> guard(syncingBufferBox, true);
+
+        if (auto* device = deviceManager.getCurrentAudioDevice())
+        {
+            const int actual = device->getCurrentBufferSizeSamples();
+
+            if (actual > 0)
+            {
+                if (bufferBox.indexOfItemId(actual) < 0)
+                    bufferBox.addItem(juce::String(actual) + " samples", actual);
+
+                bufferBox.setSelectedId(actual, juce::dontSendNotification);
+            }
+        }
     }
 
     void rebuildInputChannelChoices(int initialChannel)
@@ -2215,6 +2384,10 @@ private:
     std::function<void(int)> inputChannelChanged;
     juce::Label inputChannelLabel;
     juce::ComboBox inputChannelBox;
+    juce::Label bufferLabel;
+    juce::ComboBox bufferBox;
+    juce::Label bufferStatusLabel;
+    bool syncingBufferBox = false;
 };
 
 //==============================================================================
@@ -2877,7 +3050,7 @@ private:
         AccountWindowDetail::styleTextEditor(currentPasswordEditor, "current password", 128);
         currentPasswordEditor.setPasswordCharacter(0x2022);
         AccountWindowDetail::styleTextEditor(
-            newPasswordEditor, "new password (min 10 characters)", 128);
+            newPasswordEditor, "new password (min 6 characters)", 128);
         newPasswordEditor.setPasswordCharacter(0x2022);
 
         addAndMakeVisible(usernameEditor);
@@ -3293,9 +3466,9 @@ private:
             return;
         }
 
-        if (newPassword.length() < 10)
+        if (newPassword.length() < 6)
         {
-            showAlert("The new password must be at least 10 characters.", UiColors::red);
+            showAlert("The new password must be at least 6 characters.", UiColors::red);
             return;
         }
 
@@ -3759,6 +3932,16 @@ void MainComponent::initialiseUi()
         tunerStartButton.onClick();
     };
 
+    readyStartButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
+    readyStartButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
+    readyStartButton.setColour(juce::TextButton::textColourOffId, UiColors::onAccent);
+    readyStartButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    addAndMakeVisible(readyStartButton);
+    readyStartButton.onClick = [this]
+    {
+        beginGameplayCountIn();
+    };
+
     tunerStartButton.onClick =
         [this]
         {
@@ -3775,7 +3958,8 @@ void MainComponent::initialiseUi()
 
             // Open a server session for online songs when the player is signed in.
             // If the server is unavailable, local gameplay remains available.
-            startOnlineGameSession();
+            // The server session and the launch counter start only when the
+            // player confirms readiness on the Ready screen.
 
             //==============================================================
  // Reset game session
@@ -3841,81 +4025,29 @@ void MainComponent::initialiseUi()
                 std::memory_order_relaxed);
 
             //==============================================================
-            // REAL START SAMPLE
-            //
-            // No artificial MIDI shift.
-            // MIDI startBeat remains unchanged.
-
-            const auto currentSample =
-                audioSampleCounter.load(
-                    std::memory_order_relaxed);
-
-            const double beatLengthSamples =
-                metronome.getBeatLengthSamples();
-
-            // Give the player a full bar of four audible metronome clicks.
-            // The song timeline starts on the beat immediately after click 4.
-            // Use the fractional beat length so the count-in and the song start
-            // stay locked to the same timeline as the MIDI backing.
-            countInRemaining.store(4, std::memory_order_relaxed);
-            countInActive.store(true, std::memory_order_release);
-            tablatureComponent.setPlayheadRunning(false);
-
-            const auto countInSamples =
-                static_cast<uint64_t>(
-                    std::llround(beatLengthSamples * 4.0));
-
-            gameplayStartSample.store(
-                currentSample + countInSamples,
-                std::memory_order_relaxed);
-
-            currentPlayheadBeat.store(
-                0.0,
-                std::memory_order_relaxed);
+            // The song is prepared, but the timeline and the count-in have
+            // not started yet. Nothing is audible and no notes are processed
+            // until the player presses START on the Ready screen.
+            countInActive.store(false, std::memory_order_release);
+            countInRemaining.store(0, std::memory_order_relaxed);
+            gameplayStartSample.store(0, std::memory_order_relaxed);
+            currentPlayheadBeat.store(0.0, std::memory_order_relaxed);
             tablatureComponent.setPlayheadBeat(0.0);
-
-            //==============================================================
- // Reset metronome timeline
- //
- // First metronome beat happens at START.
-
-            metronome.resetScheduler(
-                currentSample);
-
+            tablatureComponent.setPlayheadRunning(false);
+            metronome.pauseScheduler();
             metronomeSamplesRemaining = 0;
             metronomePlaybackPosition = 0;
 
-            //==============================================================
-            // First MIDI target
-
-            gameSession.setTargetNoteIndex(0);
-
-            setTargetFromMidiIndex(0);
-
-            gameState =
-                GameState::Playing;
-
+            gameState = GameState::Ready;
             gameStartButton.setButtonText("START");
-            menuButton.setButtonText("MAIN MENU");
-
-            DBG("START -> PLAYING");
-            DBG("GAMEPLAY START SAMPLE = "
-                + juce::String(
-                    static_cast<juce::int64>(
-                        currentSample)));
-
+            menuButton.setButtonText("BACK");
             tunerStartButton.setEnabled(false);
-
-            pauseButton.setButtonText(
-                "PAUSE");
-
-            hitLabel.setText(
-                "COUNT-IN 4",
-                juce::dontSendNotification);
+            hitLabel.setText("READY", juce::dontSendNotification);
 
             resized();
             repaint();
         };
+
 
     //==========================================================================
     // Game buttons
@@ -4313,24 +4445,15 @@ void MainComponent::initialiseUi()
     auto setSpeed =
         [this](double percent)
         {
-            speedPercent = percent;
+            // Moves the tempo anchor, the metronome grid, the MIDI timeline
+            // and the stretched stems. During play the song continues from
+            // the current beat instead of jumping.
+            applyTempoPercent(percent);
 
             const double actualBpm =
                 baseBpm
-                * speedPercent
+                * percent
                 / 100.0;
-
-            bpm.store(
-                actualBpm,
-                std::memory_order_relaxed);
-            audioPlaybackRate.store(speedPercent / 100.0, std::memory_order_relaxed);
-            prepareExternalAudioForSpeed(speedPercent);
-
-            metronome.setBpm(
-                actualBpm);
-            gameSession.setBaseBpm(baseBpm);
-            gameSession.setSpeedPercent(speedPercent);
-            gameSession.setBpm(actualBpm);
 
             bpmLabel.setText(
                 juce::String(

@@ -158,10 +158,10 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
                 displayName = dialog->getTextEditorContents("display_name").trim();
                 password = dialog->getTextEditorContents("password");
 
-                if (usernameOrEmail.isEmpty() || email.isEmpty() || password.length() < 10)
+                if (usernameOrEmail.isEmpty() || email.isEmpty() || password.length() < 6)
                 {
                     showError("Registration failed",
-                              "Fill in username, email and a password of at least 10 characters.");
+                              "Fill in username, email and a password of at least 6 characters.");
                     return;
                 }
 
@@ -256,7 +256,7 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
                             juce::dontSendNotification);
                         showError("Registration failed",
                                   "Check the email address, username, and password "
-                                  "(at least 10 characters).");
+                                  "(at least 6 characters).");
                     }
                     else
                     {
@@ -538,7 +538,10 @@ void MainComponent::startOnlineGameSession()
 
     juce::DynamicObject::Ptr payload = new juce::DynamicObject();
     payload->setProperty("song_id", onlineSongUuid);
-    payload->setProperty("speed_percent", juce::jlimit(50, 120, juce::roundToInt(speedPercent)));
+    payload->setProperty("speed_percent",
+                         juce::jlimit(50, 120,
+                                      juce::roundToInt(
+                                          static_cast<double>(speedPercent))));
 
     juce::Component::SafePointer<MainComponent> safeThis(this);
     apiClient.postJson("/games/sessions", juce::var(payload.get()), onlineAccessToken, 4000,

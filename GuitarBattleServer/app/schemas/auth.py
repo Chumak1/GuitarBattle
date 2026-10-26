@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator, mo
 class RegisterRequest(BaseModel):
     username: str = Field(min_length=3, max_length=32, pattern=r"^[A-Za-z0-9_.-]+$")
     email: EmailStr
-    password: str = Field(min_length=10, max_length=128)
+    password: str = Field(min_length=6, max_length=128)
     display_name: str | None = Field(default=None, max_length=64)
 
     @field_validator("username")
@@ -60,7 +60,7 @@ class VerifyEmailRequest(EmailOnlyRequest):
 
 
 class ResetPasswordRequest(VerifyEmailRequest):
-    new_password: str = Field(min_length=10, max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)
 
 
 class MessageResponse(BaseModel):
@@ -126,4 +126,4 @@ class ProfileUpdateRequest(BaseModel):
 
 class PasswordChangeRequest(BaseModel):
     current_password: str = Field(min_length=1, max_length=128)
-    new_password: str = Field(min_length=10, max_length=128)
+    new_password: str = Field(min_length=6, max_length=128)

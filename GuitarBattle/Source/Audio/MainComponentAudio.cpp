@@ -981,36 +981,13 @@ void MainComponent::getNextAudioBlock(
             gameplayStartSample.load(
                 std::memory_order_relaxed);
 
-        const auto currentBpm =
-            bpm.load(
-                std::memory_order_relaxed);
-
-        if (currentBpm > 0.0
-            && currentSample >= currentGameplayStart)
+        if (currentSample >= currentGameplayStart)
         {
-            const double sampleRate =
-                cachedSampleRate.load(std::memory_order_relaxed);
-
-            if (sampleRate > 0.0)
-            {
-                const double samplesPerBeat =
-                    sampleRate
-                    * 60.0
-                    / currentBpm;
-
-                if (samplesPerBeat > 0.0)
-                {
-                    const double currentBeat =
-                        static_cast<double>(
-                            currentSample
-                            - currentGameplayStart)
-                        / samplesPerBeat;
-
-                    currentPlayheadBeat.store(
-                        currentBeat,
-                        std::memory_order_relaxed);
-                }
-            }
+            // Beat position follows the tempo anchor, so it stays continuous
+            // when the player changes BPM mid-song.
+            currentPlayheadBeat.store(
+                getSongBeatForSample(currentSample),
+                std::memory_order_relaxed);
         }
     }
 
@@ -1386,10 +1363,17 @@ void MainComponent::getNextAudioBlock(
                     const uint64_t absoluteSample = currentSample + static_cast<uint64_t>(i);
                     if (absoluteSample < songStart)
                         continue; // four-beat count-in; audio starts on the game timeline
-                    // The stem has already been time-stretched offline for the selected
-                    // BPM; playback now advances at the normal sample-rate ratio so pitch stays stable.
-                    const double sourcePos = static_cast<double>(absoluteSample - songStart)
-                        * track.sourceSampleRate / outputRate;
+                    // The stems are time-stretched for the selected tempo and
+                    // addressed by song beat, so a tempo change keeps the
+                    // current musical position instead of restarting.
+                    const double songBeat = getSongBeatForSample(absoluteSample);
+                    if (songBeat < 0.0)
+                        continue;
+                    const double tempoBpm = bpm.load(std::memory_order_relaxed);
+                    if (tempoBpm <= 0.0)
+                        break;
+                    const double sourcePos = songBeat
+                        * track.sourceSampleRate * 60.0 / tempoBpm;
                     if (sourcePos >= static_cast<double>(playbackAudio->getNumSamples() - 1))
                         break;
                     const int index0 = static_cast<int>(sourcePos);
@@ -1428,13 +1412,14 @@ void MainComponent::getNextAudioBlock(
                 const uint64_t absoluteSample = currentSample + static_cast<uint64_t>(i);
                 if (absoluteSample < songStart)
                     continue; // keep the four-beat count-in free of melody notes
-                const double elapsedSongSamples = static_cast<double>(absoluteSample - songStart);
+                const double absoluteBeat = getSongBeatForSample(absoluteSample);
+                if (absoluteBeat < 0.0)
+                    continue;
                 float sample = 0.0f;
                 for (const auto& note : notes)
                 {
-                    const double noteStart = note.startBeat * samplesPerBeat;
+                    const double noteElapsedSamples = (absoluteBeat - note.startBeat) * samplesPerBeat;
                     const double noteLength = juce::jmax(0.08, note.durationBeats * samplesPerBeat);
-                    const double noteElapsedSamples = elapsedSongSamples - noteStart;
                     if (noteElapsedSamples < 0.0 || noteElapsedSamples >= noteLength)
                         continue;
                     const double t = noteElapsedSamples / sr;
@@ -1485,8 +1470,9 @@ void MainComponent::getNextAudioBlock(
         {
             const double samplesPerBeat = sr * 60.0 / currentBpm;
             const int channels = outputChannelCount;
-            const double elapsedAtBlockStart = currentSample >= songStart
-                ? static_cast<double>(currentSample - songStart) : -static_cast<double>(songStart - currentSample);
+            // Beat at the start of the block: note timing follows the tempo
+            // anchor, so a mid-song BPM change keeps the position continuous.
+            const double blockBeat = getSongBeatForSample(currentSample);
             for (const auto& note : backingNotes)
             {
                 const float volume = note.instrument == 1 ? midiBassVolume.load(std::memory_order_relaxed)
@@ -1498,7 +1484,7 @@ void MainComponent::getNextAudioBlock(
                     : note.instrument == 3 ? midiPianoEnabled.load(std::memory_order_relaxed)
                                            : midiRhythmGuitarEnabled.load(std::memory_order_relaxed);
                 if (!enabled || volume <= 0.0001f) continue;
-                const double relativeStart = note.startBeat * samplesPerBeat - elapsedAtBlockStart;
+                const double relativeStart = (note.startBeat - blockBeat) * samplesPerBeat;
                 const double midiLength = juce::jmax(1.0, note.durationBeats * samplesPerBeat);
                 // Drum WAVs are one-shots. Allow cymbals and splashes to ring out
                 // naturally even when the MIDI percussion event is very short.

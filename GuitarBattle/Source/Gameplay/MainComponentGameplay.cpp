@@ -15,6 +15,155 @@
 // Gameplay-only implementation for MainComponent: session lifecycle, tuning,
 // MIDI targets and scoring.
 
+double MainComponent::getSongBeatForSample(uint64_t sample) const
+{
+    const double sampleRate = cachedSampleRate.load(std::memory_order_relaxed);
+    const double currentBpm = bpm.load(std::memory_order_relaxed);
+
+    if (sampleRate <= 0.0 || currentBpm <= 0.0)
+        return 0.0;
+
+    const auto anchorSample = tempoAnchorSample.load(std::memory_order_relaxed);
+    const double anchorBeat = tempoAnchorBeat.load(std::memory_order_relaxed);
+
+    // Signed difference: samples before the anchor (count-in) yield a
+    // negative beat instead of wrapping around.
+    const double deltaSamples =
+        static_cast<double>(static_cast<int64_t>(sample)
+                            - static_cast<int64_t>(anchorSample));
+
+    return anchorBeat + deltaSamples * currentBpm / (sampleRate * 60.0);
+}
+
+uint64_t MainComponent::getSongSampleForBeat(double beat) const
+{
+    const double sampleRate = cachedSampleRate.load(std::memory_order_relaxed);
+    const double currentBpm = bpm.load(std::memory_order_relaxed);
+
+    if (sampleRate <= 0.0 || currentBpm <= 0.0)
+        return tempoAnchorSample.load(std::memory_order_relaxed);
+
+    const auto anchorSample = tempoAnchorSample.load(std::memory_order_relaxed);
+    const double anchorBeat = tempoAnchorBeat.load(std::memory_order_relaxed);
+
+    const double deltaSamples = (beat - anchorBeat)
+        * sampleRate * 60.0 / currentBpm;
+
+    const auto result =
+        static_cast<int64_t>(anchorSample)
+        + static_cast<int64_t>(std::llround(deltaSamples));
+
+    return result > 0 ? static_cast<uint64_t>(result) : 0;
+}
+
+void MainComponent::applyTempoPercent(double percent)
+{
+    const double newBpm = baseBpm * percent / 100.0;
+    const double sampleRate = cachedSampleRate.load(std::memory_order_relaxed);
+    const bool playing = gameState == GameState::Playing;
+
+    // Prepare the tempo-stretched stems first. While the (synchronous)
+    // stretching runs, playback keeps using the old buffers at the old tempo,
+    // so the song does not jump.
+    prepareExternalAudioForSpeed(percent);
+
+    // Anchor at the position reached after the stretch, using the old tempo.
+    const auto now = audioSampleCounter.load(std::memory_order_relaxed);
+    const bool canAnchor = playing
+        && sampleRate > 0.0
+        && bpm.load(std::memory_order_relaxed) > 0.0
+        && newBpm > 0.0;
+
+    double currentBeat = 0.0;
+
+    if (canAnchor)
+        currentBeat = getSongBeatForSample(now);
+
+    speedPercent.store(percent, std::memory_order_relaxed);
+    bpm.store(newBpm, std::memory_order_relaxed);
+    audioPlaybackRate.store(percent / 100.0, std::memory_order_relaxed);
+
+    metronome.setBpm(newBpm);
+    gameSession.setBaseBpm(baseBpm);
+    gameSession.setSpeedPercent(percent);
+    gameSession.setBpm(newBpm);
+
+    if (canAnchor)
+    {
+        // Continue from the same beat with the new tempo: the mapping is
+        // anchored here instead of being recomputed from the song start.
+        tempoAnchorBeat.store(currentBeat, std::memory_order_relaxed);
+        tempoAnchorSample.store(now, std::memory_order_relaxed);
+
+        // Rebuild the metronome grid from the current beat so the next click
+        // lands on the song grid at the new tempo.
+        const double samplesPerBeat = sampleRate * 60.0 / newBpm;
+        const double virtualSongStart =
+            static_cast<double>(now) - currentBeat * samplesPerBeat;
+
+        metronome.resumeScheduler(
+            now,
+            static_cast<uint64_t>(juce::jmax(0.0, virtualSongStart)));
+    }
+}
+
+void MainComponent::beginGameplayCountIn()
+{
+    if (gameState != GameState::Ready)
+        return;
+
+    // The launch is counted and the server session is opened only now: the
+    // Ready screen itself is not gameplay.
+    startOnlineGameSession();
+
+    const auto currentSample =
+        audioSampleCounter.load(
+            std::memory_order_relaxed);
+
+    const double beatLengthSamples =
+        metronome.getBeatLengthSamples();
+
+    // Give the player a full bar of four audible metronome clicks.
+    // The song timeline starts on the beat immediately after click 4.
+    countInRemaining.store(4, std::memory_order_relaxed);
+    countInActive.store(true, std::memory_order_release);
+    tablatureComponent.setPlayheadRunning(false);
+
+    const auto countInSamples =
+        static_cast<uint64_t>(
+            std::llround(beatLengthSamples * 4.0));
+
+    gameplayStartSample.store(
+        currentSample + countInSamples,
+        std::memory_order_relaxed);
+
+    // Beat 0 of the song timeline is the first sample after the count-in.
+    tempoAnchorBeat.store(0.0, std::memory_order_relaxed);
+    tempoAnchorSample.store(currentSample + countInSamples,
+                            std::memory_order_relaxed);
+
+    currentPlayheadBeat.store(0.0, std::memory_order_relaxed);
+    tablatureComponent.setPlayheadBeat(0.0);
+
+    metronome.resetScheduler(currentSample);
+
+    metronomeSamplesRemaining = 0;
+    metronomePlaybackPosition = 0;
+
+    gameSession.setTargetNoteIndex(0);
+    setTargetFromMidiIndex(0);
+
+    gameState = GameState::Playing;
+    gameStartButton.setButtonText("START");
+    menuButton.setButtonText("MAIN MENU");
+    tunerStartButton.setEnabled(false);
+    pauseButton.setButtonText("PAUSE");
+    hitLabel.setText("COUNT-IN 4", juce::dontSendNotification);
+
+    resized();
+    repaint();
+}
+
 void MainComponent::pauseGame()
 {
     if (gameState != GameState::Playing)
@@ -105,6 +254,12 @@ void MainComponent::resumeGame()
         gameplayStartSample.fetch_add(
             pauseDuration,
             std::memory_order_relaxed);
+
+        // The beat-mapped timeline is anchored to the audio sample counter,
+        // so it has to move forward by the pause duration as well.
+        tempoAnchorSample.fetch_add(
+            pauseDuration,
+            std::memory_order_relaxed);
     }
 
     //==========================================================================
@@ -173,6 +328,14 @@ void MainComponent::returnToSongSelect()
         std::memory_order_relaxed);
 
     pauseStartSample.store(
+        0,
+        std::memory_order_relaxed);
+
+    tempoAnchorBeat.store(
+        0.0,
+        std::memory_order_relaxed);
+
+    tempoAnchorSample.store(
         0,
         std::memory_order_relaxed);
 
@@ -720,35 +883,11 @@ uint64_t MainComponent::getTargetSample(
     if (beat < 0.0)
         return 0;
 
-    const auto gameplayStart =
-        gameplayStartSample.load(
-            std::memory_order_relaxed);
+    juce::ignoreUnused(sampleRate);
 
-    // IMPORTANT:
-// MIDI startBeat remains unchanged.
-// If MIDI says beat 4, target remains beat 4.
-//
-// Target timing is calculated directly from the current
-// audio sample rate and BPM to preserve exact fractional
-// samples-per-beat timing.
-
-    const double currentBpm =
-        bpm.load(
-            std::memory_order_relaxed);
-
-    if (currentBpm <= 0.0)
-        return 0;
-
-    const double samplesPerBeat =
-        sampleRate
-        * 60.0
-        / currentBpm;
-
-    return gameplayStart
-        + static_cast<uint64_t>(
-            std::llround(
-                beat
-                * samplesPerBeat));
+    // Beat-to-sample mapping honours tempo changes: the current tempo applies
+    // from the anchor point, not retroactively from the start of the song.
+    return getSongSampleForBeat(beat);
 }
 
 void MainComponent::advanceTarget()
