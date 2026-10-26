@@ -640,6 +640,9 @@ private:
     // Managed tempo change: playback pauses while the stems are re-rendered,
     // then continues from the same beat.
     std::atomic<bool> tempoChangeInProgress{ false };
+    bool tempoChangeQueued = false;
+    double queuedTempoPercent = 100.0;
+    GameState tempoResumeState = GameState::Playing;
     double pendingTempoBeat = 0.0;
     uint64_t pendingTempoSample = 0;
     double pendingTempoPercent = 100.0;

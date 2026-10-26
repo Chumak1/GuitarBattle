@@ -4502,25 +4502,10 @@ void MainComponent::initialiseUi()
     auto setSpeed =
         [this](double percent)
         {
-            // Moves the tempo anchor, the metronome grid, the MIDI timeline
-            // and the stretched stems. During play the song continues from
-            // the current beat instead of jumping.
+            // Applies immediately before the song starts, or enters the
+            // managed preparation state during play. The BPM label and the
+            // tablature tempo are updated when the change actually lands.
             applyTempoPercent(percent);
-
-            const double actualBpm =
-                baseBpm
-                * percent
-                / 100.0;
-
-            bpmLabel.setText(
-                juce::String(
-                    static_cast<int>(
-                        std::round(
-                            actualBpm))),
-                juce::dontSendNotification);
-
-            tablatureComponent.setBpm(
-                actualBpm);
         };
 
     speed50Button.onClick =

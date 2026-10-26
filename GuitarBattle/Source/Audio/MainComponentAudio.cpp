@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <future>
 #include <limits>
 #include <vector>
 
@@ -129,17 +130,45 @@ void MainComponent::startAudioDevice(const juce::XmlElement* savedState)
 void MainComponent::prepareExternalAudioForSpeed(double speedPercentToUse)
 {
     const double ratio = juce::jlimit(0.5, 1.2, speedPercentToUse / 100.0);
+
+    // Render all loaded stems concurrently: the four time-stretches are
+    // independent and this cuts the tempo-change wait roughly fourfold.
+    std::vector<std::future<std::shared_ptr<juce::AudioBuffer<float>>>> jobs;
+    jobs.reserve(externalAudioTracks.size());
+
     for (auto& track : externalAudioTracks)
     {
-        if (!track.loaded.load(std::memory_order_acquire) || track.audio.getNumSamples() <= 0)
+        if (!track.loaded.load(std::memory_order_acquire)
+            || track.audio.getNumSamples() <= 0)
         {
-            std::atomic_store(&track.playbackAudio, std::shared_ptr<juce::AudioBuffer<float>>{});
+            std::atomic_store(&track.playbackAudio,
+                              std::shared_ptr<juce::AudioBuffer<float>>{});
             continue;
         }
-        auto stretched = std::make_shared<juce::AudioBuffer<float>>(
-            makePitchPreservingTimeStretch(track.audio, ratio));
-        std::atomic_store(&track.playbackAudio, stretched);
+
+        auto& source = track.audio;
+        jobs.push_back(std::async(std::launch::async,
+            [&source, ratio]()
+            {
+                return std::make_shared<juce::AudioBuffer<float>>(
+                    makePitchPreservingTimeStretch(source, ratio));
+            }));
     }
+
+    // Swap the finished buffers in only after every stem is ready, so the
+    // audio thread never sees a half-updated set of tracks.
+    size_t jobIndex = 0;
+
+    for (auto& track : externalAudioTracks)
+    {
+        if (!track.loaded.load(std::memory_order_acquire)
+            || track.audio.getNumSamples() <= 0)
+            continue;
+
+        std::atomic_store(&track.playbackAudio, jobs[jobIndex].get());
+        ++jobIndex;
+    }
+
     DBG("Instrumental audio pitch-preserving time stretch prepared: speed=" + juce::String(speedPercentToUse, 0)
         + "% (WSOLA; pitch preserved approximately)");
 }
