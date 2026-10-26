@@ -34,6 +34,8 @@ GuitarBattle/Builds/**/x64/
 
 # Python / server
 GuitarBattleServer/.env
+# Machine-local compose override (pins SMTP IP behind local VPN fake-IP DNS)
+GuitarBattleServer/docker-compose.override.yml
 GuitarBattleServer/.venv/
 GuitarBattleServer/**/__pycache__/
 GuitarBattleServer/.pytest_cache/
