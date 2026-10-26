@@ -66,6 +66,9 @@ public:
         Ready,
         Playing,
         Paused,
+        // Managed pause while the tempo is re-rendered; playback is stopped
+        // and the overlay explains what is happening.
+        Preparing,
         Finished
     };
 
@@ -340,6 +343,10 @@ private:
 
     // Shown on the Ready screen; the count-in and playback start only here.
     juce::TextButton readyStartButton{ "START" };
+
+    // Shown on the pause card; kept above the modal overlay so it always
+    // receives the click.
+    juce::TextButton resumeOverlayButton{ "RESUME" };
 
     juce::TextButton pauseButton{ "PAUSE" };
 
@@ -629,6 +636,15 @@ private:
 
     // Starts the four-beat count-in and gameplay from the Ready screen.
     void beginGameplayCountIn();
+
+    // Managed tempo change: playback pauses while the stems are re-rendered,
+    // then continues from the same beat.
+    std::atomic<bool> tempoChangeInProgress{ false };
+    double pendingTempoBeat = 0.0;
+    uint64_t pendingTempoSample = 0;
+    double pendingTempoPercent = 100.0;
+    void beginManagedTempoChange(double percent);
+    void finishManagedTempoChange();
 
     void returnToSongSelect();
 

@@ -1569,18 +1569,25 @@ void MainComponent::paintModalOverlay(juce::Graphics& g)
     if (width <= 0.0f || height <= 0.0f)
         return;
 
-    // Count-in card.
-    if (gameState == GameState::Playing
-        && countInActive.load(std::memory_order_acquire))
+    const bool ready = gameState == GameState::Ready;
+    const bool preparing = gameState == GameState::Preparing;
+
+    // Ready and count-in share the same card. Before START the card shows the
+    // prompt; after START the same card shows 3-2-1.
+    if (ready
+        || (gameState == GameState::Playing
+            && countInActive.load(std::memory_order_acquire)))
     {
         const float cardWidth = 280.0f;
-        const float cardHeight = 220.0f;
+        const float cardHeight = 240.0f;
         const juce::Rectangle<float> countCard(
             (width - cardWidth) * 0.5f,
             (height - cardHeight) * 0.5f,
             cardWidth, cardHeight);
 
-        g.setColour(UiColors::background.withAlpha(0.32f));
+        // Light dim only: the tablature behind stays readable so the player
+        // can look at the first notes before starting.
+        g.setColour(UiColors::background.withAlpha(ready ? 0.28f : 0.32f));
         g.fillAll();
 
         GameUi::drawCard(g, countCard, 24.0f, true);
@@ -1594,71 +1601,81 @@ void MainComponent::paintModalOverlay(juce::Graphics& g)
                                           cardWidth, 18.0f),
                    juce::Justification::centred, false);
 
-        const int count = juce::jmax(1, countInRemaining.load(std::memory_order_relaxed));
-        g.setColour(count <= 1 ? UiColors::accentStrong : UiColors::accent);
-        g.setFont(GameUi::heading(92.0f));
-        g.drawText(juce::String(count),
-                   juce::Rectangle<float>(countCard.getX(),
-                                          countCard.getY() + 48.0f,
-                                          cardWidth, 110.0f),
-                   juce::Justification::centred, false);
-
-        for (int i = 0; i < 4; ++i)
+        if (ready)
         {
-            const float dotX = countCard.getCentreX() - 34.0f + static_cast<float>(i) * 22.0f;
-            g.setColour(i < count ? UiColors::accent : UiColors::borderStrong);
-            g.fillEllipse(dotX, countCard.getBottom() - 42.0f, 6.0f, 6.0f);
+            g.setColour(UiColors::text);
+            g.setFont(GameUi::heading(34.0f));
+            g.drawText("READY",
+                       juce::Rectangle<float>(countCard.getX(),
+                                              countCard.getY() + 50.0f,
+                                              cardWidth, 44.0f),
+                       juce::Justification::centred, false);
+
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::font(12.0f));
+            g.drawFittedText("The count-in starts when you press START.",
+                             juce::Rectangle<int>(static_cast<int>(countCard.getX() + 20.0f),
+                                                  static_cast<int>(countCard.getY() + 100.0f),
+                                                  static_cast<int>(cardWidth - 40.0f),
+                                                  40),
+                             juce::Justification::centred, 2);
+        }
+        else
+        {
+            const int count = juce::jmax(1, countInRemaining.load(std::memory_order_relaxed));
+            g.setColour(count <= 1 ? UiColors::accentStrong : UiColors::accent);
+            g.setFont(GameUi::heading(92.0f));
+            g.drawText(juce::String(count),
+                       juce::Rectangle<float>(countCard.getX(),
+                                              countCard.getY() + 48.0f,
+                                              cardWidth, 110.0f),
+                       juce::Justification::centred, false);
+
+            for (int i = 0; i < 4; ++i)
+            {
+                const float dotX = countCard.getCentreX() - 34.0f + static_cast<float>(i) * 22.0f;
+                g.setColour(i < count ? UiColors::accent : UiColors::borderStrong);
+                g.fillEllipse(dotX, countCard.getBottom() - 42.0f, 6.0f, 6.0f);
+            }
         }
     }
 
-    // Ready screen. The song is loaded but the timeline has not started.
-    if (gameState == GameState::Ready)
+    // Managed tempo change: a clear, non-freezing progress card.
+    if (preparing)
     {
-        g.setColour(UiColors::background.withAlpha(0.82f));
+        const float cardWidth = 360.0f;
+        const float cardHeight = 170.0f;
+        const juce::Rectangle<float> prepareCard(
+            (width - cardWidth) * 0.5f,
+            (height - cardHeight) * 0.5f,
+            cardWidth, cardHeight);
+
+        g.setColour(UiColors::background.withAlpha(0.62f));
         g.fillAll();
 
-        const juce::Rectangle<float> readyCard(
-            width * 0.5f - 270.0f,
-            height * 0.5f - 190.0f,
-            540.0f, 380.0f);
-        GameUi::drawCard(g, readyCard, 24.0f, true);
+        GameUi::drawCard(g, prepareCard, 24.0f, true);
         g.setColour(UiColors::accent);
-        g.fillRoundedRectangle(readyCard.getX() + 28.0f, readyCard.getY(),
-                               84.0f, 3.0f, 1.5f);
-        GameUi::drawEyebrow(g, "READY TO PLAY",
-                            juce::Rectangle<float>(readyCard.getX() + 28.0f,
-                                                   readyCard.getY() + 32.0f,
-                                                   300.0f, 16.0f));
-
+        g.fillRoundedRectangle(prepareCard.getX() + 24.0f, prepareCard.getY(),
+                               78.0f, 3.0f, 1.5f);
+        GameUi::drawEyebrow(g, "TEMPO CHANGE",
+                            juce::Rectangle<float>(prepareCard.getX() + 24.0f,
+                                                   prepareCard.getY() + 26.0f,
+                                                   260.0f, 16.0f));
         g.setColour(UiColors::text);
-        g.setFont(GameUi::heading(34.0f));
-        const auto songTitle = gameSongTitleLabel.getText().isNotEmpty()
-            ? gameSongTitleLabel.getText()
-            : juce::String("Selected song");
-        g.drawText(songTitle,
-                   juce::Rectangle<float>(readyCard.getX() + 28.0f,
-                                          readyCard.getY() + 56.0f,
-                                          readyCard.getWidth() - 56.0f, 46.0f),
-                   juce::Justification::centredLeft, true);
-
+        g.setFont(GameUi::heading(26.0f));
+        g.drawText("PREPARING AUDIO",
+                   juce::Rectangle<float>(prepareCard.getX() + 24.0f,
+                                          prepareCard.getY() + 52.0f,
+                                          prepareCard.getWidth() - 48.0f, 34.0f),
+                   juce::Justification::centredLeft, false);
         g.setColour(UiColors::muted);
-        g.setFont(GameUi::font(14.0f));
-        g.drawFittedText("Tuning is complete. Nothing is playing yet: the "
-                         "music, the metronome and the 3-2-1 count-in start "
-                         "only after you press START.",
-                         juce::Rectangle<int>(static_cast<int>(readyCard.getX() + 28.0f),
-                                              static_cast<int>(readyCard.getY() + 112.0f),
-                                              static_cast<int>(readyCard.getWidth() - 56.0f),
-                                              72),
-                         juce::Justification::topLeft, 3);
-
-        GameUi::drawPill(g,
-                         juce::Rectangle<float>(readyCard.getX() + 28.0f,
-                                                readyCard.getBottom() - 56.0f,
-                                                readyCard.getWidth() - 56.0f, 30.0f),
-                         "PRESS START WHEN YOU ARE READY",
-                         UiColors::accent,
-                         true);
+        g.setFont(GameUi::font(12.0f));
+        g.drawText("Re-rendering the backing tracks. Playback resumes "
+                   "automatically from the same beat.",
+                   juce::Rectangle<float>(prepareCard.getX() + 24.0f,
+                                          prepareCard.getY() + 94.0f,
+                                          prepareCard.getWidth() - 48.0f, 40.0f),
+                   juce::Justification::topLeft, true);
     }
 
     // Pause overlay.
@@ -1745,8 +1762,10 @@ void MainComponent::resized()
     const bool songSelect = gameState == GameState::SongSelect && !authScreen;
     const bool tunerScreen = gameState == GameState::Tuner;
     const bool finishedScreen = gameState == GameState::Finished;
+    const bool preparingScreen = gameState == GameState::Preparing;
     const bool showGame = gameState == GameState::Playing
-        || gameState == GameState::Paused;
+        || gameState == GameState::Paused
+        || preparingScreen;
     const bool readyScreen = gameState == GameState::Ready;
 
     //==========================================================================
@@ -1804,10 +1823,13 @@ void MainComponent::resized()
     hitLabel.setVisible(showGame);
     targetNoteLabel.setVisible(showGame);
 
-    gameStartButton.setVisible(showGame || finishedScreen);
+    gameStartButton.setVisible((showGame && !preparingScreen) || finishedScreen);
     readyStartButton.setVisible(readyScreen);
-    pauseButton.setVisible(showGame);
-    menuButton.setVisible(showGame || finishedScreen || readyScreen);
+    resumeOverlayButton.setVisible(gameState == GameState::Paused);
+    pauseButton.setVisible(gameState == GameState::Playing
+                           || gameState == GameState::Paused);
+    menuButton.setVisible((showGame && !preparingScreen)
+                          || finishedScreen || readyScreen);
     distortionButton.setVisible(false);
     midiBackingButton.setVisible(showGame);
     midiBackingVolumeSlider.setVisible(showGame);
@@ -1838,7 +1860,7 @@ void MainComponent::resized()
     easyButton.setVisible(false);
     normalButton.setVisible(false);
     hardButton.setVisible(false);
-    tablatureComponent.setVisible(showGame);
+    tablatureComponent.setVisible(showGame || readyScreen);
 
     //==========================================================================
     // Authentication
@@ -1972,16 +1994,41 @@ void MainComponent::resized()
     // Results
     //==========================================================================
 
-    // Ready screen: one clear START button, nothing else is running yet.
+    // Ready screen: the START button lives inside the same count-in card.
     if (readyScreen)
     {
         gameSongTitleLabel.setBounds(210, 45,
                                      juce::jmax(200, width - 640), 28);
-        const int buttonWidth = juce::jmin(260, width - 120);
-        readyStartButton.setBounds((width - buttonWidth) / 2,
-                                   height / 2 + 48,
-                                   buttonWidth, 52);
         menuButton.setBounds(24, 46, 100, 36);
+
+        const int cardW = 280;
+        const int cardH = 240;
+        const int cardX = (width - cardW) / 2;
+        const int cardY = (height - cardH) / 2;
+        readyStartButton.setBounds(cardX + 40, cardY + cardH - 74, 200, 44);
+        // The tablature is visible before the start so the player can see the
+        // first notes while getting ready.
+        const int hudY = 120;
+        const int hudH = 96;
+        const int bottomH = juce::jlimit(124, 160, height / 6);
+        const int bottomY = height - 24 - bottomH;
+        const int studioH = juce::jlimit(176, 218, height / 4);
+        const int studioY = bottomY - 14 - studioH;
+        const int tabY = hudY + hudH + 12;
+        const int tabH = juce::jmax(150, studioY - 12 - tabY);
+        tablatureComponent.setBounds(24, tabY, width - 48, tabH);
+        // The modal overlay paints the card above regular controls; keep the
+        // button on top so it is both visible and clickable.
+        readyStartButton.toFront(false);
+    }
+
+    // Pause card: a real RESUME button above the score summary.
+    if (gameState == GameState::Paused)
+    {
+        const int cardY = height / 2 - 170;
+        resumeOverlayButton.setBounds((width - 200) / 2, cardY + 340 - 104,
+                                      200, 40);
+        resumeOverlayButton.toFront(false);
     }
 
     if (finishedScreen)
@@ -3940,6 +3987,16 @@ void MainComponent::initialiseUi()
     readyStartButton.onClick = [this]
     {
         beginGameplayCountIn();
+    };
+
+    resumeOverlayButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
+    resumeOverlayButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
+    resumeOverlayButton.setColour(juce::TextButton::textColourOffId, UiColors::onAccent);
+    resumeOverlayButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    addAndMakeVisible(resumeOverlayButton);
+    resumeOverlayButton.onClick = [this]
+    {
+        resumeGame();
     };
 
     tunerStartButton.onClick =
