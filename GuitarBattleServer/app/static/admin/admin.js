@@ -1221,8 +1221,15 @@
 
   // Shared with the other admin modules (statistics): an expired token must
   // always fall back to the single login view of this SPA instead of every
-  // module growing its own login screen.
-  window.FFAdmin = { handleUnauthorized, clearSession, showLogin };
+  // module growing its own login screen, and destructive actions reuse the same
+  // toast surface and knowledge of the signed-in administrator.
+  window.FFAdmin = {
+    handleUnauthorized,
+    clearSession,
+    showLogin,
+    showToast,
+    getUser: () => state.user,
+  };
 
   document.addEventListener("DOMContentLoaded", init);
 })();

@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.admin_songs import require_admin
 from app.database import get_db
 from app.models.app_session import AppSession, GameLaunch
+from app.models.game_session import GameSession, Score
 from app.models.song import Song
 from app.models.user import User
 from app.schemas.statistics import (
@@ -129,17 +130,32 @@ def statistics_overview(
 @router.get("/users", response_model=StatisticsUserList, summary="Per-user statistics")
 def statistics_users(
     search: str | None = Query(default=None, min_length=1, max_length=100),
-    sort: Literal["last_seen", "app_seconds", "launches"] = Query(default="last_seen"),
+    sort: Literal[
+        "last_seen",
+        "username",
+        "display_name",
+        "email",
+        "created_at",
+        "app_seconds",
+        "sessions_count",
+        "launches_count",
+        "scores_count",
+    ] = Query(default="last_seen", description="Column to sort by"),
+    order: Literal["asc", "desc"] | None = Query(
+        default=None,
+        description="Sort direction; defaults to asc for names, desc for numbers and dates",
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> StatisticsUserList:
-    """One row per account with app time, session and launch aggregates.
+    """One row per account with app time, session, launch and score aggregates.
 
     ``last_seen`` sorts by the newest of heartbeat and launch time, so players
-    who only started a game still appear as recently active. Rows without any
-    activity go last in every sort mode.
+    who only started a game still appear as recently active. Text columns are
+    compared case-insensitively, empty values go last in both directions, and
+    ``username``/``id`` break ties so paging is stable.
     """
     session_agg = (
         select(
@@ -161,19 +177,51 @@ def statistics_users(
         .group_by(GameLaunch.user_id)
         .subquery()
     )
+    # Scores belong to a game session, so the user is reached through it.
+    score_agg = (
+        select(
+            GameSession.user_id.label("user_id"),
+            func.count(Score.id).label("scores_count"),
+            func.max(Score.score_points).label("best_score"),
+        )
+        .join(Score, Score.session_id == GameSession.id)
+        .group_by(GameSession.user_id)
+        .subquery()
+    )
 
     last_activity = func.greatest(
         session_agg.c.last_seen_at, launch_agg.c.last_launch_at
     )
     app_seconds = func.coalesce(session_agg.c.app_seconds_total, 0)
+    sessions = func.coalesce(session_agg.c.sessions_count, 0)
     launches = func.coalesce(launch_agg.c.launches_count, 0)
+    scores = func.coalesce(score_agg.c.scores_count, 0)
 
-    if sort == "app_seconds":
-        ordering = (app_seconds.desc(), last_activity.desc().nullslast(), User.id.asc())
-    elif sort == "launches":
-        ordering = (launches.desc(), last_activity.desc().nullslast(), User.id.asc())
-    else:
-        ordering = (last_activity.desc().nullslast(), User.username.asc())
+    text_sorts = {"username", "display_name", "email"}
+    sort_columns = {
+        "username": User.username,
+        "display_name": User.display_name,
+        "email": User.email,
+        "created_at": User.created_at,
+        "app_seconds": app_seconds,
+        "sessions_count": sessions,
+        "launches_count": launches,
+        "scores_count": scores,
+        "last_seen": last_activity,
+    }
+    column = sort_columns[sort]
+    if sort in text_sorts:
+        column = func.lower(column)
+
+    direction = order or ("asc" if sort in text_sorts else "desc")
+    primary = column.asc() if direction == "asc" else column.desc()
+    ordering = [primary.nullslast()]
+
+    # Stable tiebreaker: same-name accounts keep a deterministic order across
+    # pages, and every other sort falls back to the login name.
+    if sort != "username":
+        ordering.append(func.lower(User.username).asc())
+    ordering.append(User.id.asc())
 
     conditions = []
     if search:
@@ -188,14 +236,17 @@ def statistics_users(
             User.is_active,
             User.created_at,
             app_seconds.label("app_seconds_total"),
-            func.coalesce(session_agg.c.sessions_count, 0).label("sessions_count"),
+            sessions.label("sessions_count"),
             session_agg.c.last_seen_at,
             launches.label("launches_count"),
             launch_agg.c.last_launch_at,
             func.coalesce(launch_agg.c.games_distinct, 0).label("games_distinct"),
+            scores.label("scores_count"),
+            score_agg.c.best_score,
         )
         .outerjoin(session_agg, session_agg.c.user_id == User.id)
         .outerjoin(launch_agg, launch_agg.c.user_id == User.id)
+        .outerjoin(score_agg, score_agg.c.user_id == User.id)
         .where(*conditions)
         .order_by(*ordering)
         .limit(limit)
@@ -219,6 +270,8 @@ def statistics_users(
             launches_count=int(row.launches_count or 0),
             last_launch_at=row.last_launch_at,
             games_distinct=int(row.games_distinct or 0),
+            scores_count=int(row.scores_count or 0),
+            best_score=int(row.best_score) if row.best_score is not None else None,
         )
         for row in rows
     ]

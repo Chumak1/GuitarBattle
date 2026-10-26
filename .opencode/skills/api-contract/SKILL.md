@@ -54,8 +54,9 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | POST | `/activity/heartbeat` | Bearer, `client_session_id` (≤64), `app_version?`, `platform?`, `final=false` | 200, `session_id`, `started_at`, `last_seen_at`; upsert по `(user_id, client_session_id)`, `final=true` ставит `ended_at` |
 | POST | `/activity/game-launch` | Bearer, `client_session_id?`, `game_key` (≤120), `song_id?`, `mode?` | 201, `id`; неизвестные `song_id`/сессия сохраняются как `NULL`, а не 4xx |
 | GET | `/admin/statistics/overview` | Bearer admin, `days=30` (1–365) | `generated_at`, `users_total`, `users_active_24h`, `users_active_7d`, `sessions_total`, `app_seconds_total`, `avg_session_seconds`, `launches_total`, `launches_24h` |
-| GET | `/admin/statistics/users` | Bearer admin, `search?`, `sort=last_seen\|app_seconds\|launches`, `limit=50` (1–200), `offset=0` | `items[]` (`user_id`, `username`, `display_name`, `email`, `is_active`, `created_at`, `app_seconds_total`, `sessions_count`, `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`), `total`, `limit`, `offset` |
+| GET | `/admin/statistics/users` | Bearer admin, `search?`, `sort=last_seen\|username\|display_name\|email\|created_at\|app_seconds\|sessions_count\|launches_count\|scores_count`, `order=asc\|desc` (по умолчанию `asc` для текста, `desc` для чисел/дат), `limit=50` (1–200), `offset=0` | `items[]` (`user_id`, `username`, `display_name`, `email`, `is_active`, `created_at`, `app_seconds_total`, `sessions_count`, `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`, `scores_count`, `best_score`), `total`, `limit`, `offset` |
 | GET | `/admin/statistics/games` | Bearer admin, `days=30`, `limit=100` | `items[]` (`game_key`, `title`, `launches`, `unique_users`, `last_launch_at`), `total` |
+| DELETE | `/admin/users/{user_id}` | Bearer admin | 204; 400 при удалении себя (`"You cannot delete your own account"`), 404 если нет, 409 если связанные данные мешают; жёсткое удаление, все FK на `users.id` — `CASCADE` |
 | GET | `/admin/site/landing` | Bearer admin | `blocks`, `hero_background` |
 | PUT | `/admin/site/landing` | Bearer admin, `blocks`, `hero_background` | сохранённый контент; блоки ≤ 256 КиБ, строки ≤ 5000, глубина ≤ 8 |
 | POST | `/admin/site/landing/background` | Bearer admin, multipart `file` | 201, `hero_background`; JPEG/PNG/WebP/GIF/MP4/WebM |
@@ -115,12 +116,29 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   `users_active_24h/7d` — уникальные пользователи с heartbeat или запуском
   в окне. `last_seen` сортирует по максимуму из `last_seen_at` и
   `last_launch_at`, пустые значения в конце.
+- `/admin/statistics/users`: `sort` — `last_seen`, `username`, `display_name`,
+  `email`, `created_at`, `app_seconds`, `sessions_count`, `launches_count`,
+  `scores_count`; `order` — `asc`/`desc`, по умолчанию `asc` для текстовых
+  столбцов и `desc` для чисел/дат. Текст сравнивается через `lower()`,
+  `NULLS LAST` в обе стороны, tiebreaker — `username`, затем `id`.
+  `scores_count`/`best_score` считаются подзапросом `scores` через
+  `game_sessions` (без N+1); `best_score = null`, если результатов нет.
+- `DELETE /admin/users/{user_id}` — жёсткое удаление аккаунта (204). Себя
+  удалить нельзя (400 `"You cannot delete your own account"`), неизвестный id —
+  404, блокирующие связи — 409. Все FK на `users.id` (`game_sessions`,
+  `scores` через них, `app_sessions`, `game_launches`, `email_auth_codes`,
+  `competitions`) — `ON DELETE CASCADE`, отдельная миграция не нужна.
+  В лог пишутся только id администратора и пользователя, без email/логина.
 - `title` в `/admin/statistics/games` — название песни из самого свежего
   запуска, у которого есть `song_id`; иначе сам `game_key`.
 - UI: вкладка «Статистика» в `/admin/` (`app/static/admin/admin-statistics.js`,
   разметка `#sectionStatistics` в `index.html`). Данные грузятся лениво при
   первом открытии вкладки и обновляются при повторном открытии/`Обновить`;
-  токен — общий админский из `sessionStorage` (`guitarbattle.admin.token`),
+  заголовки таблицы сортируют по клику (▲/▼, серверные `sort`/`order`,
+  `offset=0`), столбец Scores показывает число результатов и лучший счёт,
+  кнопка-корзина удаляет игрока через `DELETE /admin/users/{id}` после
+  `confirm()` с логином и почтой; своя строка — disabled.
+  Токен — общий админский из `sessionStorage` (`guitarbattle.admin.token`),
   при 401/403 вызывается `window.FFAdmin.handleUnauthorized()` (общий
   логин-экран SPA). Отдельного `/statistics` и `statistics.html` больше нет.
 
