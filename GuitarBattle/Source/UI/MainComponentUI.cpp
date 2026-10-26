@@ -1631,9 +1631,9 @@ void MainComponent::paintModalOverlay(juce::Graphics& g)
                                               cardWidth, 110.0f),
                        juce::Justification::centred, false);
 
-            for (int i = 0; i < 4; ++i)
+            for (int i = 0; i < 3; ++i)
             {
-                const float dotX = countCard.getCentreX() - 34.0f + static_cast<float>(i) * 22.0f;
+                const float dotX = countCard.getCentreX() - 22.0f + static_cast<float>(i) * 22.0f;
                 g.setColour(i < count ? UiColors::accent : UiColors::borderStrong);
                 g.fillEllipse(dotX, countCard.getBottom() - 42.0f, 6.0f, 6.0f);
             }

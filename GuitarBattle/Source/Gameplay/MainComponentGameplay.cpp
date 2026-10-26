@@ -191,15 +191,15 @@ void MainComponent::beginGameplayCountIn()
     const double beatLengthSamples =
         metronome.getBeatLengthSamples();
 
-    // Give the player a full bar of four audible metronome clicks.
-    // The song timeline starts on the beat immediately after click 4.
-    countInRemaining.store(4, std::memory_order_relaxed);
+    // Three audible metronome clicks (3-2-1); the song timeline starts on
+    // the beat immediately after the last click.
+    countInRemaining.store(3, std::memory_order_relaxed);
     countInActive.store(true, std::memory_order_release);
     tablatureComponent.setPlayheadRunning(false);
 
     const auto countInSamples =
         static_cast<uint64_t>(
-            std::llround(beatLengthSamples * 4.0));
+            std::llround(beatLengthSamples * 3.0));
 
     gameplayStartSample.store(
         currentSample + countInSamples,
@@ -226,7 +226,7 @@ void MainComponent::beginGameplayCountIn()
     menuButton.setButtonText("MAIN MENU");
     tunerStartButton.setEnabled(false);
     pauseButton.setButtonText("PAUSE");
-    hitLabel.setText("COUNT-IN 4", juce::dontSendNotification);
+    hitLabel.setText("COUNT-IN 3", juce::dontSendNotification);
 
     resized();
     repaint();
