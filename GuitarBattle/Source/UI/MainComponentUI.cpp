@@ -663,8 +663,10 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 
         if (currentUsername.isNotEmpty())
         {
+            const auto userBounds = currentUserLabel.getBounds().toFloat();
             const float avatarSize = 30.0f;
-            const juce::Rectangle<float> avatar(width - 404.0f, 42.0f,
+            const juce::Rectangle<float> avatar(userBounds.getX() - avatarSize - 8.0f,
+                                                userBounds.getY() - 6.0f,
                                                 avatarSize, avatarSize);
             g.setColour(UiColors::accent.withAlpha(0.16f));
             g.fillEllipse(avatar);
@@ -678,7 +680,9 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             g.setColour(UiColors::muted);
             g.setFont(GameUi::eyebrow(8.0f));
             g.drawText("SIGNED IN AS",
-                       juce::Rectangle<float>(width - 362.0f, 35.0f, 160.0f, 13.0f),
+                       juce::Rectangle<float>(userBounds.getX(),
+                                              userBounds.getY() - 13.0f,
+                                              userBounds.getWidth(), 13.0f),
                        juce::Justification::centredLeft, false);
         }
 
@@ -1702,7 +1706,7 @@ void MainComponent::resized()
     loginScreenTitleLabel.setVisible(authScreen);
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
     logoutButton.setVisible(songSelect && currentUsername.isNotEmpty());
-    accountMenuButton.setVisible(songSelect && currentUsername.isNotEmpty());
+    accountSettingsButton.setVisible(songSelect && currentUsername.isNotEmpty());
     gameSongTitleLabel.setVisible(showGame);
 
     songPridumayButton.setVisible(songSelect);
@@ -1778,7 +1782,7 @@ void MainComponent::resized()
     speed50Button.setVisible(showGame);
     speed100Button.setVisible(showGame);
     speed120Button.setVisible(showGame);
-    audioSettingsButton.setVisible(showGame);
+    audioSettingsButton.setVisible(songSelect || showGame);
     easyButton.setVisible(false);
     normalButton.setVisible(false);
     hardButton.setVisible(false);
@@ -1816,10 +1820,28 @@ void MainComponent::resized()
     if (songSelect)
     {
         accountStatusLabel.setJustificationType(juce::Justification::centredLeft);
-        currentUserLabel.setBounds(width - 362, 48, 220, 22);
+
+        // Top-right account row: plain username label, then SETTINGS, AUDIO
+        // SETTINGS and LOG OUT. Keeping the buttons beside the label (instead
+        // of on top of it) avoids the old transparent ACCOUNT button covering
+        // the name.
+        const int topRight = width - 44;
+        const int logoutW = 90;
+        const int settingsW = 96;
+        const int audioW = 128;
+        const int topGap = 8;
+        const int usernameW = 170;
+        const int logoutX = topRight - logoutW;
+        const int audioX = logoutX - topGap - audioW;
+        const int settingsX = audioX - topGap - settingsW;
+        const int usernameX = settingsX - 12 - usernameW;
+
+        currentUserLabel.setBounds(usernameX, 48, usernameW, 22);
         currentUserLabel.setJustificationType(juce::Justification::centredLeft);
-        logoutButton.setBounds(width - 122, 42, 94, 32);
-        accountMenuButton.setBounds(width - 404, 34, 258, 38);
+        accountSettingsButton.setBounds(settingsX, 42, settingsW, 32);
+        audioSettingsButton.setButtonText("AUDIO SETTINGS");
+        audioSettingsButton.setBounds(audioX, 42, audioW, 32);
+        logoutButton.setBounds(logoutX, 42, logoutW, 32);
         songTitleLabel.setBounds(48, 140, width - 96, 44);
 
         const int contentY = 228;
@@ -1919,6 +1941,7 @@ void MainComponent::resized()
     if (showGame)
     {
         menuButton.setButtonText(gameState == GameState::Paused ? "BACK" : "MENU");
+        audioSettingsButton.setButtonText("AUDIO");
         const int hudY = 120;
         const int hudH = 96;
         const int bottomH = juce::jlimit(124, 160, height / 6);
@@ -4437,7 +4460,8 @@ void MainComponent::initialiseUi()
 
     currentUserLabel.setFont(GameUi::font(13.0f, true));
     currentUserLabel.setColour(juce::Label::textColourId, UiColors::text);
-    currentUserLabel.setJustificationType(juce::Justification::centredRight);
+    currentUserLabel.setJustificationType(juce::Justification::centredLeft);
+    currentUserLabel.setMinimumHorizontalScale(0.8f);
     addAndMakeVisible(currentUserLabel);
 
     logoutButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -4447,22 +4471,21 @@ void MainComponent::initialiseUi()
     logoutButton.onClick = [this] { logoutCurrentUser(); };
     addAndMakeVisible(logoutButton);
 
-    // The signed-in username is clickable: a transparent button sits over the
-    // avatar/name cluster and opens the personal account window.
-    accountMenuButton.setButtonText("ACCOUNT");
-    accountMenuButton.setColour(juce::TextButton::buttonColourId,
-                                juce::Colours::transparentBlack);
-    accountMenuButton.setColour(juce::TextButton::buttonOnColourId,
-                                juce::Colours::transparentBlack);
-    accountMenuButton.setColour(juce::TextButton::textColourOffId,
-                                juce::Colours::transparentBlack);
-    accountMenuButton.setColour(juce::TextButton::textColourOnId,
-                                juce::Colours::transparentBlack);
-    accountMenuButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    accountMenuButton.setTooltip("Open personal account");
-    accountMenuButton.onClick = [this] { openAccountWindow(); };
-    addAndMakeVisible(accountMenuButton);
-    accountMenuButton.toFront(false);
+    // The username is a plain label. This visible button opens the personal
+    // account/settings window without covering the name.
+    accountSettingsButton.setButtonText("SETTINGS");
+    accountSettingsButton.setColour(juce::TextButton::buttonColourId,
+                                    UiColors::surface2);
+    accountSettingsButton.setColour(juce::TextButton::buttonOnColourId,
+                                    UiColors::accent);
+    accountSettingsButton.setColour(juce::TextButton::textColourOffId,
+                                    UiColors::text);
+    accountSettingsButton.setColour(juce::TextButton::textColourOnId,
+                                    UiColors::onAccent);
+    accountSettingsButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    accountSettingsButton.setTooltip("Open account settings");
+    accountSettingsButton.onClick = [this] { openAccountWindow(); };
+    addAndMakeVisible(accountSettingsButton);
 
     accountLoginButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
     accountLoginButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);

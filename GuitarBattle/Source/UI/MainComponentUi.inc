@@ -27,9 +27,9 @@
     //     void initialiseNewFeature();
 
     // --- Account window ------------------------------------------------------
-    // Clicking the signed-in username opens a separate account window with the
-    // same structure as the web account page: rating summary, global top-50,
-    // attempt history, profile/password forms and sign-out.
-    juce::TextButton accountMenuButton;
+    // The username is shown as a plain label; SETTINGS opens the personal
+    // account window with rating summary, global top-50, attempt history,
+    // profile/password forms and sign-out.
+    juce::TextButton accountSettingsButton;
     juce::Component::SafePointer<juce::DialogWindow> accountDialog;
     void openAccountWindow();
