@@ -22,7 +22,14 @@ FastAPI + PostgreSQL + SQLAlchemy + Alembic + Docker Compose.
 - `GET /` — the landing page at `app/static/landing/index.html` (hero, project overview, how it works, features, requirements, CTA).
 - `GET /login`, `GET /register` — sign-in, registration with email confirmation, and password reset at `app/static/app/auth.html`.
 - `GET /account` — the signed-in player page at `app/static/app/account.html`: global rating, attempt history, username/display name and password changes.
-- `GET /admin/` — the admin SPA at `app/static/admin/`.
+- `GET /admin/` — the admin SPA at `app/static/admin/`. It has four sections:
+  songs, landing CMS, game builds and «Статистика». The statistics tab
+  (`app/static/admin/admin-statistics.js`, panel `#sectionStatistics`) shows app
+  time, sessions and game launches per account plus game aggregates; it loads
+  lazily on the first visit and refreshes on every later visit. Every number
+  comes from the admin-only `/admin/statistics/*` API, and an expired token
+  returns the SPA to its single login view (`window.FFAdmin.handleUnauthorized`).
+  There is no separate `/statistics` page.
 
 All of them are served by FastAPI from inside the API image. Caddy only needs to reverse-proxy `fretfight.online` to `127.0.0.1:8000`; no separate static-site root is required.
 
@@ -131,6 +138,49 @@ Important: score submission is currently client-reported. This is suitable for l
 
 Competition rooms and lobby endpoints are not enabled in the API router; the current implementation is limited to accounts, online song catalog, game results, history, and leaderboards. The historical database migration is retained so existing databases can still upgrade without rewriting migration history.
 
+### Activity telemetry and admin statistics
+
+The desktop client reports app activity; the server owns all time arithmetic and
+never trusts a client-reported duration:
+
+- `POST /activity/heartbeat` — Bearer. Body:
+  `{ "client_session_id": "<per-process uuid, <=64 chars>", "app_version": "1.0.0", "platform": "windows", "final": false }`.
+  The first call creates `app_sessions` (`started_at = last_seen_at = now`), later
+  calls only move `last_seen_at`; `final: true` sets `ended_at`. The pair
+  `(user_id, client_session_id)` is unique, so retries cannot duplicate a session.
+  Response: `{ "session_id": "<uuid>", "started_at": "...", "last_seen_at": "..." }`.
+- `POST /activity/game-launch` — Bearer. Body:
+  `{ "client_session_id": "...", "game_key": "song", "song_id": "<song uuid>", "mode": "single" }`
+  (`game_key` examples: `song`, `daily_challenge`, `practice`, `local:<slug>`).
+  Returns `201 {"id": "<uuid>"}`. An unknown `song_id` or a missing app session is
+  stored as `NULL` instead of failing the request — telemetry must never break the game.
+
+Administrator-only aggregates (`Bearer` with `is_admin`):
+
+- `GET /admin/statistics/overview?days=30` — `users_total`, `users_active_24h`,
+  `users_active_7d`, `sessions_total`, `app_seconds_total`, `avg_session_seconds`,
+  `launches_total`, `launches_24h`, `generated_at`. `days` (1–365) limits sessions
+  and launches; `users_total` always counts all accounts. Activity is a heartbeat
+  or a launch inside the window.
+- `GET /admin/statistics/users?search=&sort=last_seen|app_seconds|launches&limit=50&offset=0`
+  — one row per account: `user_id`, `username`, `display_name`, `email`,
+  `is_active`, `created_at`, `app_seconds_total`, `sessions_count`,
+  `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`, plus
+  `total`/`limit`/`offset`. `search` is a case-insensitive substring of username,
+  display name or email. `last_seen` sorts by the newest heartbeat or launch with
+  empty values last.
+- `GET /admin/statistics/games?days=30&limit=100` — launches grouped by
+  `game_key` with `title`, `launches`, `unique_users`, `last_launch_at`. The title
+  is the song title of the newest launch that has a `song_id`; keys without a song
+  keep the key itself.
+
+A session's duration is `coalesce(ended_at, last_seen_at) - started_at`, clamped
+at zero, so a crashed client still produces usable numbers. All aggregates are
+computed in SQL (grouped subqueries joined once per request), never per row.
+
+The admin UI for these numbers is the «Статистика» tab of `/admin/`
+(`app/static/admin/admin-statistics.js`), not a standalone page.
+
 ### Administrator song workflow
 Every `/admin/songs` route requires a Bearer token for a user whose `is_admin` flag is true:
 - `GET /admin/songs`
@@ -195,6 +245,11 @@ The JUCE source archive supplied for this update does not include the `.jucer`/V
 ## Database migrations
 
 Migration `0004_competitions` is retained only as historical database migration metadata; competition endpoints are not registered in the API. Existing songs, users, MIDI files, and score/session tables are retained. Back up the database before deploying to any non-disposable environment.
+
+Migration `0007_app_statistics` adds `app_sessions` and `game_launches` (unique
+`(user_id, client_session_id)`, `ON DELETE CASCADE` from `users`,
+`ON DELETE SET NULL` for `app_session_id`/`song_id`). Both tables are written only
+by the telemetry endpoints and are safe to truncate if the history is not needed.
 
 
 ### Глобальный рейтинг игроков

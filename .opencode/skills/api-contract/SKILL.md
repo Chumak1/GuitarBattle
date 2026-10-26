@@ -51,6 +51,11 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` для лендинга |
 | GET | `/downloads/game` | — (публичный) | активная сборка игры; 404, если активной сборки нет |
 | GET | `/geo` | — (публичный) | `country`, `language` (`ru`/`en`/`null`) по IP из локальной DB-IP Lite |
+| POST | `/activity/heartbeat` | Bearer, `client_session_id` (≤64), `app_version?`, `platform?`, `final=false` | 200, `session_id`, `started_at`, `last_seen_at`; upsert по `(user_id, client_session_id)`, `final=true` ставит `ended_at` |
+| POST | `/activity/game-launch` | Bearer, `client_session_id?`, `game_key` (≤120), `song_id?`, `mode?` | 201, `id`; неизвестные `song_id`/сессия сохраняются как `NULL`, а не 4xx |
+| GET | `/admin/statistics/overview` | Bearer admin, `days=30` (1–365) | `generated_at`, `users_total`, `users_active_24h`, `users_active_7d`, `sessions_total`, `app_seconds_total`, `avg_session_seconds`, `launches_total`, `launches_24h` |
+| GET | `/admin/statistics/users` | Bearer admin, `search?`, `sort=last_seen\|app_seconds\|launches`, `limit=50` (1–200), `offset=0` | `items[]` (`user_id`, `username`, `display_name`, `email`, `is_active`, `created_at`, `app_seconds_total`, `sessions_count`, `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`), `total`, `limit`, `offset` |
+| GET | `/admin/statistics/games` | Bearer admin, `days=30`, `limit=100` | `items[]` (`game_key`, `title`, `launches`, `unique_users`, `last_launch_at`), `total` |
 | GET | `/admin/site/landing` | Bearer admin | `blocks`, `hero_background` |
 | PUT | `/admin/site/landing` | Bearer admin, `blocks`, `hero_background` | сохранённый контент; блоки ≤ 256 КиБ, строки ≤ 5000, глубина ≤ 8 |
 | POST | `/admin/site/landing/background` | Bearer admin, multipart `file` | 201, `hero_background`; JPEG/PNG/WebP/GIF/MP4/WebM |
@@ -61,8 +66,9 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | DELETE | `/admin/site/game-builds/{id}` | Bearer admin | 204 |
 
 Публичные страницы сайта: `/` (лендинг), `/policy` (политика конфиденциальности),
-`/login`, `/register`, `/account`, `/admin/` (только администраторы). Медиа лендинга
-отдаётся по `/media/landing/<name>`.
+`/login`, `/register`, `/account`, `/admin/` (только администраторы).
+Статистика — вкладка «Статистика» внутри `/admin/`, отдельного `/statistics` нет.
+Медиа лендинга отдаётся по `/media/landing/<name>`.
 
 ## Сайт, лендинг и язык
 
@@ -88,6 +94,35 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   согласия со ссылкой на `/policy`.
 
 Админские маршруты `/admin/songs...` требуют `is_admin`.
+
+## Активность и статистика
+
+- Клиент шлёт `POST /activity/heartbeat` при старте и периодически (например,
+  раз в 2 минуты), `client_session_id` — свой UUID на запуск процесса.
+  `final=true` при выходе ставит `ended_at`. Повторные вызовы не создают
+  дубликат: уникальность `(user_id, client_session_id)`.
+- `POST /activity/game-launch` — один вызов на вход в игровой режим.
+  `game_key`: `song` (с `song_id` опубликованной песни), `daily_challenge`,
+  `practice`, `local:<slug>`. Сервер не отвечает 4xx на неизвестный `song_id`
+  или отсутствующую сессию: такие поля сохраняются как `NULL`, телеметрия
+  не должна ломать игру.
+- Время считает только сервер: `coalesce(ended_at, last_seen_at) - started_at`
+  по каждой `app_sessions`; отрицательные значения обрезаются до 0.
+  Клиент не отправляет длительность.
+- Статистика (только `is_admin`): `/admin/statistics/overview`,
+  `/admin/statistics/users`, `/admin/statistics/games`. Период `days`
+  ограничивает сессии и запуски; `users_total` всегда по всем аккаунтам.
+  `users_active_24h/7d` — уникальные пользователи с heartbeat или запуском
+  в окне. `last_seen` сортирует по максимуму из `last_seen_at` и
+  `last_launch_at`, пустые значения в конце.
+- `title` в `/admin/statistics/games` — название песни из самого свежего
+  запуска, у которого есть `song_id`; иначе сам `game_key`.
+- UI: вкладка «Статистика» в `/admin/` (`app/static/admin/admin-statistics.js`,
+  разметка `#sectionStatistics` в `index.html`). Данные грузятся лениво при
+  первом открытии вкладки и обновляются при повторном открытии/`Обновить`;
+  токен — общий админский из `sessionStorage` (`guitarbattle.admin.token`),
+  при 401/403 вызывается `window.FFAdmin.handleUnauthorized()` (общий
+  логин-экран SPA). Отдельного `/statistics` и `statistics.html` больше нет.
 
 ## Регистрация и восстановление пароля
 
@@ -202,6 +237,8 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
 - `refreshOnlineCatalog` — список опубликованных песен на главном экране.
 - `refreshOnlineBestScores` — лучшие счета пользователя по каждой песне (`/games/best-scores`).
 - `startSelectedSong` / `downloadOnlineSong` — выбор строки каталога и загрузка ассетов по требованию.
+- Телеметрия активности (`/activity/heartbeat`, `/activity/game-launch`) — из
+  worker-потока, без блокировки UI-потока.
 - Поиск по `apiClient.`, `ApiClient::get`, `ApiClient::post`.
 
 ## Чек-лист изменения API
@@ -221,6 +258,9 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
 - `speed_percent` ограничен 50–120.
 - `accuracy_percent` — 0–100, не 0–1.
 - `song_id` — UUID, `slug` — строка.
+- `client_session_id` в телеметрии — UUID запуска клиента (≤64 символа),
+  не путать с `app_session_id`/`session_id` на сервере.
+- Время в приложении считает сервер; клиент не отправляет длительность сессии.
 - `access_token` живёт только в памяти; при 401 нужен повторный логин.
 - При 403 на `/auth/login` почта не подтверждена; это не неверный пароль.
 - После смены/сброса пароля старый JWT перестаёт работать (401) из-за `token_version`.

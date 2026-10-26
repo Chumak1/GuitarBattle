@@ -5,10 +5,12 @@ from app.models.game_session import GameSession, Score
 from app.models.song_midi import SongMidiAnalysis, SongMidiNote, SongMidiTempoChange
 from app.models.competition import Competition, CompetitionParticipant
 from app.models.site_content import GameBuild, LandingSettings
+from app.models.app_session import AppSession, GameLaunch
 
 __all__ = [
     "User", "EmailAuthCode", "Song", "SongFile", "GameSession", "Score",
     "SongMidiAnalysis", "SongMidiNote", "SongMidiTempoChange",
     "Competition", "CompetitionParticipant",
     "LandingSettings", "GameBuild",
+    "AppSession", "GameLaunch",
 ]

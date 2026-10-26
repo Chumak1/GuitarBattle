@@ -49,6 +49,10 @@ MainComponent::MainComponent()
 
     startTimerHz(30);
 
+    // Each application run starts with a fresh telemetry identity; it is
+    // regenerated again on every sign-in.
+    telemetryClientSessionId = juce::Uuid().toString();
+
     overlayComponent.setBounds(getLocalBounds());
     addAndMakeVisible(overlayComponent);
 
@@ -79,6 +83,17 @@ void MainComponent::timerCallback()
         applyPendingClientAssetsReload();
 
     updateHitFeedbackAnimation();
+
+    // Activity heartbeat: every 30 seconds at 30 Hz while signed in. The
+    // counter must advance regardless of game state, so it stays above the
+    // early return below. The HTTP request runs on a worker thread.
+    if (++telemetryTickCounter >= 900)
+    {
+        telemetryTickCounter = 0;
+
+        if (onlineAccessToken.isNotEmpty())
+            sendActivityHeartbeat(false);
+    }
 
     if (gameState != GameState::Playing)
         return;
@@ -212,6 +227,11 @@ void MainComponent::timerCallback()
 
 MainComponent::~MainComponent()
 {
+    // Best-effort: close the activity session while the API client is still
+    // alive. The request is queued on the worker pool; the client's destructor
+    // waits for the running job, and nothing here touches the UI thread.
+    sendActivityHeartbeat(true);
+
     if (pitchThread != nullptr)
         pitchThread->stopThread(
         1000);

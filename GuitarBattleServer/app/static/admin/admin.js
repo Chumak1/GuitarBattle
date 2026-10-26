@@ -1219,5 +1219,10 @@
     }
   }
 
+  // Shared with the other admin modules (statistics): an expired token must
+  // always fall back to the single login view of this SPA instead of every
+  // module growing its own login screen.
+  window.FFAdmin = { handleUnauthorized, clearSession, showLogin };
+
   document.addEventListener("DOMContentLoaded", init);
 })();

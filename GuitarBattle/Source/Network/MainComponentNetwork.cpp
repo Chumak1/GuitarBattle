@@ -443,6 +443,10 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             self->refreshGlobalLeaderboard();
             // Personal best scores require the freshly obtained token.
             self->refreshOnlineBestScores();
+            // Start a new activity session for this sign-in and report it.
+            self->telemetryClientSessionId = juce::Uuid().toString();
+            self->telemetryTickCounter = 0;
+            self->sendActivityHeartbeat(false);
         });
 }
 
@@ -455,6 +459,9 @@ void MainComponent::logoutCurrentUser()
     ++bestScoresRequestId;
     remoteBestScores.clear();
     updateCatalogRows();
+    // Close the activity session while the token is still valid.
+    sendActivityHeartbeat(true);
+    telemetryClientSessionId.clear();
     onlineAccessToken.clear();
     onlineGameSessionUuid.clear();
     currentUsername.clear();
@@ -466,9 +473,62 @@ void MainComponent::logoutCurrentUser()
     repaint();
 }
 
+void MainComponent::sendActivityHeartbeat(bool finalEvent)
+{
+    if (onlineAccessToken.isEmpty() || telemetryClientSessionId.isEmpty())
+        return;
+
+    juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+    payload->setProperty("client_session_id", telemetryClientSessionId);
+    payload->setProperty("app_version", juce::String(ProjectInfo::versionString));
+    payload->setProperty("platform", juce::SystemStats::getOperatingSystemName());
+    payload->setProperty("final", finalEvent);
+
+    // Fire-and-forget: runs on a worker thread, the result is ignored.
+    // Telemetry must never affect gameplay or UI responsiveness.
+    apiClient.postJson("/activity/heartbeat",
+                       juce::var(payload.get()),
+                       onlineAccessToken,
+                       3000,
+                       nullptr);
+}
+
+void MainComponent::sendGameLaunchTelemetry()
+{
+    if (onlineAccessToken.isEmpty() || telemetryClientSessionId.isEmpty())
+        return;
+
+    // A stable, human-readable key for every kind of game start, including
+    // locally generated melodies that have no server song id.
+    juce::String gameKey;
+
+    if (selectedSongSlug.isNotEmpty())
+        gameKey = "song:" + selectedSongSlug;
+    else if (selectedSongId.isNotEmpty())
+        gameKey = "local:" + selectedSongId;
+    else
+        gameKey = "practice";
+
+    juce::DynamicObject::Ptr payload = new juce::DynamicObject();
+    payload->setProperty("client_session_id", telemetryClientSessionId);
+    payload->setProperty("game_key", gameKey);
+
+    if (onlineSongUuid.isNotEmpty())
+        payload->setProperty("song_id", onlineSongUuid);
+
+    apiClient.postJson("/activity/game-launch",
+                       juce::var(payload.get()),
+                       onlineAccessToken,
+                       3000,
+                       nullptr);
+}
+
 void MainComponent::startOnlineGameSession()
 {
     onlineGameSessionUuid.clear();
+
+    // Count the launch even when the game stays local (no server song id).
+    sendGameLaunchTelemetry();
 
     // A response from an older start request must not resurrect a session.
     const int requestId = ++onlineSessionRequestId;

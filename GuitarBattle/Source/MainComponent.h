@@ -158,6 +158,13 @@ private:
     juce::String onlineAccessToken;
     juce::String onlineSongUuid;
     juce::String onlineGameSessionUuid;
+    // Internal activity telemetry. The session id is regenerated on every
+    // successful sign-in; requests run on ApiClient's worker pool and never
+    // block the message thread or touch the audio thread.
+    juce::String telemetryClientSessionId;
+    int telemetryTickCounter = 0;
+    void sendActivityHeartbeat(bool finalEvent);
+    void sendGameLaunchTelemetry();
     // All server communication is asynchronous: requests run on this client's
     // worker threads and their results arrive on the message thread.
     ApiClient apiClient;
@@ -181,7 +188,6 @@ private:
     void logoutCurrentUser();
     void startOnlineGameSession();
     void submitOnlineGameResult();
-
     // Legacy song buttons are retained in the class for minimal UI churn, but hidden.
     juce::TextButton songMistButton{ "" };
     juce::TextButton songChordsButton{ "" };
