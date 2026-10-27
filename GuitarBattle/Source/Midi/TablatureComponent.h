@@ -31,7 +31,7 @@ private:
     double syncedBeat = 0.0;
     juce::Time lastSyncTime;
 
-    double pixelsPerBeat = 90.0;
+    double pixelsPerBeat = 160.0;
     float layoutStringSpacing = 26.0f;
     float layoutFirstStringY = 60.0f;
 

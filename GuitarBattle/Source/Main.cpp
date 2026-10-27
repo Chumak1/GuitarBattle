@@ -68,16 +68,37 @@ public:
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent(), true);
             setBackgroundColour (UiColors::background);
-            setResizeLimits (900, 800, 1920, 1200);
+
+            // Allow the window to cover the whole desktop, including displays
+            // larger than 1920x1200, while keeping the original minimum size.
+            auto* display = juce::Desktop::getInstance()
+                                .getDisplays().getPrimaryDisplay();
+            const int maxWidth = display != nullptr
+                ? juce::jmax (1920, juce::roundToInt (display->logicalBounds.getWidth()))
+                : 1920;
+            const int maxHeight = display != nullptr
+                ? juce::jmax (1200, juce::roundToInt (display->logicalBounds.getHeight()))
+                : 1200;
+            setResizeLimits (900, 800, maxWidth, maxHeight);
+            setResizable (true, true);
 
            #if JUCE_IOS || JUCE_ANDROID
+            setVisible (true);
             setFullScreen (true);
            #else
-            setResizable (true, true);
-            centreWithSize (getWidth(), getHeight());
-           #endif
+            // Size the window to the display before its peer is created so the
+            // first frame is already full-screen, then let the peer take over.
+            if (display != nullptr)
+                setBounds (display->logicalBounds.toNearestInt());
 
             setVisible (true);
+
+            // JUCE maps setFullScreen() to a maximised window on Windows, which
+            // leaves the native title bar and taskbar visible. Kiosk mode
+            // removes the title bar and stretches the window over the whole
+            // display so the app really opens full-screen.
+            juce::Desktop::getInstance().setKioskModeComponent (this, false);
+           #endif
         }
 
         void closeButtonPressed() override

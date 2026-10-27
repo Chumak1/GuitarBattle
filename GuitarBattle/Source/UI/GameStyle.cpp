@@ -32,11 +32,15 @@ namespace GameUi
     // captions, pills, buttons and body copy all share the same rhythm.
     static constexpr float textTracking = 0.0f;
 
+    // Global typography scale. The application now opens full-screen, so every
+    // label can be a little larger without losing the compact desktop layout.
+    static constexpr float fontScale = 1.15f;
+
     juce::Font font(float height, bool bold, float tracking)
     {
         return juce::Font(juce::FontOptions()
             .withName("Segoe UI")
-            .withHeight(height)
+            .withHeight(height * fontScale)
             .withStyle(bold ? "Bold" : "Regular")
             .withKerningFactor(tracking));
     }
@@ -195,7 +199,7 @@ GameLookAndFeel::GameLookAndFeel()
 
 juce::Font GameLookAndFeel::getTextButtonFont(juce::TextButton&, int buttonHeight)
 {
-    return GameUi::font(juce::jlimit(9.5f, 15.0f, static_cast<float>(buttonHeight) * 0.40f),
+    return GameUi::font(juce::jlimit(10.5f, 15.0f, static_cast<float>(buttonHeight) * 0.40f),
                         true, GameUi::textTracking);
 }
 
