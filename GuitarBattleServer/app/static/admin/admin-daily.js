@@ -194,7 +194,9 @@
     const songs = [];
     let offset = 0;
     for (let page = 0; page < 20; page += 1) {
-      const data = await api(`/admin/songs?limit=100&offset=${offset}`);
+      // Archived songs cannot be scheduled (the API answers 409), so they are
+      // not offered in the picker at all.
+      const data = await api(`/admin/songs?limit=100&offset=${offset}&archived=false`);
       const items = (data && data.items) || [];
       songs.push(...items);
       offset += items.length;

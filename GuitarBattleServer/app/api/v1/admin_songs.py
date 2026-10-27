@@ -29,6 +29,7 @@ from app.schemas.admin_songs import (
     AdminSongUpdate,
 )
 from app.services.daily_slots import apply_song_weekday
+from app.services.song_archive import SongUsage, archive_song, restore_song, song_usage
 from app.services.song_assets import (
     build_readiness,
     deactivate_role_files,
@@ -57,6 +58,15 @@ def _admin_song_response(song: Song, files_by_role: dict[str, SongFile]) -> Admi
     return result
 
 
+def _usage_conflict_detail(usage: SongUsage) -> str:
+    """409 explanation with counts, so support can see what blocks the delete."""
+    counts = ", ".join(f"{name}={value}" for name, value in usage.as_detail().items())
+    return (
+        "Song cannot be deleted because player results reference it "
+        f"({counts}); archive it instead"
+    )
+
+
 def _admin_song_detail(
     song: Song,
     files_by_role: dict[str, SongFile],
@@ -83,10 +93,14 @@ def _admin_song_detail(
     ]
     return result
 
-@router.get("", response_model=AdminSongListResponse, summary="List all songs, including drafts")
+@router.get("", response_model=AdminSongListResponse, summary="List all songs, including drafts and archived")
 def list_all_songs(
     search: str | None = Query(default=None, min_length=1, max_length=100),
     published: bool | None = Query(default=None, description="Filter by publication status"),
+    archived: bool | None = Query(
+        default=None,
+        description="Filter by archive state: true = only archived, false = only active",
+    ),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -98,6 +112,10 @@ def list_all_songs(
         filters.append(or_(Song.title.ilike(term), Song.slug.ilike(term), Song.artist.ilike(term)))
     if published is not None:
         filters.append(Song.is_published.is_(published))
+    if archived is not None:
+        filters.append(
+            Song.archived_at.is_not(None) if archived else Song.archived_at.is_(None)
+        )
     total = db.scalar(select(func.count()).select_from(Song).where(*filters)) or 0
     items = db.scalars(select(Song).where(*filters).order_by(Song.updated_at.desc(), Song.id.asc()).limit(limit).offset(offset)).all()
     files_by_song = load_active_files_by_song(db, (song.id for song in items))
@@ -145,6 +163,11 @@ def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(g
     non_nullable_fields = {"slug", "title", "genre", "bpm", "difficulty", "duration_seconds"}
     if any(key in non_nullable_fields and value is None for key, value in changes.items()):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Required song fields cannot be null")
+    if changes.get("daily_weekday") is not None and song.archived_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Archived songs cannot be scheduled for the Daily Challenge",
+        )
     for key, value in changes.items():
         setattr(song, key, value)
     song.version += 1
@@ -166,6 +189,11 @@ def publish_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends
     song = db.get(Song, song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
+    if song.archived_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Restore the song from the archive before publishing it",
+        )
     song.is_published = True
     db.commit()
     db.refresh(song)
@@ -183,11 +211,50 @@ def unpublish_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depen
     files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
     return _admin_song_response(song, files_by_role)
 
-@router.delete("/{song_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a song")
-def delete_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> Response:
+@router.delete(
+    "/{song_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Archive a song (or delete it permanently when it was never played)",
+)
+def delete_song(
+    song_id: UUID,
+    permanent: bool = Query(
+        default=False,
+        description=(
+            "Physically delete the row. Allowed only when the song has no user "
+            "results; otherwise the request fails with 409 and nothing is removed."
+        ),
+    ),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> Response:
+    """Never destroys player data.
+
+    By default the song is *archived*: it keeps its ``id``, its results, its
+    personal bests and its daily history, while disappearing from the public
+    catalogue and from new game sessions. ``permanent=true`` is the explicit
+    escape hatch for a song that was never played (a mistyped draft); it is
+    refused as soon as any result references the song.
+    """
     song = db.get(Song, song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
+
+    if not permanent:
+        archive_song(db, song)
+        db.commit()
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    usage = song_usage(db, song.id)
+    if usage.has_user_results:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=_usage_conflict_detail(usage),
+        )
+
+    # Scheduling is the only non-result reference removed with the song; the
+    # RESTRICT foreign keys still refuse the delete if anything was missed.
+    archive_song(db, song)
     db.delete(song)
     try:
         db.commit()
@@ -195,9 +262,54 @@ def delete_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends(
         db.rollback()
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Song cannot be deleted because it is referenced by existing game sessions",
+            detail=(
+                "Song cannot be deleted because player results reference it; "
+                "archive it instead"
+            ),
         )
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post(
+    "/{song_id}/archive",
+    response_model=AdminSongResponse,
+    summary="Hide a song from the catalogue, keeping every result",
+)
+def archive_song_endpoint(
+    song_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> AdminSongResponse:
+    """Explicit archive route used by the web admin; ``DELETE`` does the same."""
+    song = db.get(Song, song_id)
+    if song is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
+    archive_song(db, song)
+    db.commit()
+    db.refresh(song)
+    files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
+    return _admin_song_response(song, files_by_role)
+
+
+@router.post(
+    "/{song_id}/restore",
+    response_model=AdminSongResponse,
+    summary="Bring an archived song back as a draft",
+)
+def restore_song_endpoint(
+    song_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> AdminSongResponse:
+    """Clears ``archived_at``. The song stays unpublished until it is published."""
+    song = db.get(Song, song_id)
+    if song is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
+    restore_song(db, song)
+    db.commit()
+    db.refresh(song)
+    files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
+    return _admin_song_response(song, files_by_role)
 
 
 @router.post(

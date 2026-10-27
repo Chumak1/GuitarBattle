@@ -94,6 +94,13 @@ def set_daily_slot(
     song = db.get(Song, payload.song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
+    if song.archived_at is not None:
+        # Archived songs are hidden from players: their assets are not served,
+        # so the official daily attempt could not be played.
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Archived songs cannot be scheduled for the Daily Challenge",
+        )
 
     slot = daily_slots.set_slot(db, weekday, song)
     try:

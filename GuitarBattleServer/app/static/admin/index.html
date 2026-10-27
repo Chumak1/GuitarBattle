@@ -194,6 +194,7 @@
                   <option value="">Все статусы</option>
                   <option value="true">Опубликованные</option>
                   <option value="false">Черновики</option>
+                  <option value="archived">Архив</option>
                 </select>
               </div>
               <div class="col-5 col-sm-auto col-lg-auto">
@@ -738,12 +739,12 @@
     <div class="modal-dialog modal-dialog-centered">
       <div class="modal-content">
         <div class="modal-header">
-          <h2 class="modal-title fs-5" id="deleteModalTitle">Удалить песню?</h2>
+          <h2 class="modal-title fs-5" id="deleteModalTitle">Скрыть песню из каталога?</h2>
           <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
         </div>
         <div class="modal-body">
-          <p class="mb-2">Песня <strong id="deleteSongTitle">—</strong> будет удалена вместе с записями о файлах.</p>
-          <p class="text-secondary small mb-0">Если песня используется в игровых сессиях, сервер откажет в удалении.</p>
+          <p class="mb-2">Песня <strong id="deleteSongTitle">—</strong> <span id="deleteModalText">исчезнет из каталога, а её идентификатор сохранится.</span></p>
+          <p class="text-secondary small mb-0" id="deleteModalHint">Все результаты игроков, личные рекорды, мастерство и Daily Challenge останутся на месте.</p>
         </div>
         <div class="modal-footer">
           <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>

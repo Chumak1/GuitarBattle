@@ -120,9 +120,17 @@ def test_unknown_achievement_icon_is_404(client):
 @pytest.mark.db
 def test_achievement_icons_migration_is_applied(db_session):
     revision = db_session.execute(sa.text("SELECT version_num FROM alembic_version")).scalar()
-    # Head revision moved on; this test only proves the schema was migrated and
-    # the icon backfill survived (0010 ran before 0011_asset_versions).
-    assert revision == "0011_asset_versions"
+    # The schema is at the migration head; the icon backfill of 0010 must have
+    # survived every later migration, so compare against Alembic's own head
+    # instead of a hard-coded revision string.
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
+
+    from tests.conftest import SERVER_ROOT
+
+    config = Config()
+    config.set_main_option("script_location", str(SERVER_ROOT / "migrations"))
+    assert revision == ScriptDirectory.from_config(config).get_current_head()
 
     rows = db_session.execute(
         sa.text("SELECT code, icon FROM achievements")

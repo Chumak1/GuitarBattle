@@ -79,6 +79,9 @@ class AdminSongResponse(BaseModel):
     is_published: bool
     description: str | None
     daily_weekday: int | None = None
+    #: ``NULL`` for an active song; a timestamp once the song is archived.
+    #: Archived songs stay editable/restorable and keep all their results.
+    archived_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
     readiness: SongReadinessResponse = Field(default_factory=SongReadinessResponse)

@@ -76,9 +76,14 @@ def list_songs(
     Songs holding a Daily Challenge slot (``daily_weekday IS NOT NULL``) are not
     part of the ordinary catalogue. They stay reachable by slug — see
     :func:`get_song` — because the client downloads their assets to play the
-    official daily attempt.
+    official daily attempt. Archived songs (``archived_at IS NOT NULL``) are
+    never served, but their results stay in the database.
     """
-    filters = [Song.is_published.is_(True), Song.daily_weekday.is_(None)]
+    filters = [
+        Song.is_published.is_(True),
+        Song.daily_weekday.is_(None),
+        Song.archived_at.is_(None),
+    ]
     if search:
         term = f"%{search.strip()}%"
         filters.append((Song.title.ilike(term)) | (Song.slug.ilike(term)) | (Song.artist.ilike(term)))
@@ -104,8 +109,15 @@ def list_songs(
 def get_song(slug: str, db: Session = Depends(get_db)) -> SongDetailResponse:
     # A daily-challenge song is hidden from the catalogue list but must stay
     # resolvable here: the client calls this endpoint (without a token) to get
-    # the asset URLs of the song of the day.
-    song = db.scalar(select(Song).where(Song.slug == slug, Song.is_published.is_(True)))
+    # the asset URLs of the song of the day. An archived song is not public at
+    # all — its results remain, but its assets are no longer distributed.
+    song = db.scalar(
+        select(Song).where(
+            Song.slug == slug,
+            Song.is_published.is_(True),
+            Song.archived_at.is_(None),
+        )
+    )
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
 
@@ -134,7 +146,13 @@ def download_published_song_file(
     file_id: UUID,
     db: Session = Depends(get_db),
 ) -> FileResponse:
-    song = db.scalar(select(Song).where(Song.slug == slug, Song.is_published.is_(True)))
+    song = db.scalar(
+        select(Song).where(
+            Song.slug == slug,
+            Song.is_published.is_(True),
+            Song.archived_at.is_(None),
+        )
+    )
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
 

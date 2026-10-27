@@ -310,12 +310,13 @@ def daily_song_for_weekday(db: Session, weekday: int) -> Song | None:
 
     The slot itself may point at a draft (an administrator prepares the week in
     advance), but players must not receive a song whose assets cannot be
-    downloaded yet. An unpublished slot therefore behaves like a free slot.
+    downloaded yet. An unpublished or archived slot therefore behaves like a
+    free slot.
     """
     from app.services.daily_slots import scheduled_song
 
     song = scheduled_song(db, weekday)
-    if song is None or not song.is_published:
+    if song is None or not song.is_published or song.archived_at is not None:
         return None
     return song
 
@@ -546,11 +547,17 @@ class ProgressionSnapshot:
 def load_personal_bests(
     db: Session, user_id: Any, *, limit: int | None = None, offset: int = 0
 ) -> list[tuple[SongBestScore, Song]]:
-    """Personal bests joined with published songs, newest first."""
+    """Personal bests joined with their songs, newest first.
+
+    Hidden songs are intentionally included: unpublishing or archiving a song
+    must never erase a player's mastery, personal-best list or achievement
+    progress derived from it. The row is stored per stable ``song_id``, so there
+    is exactly one entry per song either way.
+    """
     stmt = (
         select(SongBestScore, Song)
         .join(Song, Song.id == SongBestScore.song_id)
-        .where(SongBestScore.user_id == user_id, Song.is_published.is_(True))
+        .where(SongBestScore.user_id == user_id)
         .order_by(SongBestScore.updated_at.desc(), Song.title.asc())
         .offset(offset)
     )

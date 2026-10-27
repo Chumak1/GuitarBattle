@@ -137,7 +137,7 @@ All endpoints below except leaderboard require `Authorization: Bearer <access_to
   `{ "score_points": 1200, "accuracy_percent": 92.5, "max_combo": 14, "perfect_count": 8, "good_count": 4, "miss_count": 2 }`
   Optional progression fields: `completion_percent` (0–100, default 100), `avg_timing_error_ms` (0–2000), `notes_total`, `notes_played`. The response contains the score fields plus `xp_earned`, `xp_total`, `level`, `level_up`, `xp_to_next`, `xp_remaining`, `personal_best_updated`, `mastery` and `achievements_awarded`; a client that only reads the score fields keeps working.
 - `GET /games/history` - current player's recent sessions.
-- `GET /games/best-scores` - signed-in player's best score for every published song outside the Daily Challenge schedule, plus the personal rating total (`rating_points` = sum of those best scores). Used by the client to show a best score next to each catalogue row; daily songs never feed the ordinary rating.
+- `GET /games/best-scores` - signed-in player's best score for every song outside the Daily Challenge schedule, plus the personal rating total (`rating_points` = sum of those best scores). Used by the client to show a best score next to each catalogue row; daily songs never feed the ordinary rating. Only `mode: "normal"` sessions count, and songs that were later unpublished or archived stay in the list — hiding a song never removes earned points.
 
 Important: score submission is still client-reported. Progression clamps everything
 it can (`completion_percent` never exceeds `notes_played / notes_total`, XP is capped
@@ -180,7 +180,7 @@ Endpoints (all require Bearer):
 - `GET /profile/progression` — level, XP, mastered songs, unlocked/total
   achievements, last 10 personal bests, mastery per song, mastery per genre and
   the statistics block.
-- `GET /profile/personal-bests?limit=10&offset=0` — personal bests of published songs.
+- `GET /profile/personal-bests?limit=10&offset=0` — personal bests of every played song; hidden (unpublished or archived) songs stay in the list so their mastery and rating are never lost.
 - `GET /achievements` — the catalog with `progress`, `unlocked`, `awarded_at`
   and the icon pair `icon` (file name) / `icon_url`
   (`/media/achievements/<icon>`).
@@ -324,7 +324,9 @@ Every `/admin/songs` route requires a Bearer token for a user whose `is_admin` f
 - `PATCH /admin/songs/{song_id}`
 - `POST /admin/songs/{song_id}/publish`
 - `POST /admin/songs/{song_id}/unpublish`
-- `DELETE /admin/songs/{song_id}`
+- `POST /admin/songs/{song_id}/archive` — hide the song, keep every result
+- `POST /admin/songs/{song_id}/restore` — bring an archived song back as a draft
+- `DELETE /admin/songs/{song_id}` — archives by default; `?permanent=true` physically deletes only a song without user results
 - MIDI upload, download and analysis endpoints under `/admin/songs/{song_id}/files/...`
 - `POST /admin/songs/{song_id}/files/audio/{role}` — upload an instrumental MP3. Supported roles: `drums`, `bass`, `guitar`, `others`; maximum size is 100 MiB.
 - `POST /admin/songs/{song_id}/files/{file_id}/activate` — publish any stored version of a role again. The other versions of that role become an archive in the same transaction and `songs.version` is bumped.
@@ -336,6 +338,36 @@ docker compose exec db psql -U <POSTGRES_USER> -d <POSTGRES_DB> -c "UPDATE users
 ```
 
 Log in again after the role change, then use the new access token in Swagger's Authorize dialog.
+
+#### Song lifecycle: publish, archive, delete
+
+`songs.archived_at` separates *availability* from *result retention* (migration
+`0012_song_archive`):
+
+| State | Public `GET /songs` | `GET /songs/{slug}` / downloads | New sessions | Results, PB, mastery, rating |
+|---|---|---|---|---|
+| Draft (`is_published = false`) | no | 404 | 404 | kept |
+| Published | yes | yes | yes | kept |
+| Archived (`archived_at IS NOT NULL`) | no | 404 | 404 | **kept** |
+
+- `DELETE /admin/songs/{id}` **archives** the song: `archived_at` is set,
+  `is_published` becomes `false` and the Daily Challenge slot is cleared. The row
+  keeps its stable `id`, so `song_best_scores`, `game_sessions`/`scores`,
+  `xp_awards`, `user_achievements`, `daily_challenges`/`daily_results` and the
+  activity history stay attached and readable. The web admin shows the “В архиве”
+  badge, the archive filter and a restore action.
+- Archiving is idempotent and can be repeated; it never rewrites aggregates, so
+  rating points cannot be lost or double-counted.
+- `DELETE /admin/songs/{id}?permanent=true` physically removes the row, but only
+  when no `game_sessions`, `song_best_scores` or `daily_challenges` reference it
+  (`409` with the counts otherwise). The database enforces the same rule:
+  `song_best_scores.song_id`, `daily_slots.song_id`, `game_sessions.song_id` and
+  `daily_challenges.song_id` are `ON DELETE RESTRICT`; `game_launches.song_id`
+  stays `ON DELETE SET NULL` so launch statistics survive with `song_id = null`.
+  Deleting a never-played song still leaves its uploaded files on disk — remove
+  them manually if the song must disappear completely.
+- `POST /admin/songs/{id}/archive` and `POST /admin/songs/{id}/restore` are the
+  explicit routes the admin UI uses; `DELETE` delegates to archiving.
 
 To add a track, open `http://localhost:8000/docs`, authorize as admin, choose `POST /api/v1/admin/songs/{song_id}/files/audio/{role}`, enter the song UUID and one role (`drums`, `bass`, `guitar`, or `others`), then attach an `.mp3` file. The MIDI remains uploaded through `POST /api/v1/admin/songs/{song_id}/files/midi`. Upload aligned stems exported from the same timeline/start point so the four mixer channels remain synchronized.
 
@@ -428,4 +460,4 @@ Downgrade drops the index and the column; archived versions are not restored.
 
 ### Глобальный рейтинг игроков
 
-`GET /api/v1/leaderboard/global?limit=10&offset=0` — публичный рейтинг пользователей. Для каждой пары `user_id + song_id` учитывается только лучший результат; `rating_points` — сумма лучших результатов по опубликованным песням, у которых не задан `daily_weekday` (повторные и более слабые попытки рейтинг не увеличивают, официальные daily-попытки в обычный рейтинг не попадают); `games_played` — количество песен, давших вклад в рейтинг. На главном экране JUCE рейтинг открывается/обновляется кнопкой **REFRESH RATING**.
+`GET /api/v1/leaderboard/global?limit=10&offset=0` — публичный рейтинг пользователей. Для каждой пары `user_id + song_id` учитывается только лучший результат; `rating_points` — сумма лучших результатов по песням, у которых не задан `daily_weekday` (повторные и более слабые попытки рейтинг не увеличивают, официальные daily-попытки в обычный рейтинг не попадают — учитываются только сессии с `mode = "normal"`); `games_played` — количество песен, давших вклад в рейтинг. Скрытые песни (снятые с публикации или архивированные) продолжают учитываться: скрытие не отбирает уже заработанные очки, а поскольку на пару `user_id + song_id` всегда приходится ровно одна строка лучшего результата, скрытие/восстановление не может начислить очки дважды. На главном экране JUCE рейтинг открывается/обновляется кнопкой **REFRESH RATING**.

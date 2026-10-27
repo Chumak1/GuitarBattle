@@ -135,10 +135,26 @@ def test_duplicate_song_slug_is_rejected(db_client, admin_user, draft_song):
 
 
 def test_admin_can_delete_song(db_client, admin_user, draft_song):
+    # ``DELETE`` archives by default: the row is kept (stable id, results stay),
+    # it only leaves the catalogue.
     response = db_client.delete(
         f"{helpers.API}/admin/songs/{draft_song['id']}", headers=admin_user["headers"]
     )
     assert response.status_code == 204
+
+    archived = db_client.get(
+        f"{helpers.API}/admin/songs/{draft_song['id']}", headers=admin_user["headers"]
+    )
+    assert archived.status_code == 200, archived.text
+    assert archived.json()["archived_at"] is not None
+    assert archived.json()["is_published"] is False
+
+    # A song that was never played can still be removed permanently.
+    permanent = db_client.delete(
+        f"{helpers.API}/admin/songs/{draft_song['id']}?permanent=true",
+        headers=admin_user["headers"],
+    )
+    assert permanent.status_code == 204, permanent.text
 
     missing = db_client.get(
         f"{helpers.API}/admin/songs/{draft_song['id']}", headers=admin_user["headers"]

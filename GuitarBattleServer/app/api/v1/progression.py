@@ -240,12 +240,16 @@ def personal_bests(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> PersonalBestPage:
-    """Personal bests of published songs, newest first."""
+    """Personal bests of every song the player has finished, newest first.
+
+    Hidden songs stay in the list: their results, mastery and rating are never
+    thrown away when a song leaves the catalogue.
+    """
     total = int(
         db.scalar(
-            select(func.count(SongBestScore.id))
-            .join(Song, Song.id == SongBestScore.song_id)
-            .where(SongBestScore.user_id == user.id, Song.is_published.is_(True))
+            select(func.count(SongBestScore.id)).where(
+                SongBestScore.user_id == user.id
+            )
         )
         or 0
     )
@@ -288,8 +292,19 @@ def daily_today(
     db.commit()
 
     song = db.get(Song, challenge.song_id)
-    if song is None:  # pragma: no cover - guarded by the foreign key
-        raise HTTPException(status_code=404, detail="Daily song is not available")
+    if song is None or song.archived_at is not None:
+        # The song of a frozen day was archived afterwards. Its history (and the
+        # results already submitted) stay in the database, but the assets are no
+        # longer public, so today's card reports "no daily challenge".
+        return DailyTodayResponse(
+            date=today,
+            weekday=weekday,
+            song=None,
+            rules_version=progression.DAILY_RULES_VERSION,
+            official_attempt_used=False,
+            official_result=None,
+            leaderboard_top=[],
+        )
 
     board = progression.daily_leaderboard(db, today)
     official = next(

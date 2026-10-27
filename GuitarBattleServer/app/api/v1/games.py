@@ -27,12 +27,17 @@ router = APIRouter(tags=["games"])
 
 
 def _best_score_per_song_subquery():
-    """One row per (user, published song) holding that player's best attempt.
+    """One row per (user, catalogued song) holding that player's best attempt.
 
     The global rating must not grow with every replay: only the best score a
     player has on a song contributes to the rating. Aggregating on read keeps
     every historical attempt in the database untouched. Daily-challenge songs
     are excluded so an official daily result never feeds the ordinary rating.
+
+    Availability is deliberately *not* part of this rule: unpublishing or
+    archiving a song hides it from the catalogue but must never erase the points
+    a player already earned. Every song keeps exactly one contributing row, so
+    hiding/restoring cannot double-count either.
     """
     return (
         select(
@@ -43,7 +48,15 @@ def _best_score_per_song_subquery():
         )
         .join(Score, Score.session_id == GameSession.id)
         .join(Song, Song.id == GameSession.song_id)
-        .where(GameSession.status == "finished", Song.daily_weekday.is_(None))
+        .where(
+            GameSession.status == "finished",
+            # Only free play feeds the ordinary rating. Filtering on the session
+            # mode (not on the song's current daily slot) keeps an official daily
+            # attempt out of the rating even after the song is unscheduled or
+            # archived.
+            GameSession.mode == "normal",
+            Song.daily_weekday.is_(None),
+        )
         .group_by(GameSession.user_id, GameSession.song_id)
         .subquery()
     )
@@ -52,7 +65,13 @@ def _best_score_per_song_subquery():
 @router.post("/games/sessions", response_model=GameSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(payload: GameSessionCreate, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)) -> GameSession:
-    song = db.scalar(select(Song).where(Song.id == payload.song_id, Song.is_published.is_(True)))
+    song = db.scalar(
+        select(Song).where(
+            Song.id == payload.song_id,
+            Song.is_published.is_(True),
+            Song.archived_at.is_(None),
+        )
+    )
     if song is None:
         raise HTTPException(status_code=404, detail="Published song not found")
 
@@ -198,11 +217,13 @@ def game_history(limit: int = Query(default=20, ge=1, le=100), offset: int = Que
 @router.get("/games/best-scores", response_model=PlayerRatingResponse)
 def player_best_scores(db: Session = Depends(get_db),
                        user: User = Depends(get_current_user)) -> PlayerRatingResponse:
-    """The signed-in player's best result for every published song.
+    """The signed-in player's best result for every catalogued song.
 
     The client uses this to show a personal best next to each catalog entry.
     ``rating_points`` uses the same rule as the global leaderboard: one best
-    score per song, summed across songs.
+    score per song, summed across songs. Songs that were unpublished or archived
+    stay in the list (and in the total), because hiding a song must not erase
+    the points the player already earned.
     """
     best_attempt = (
         select(
@@ -212,7 +233,11 @@ def player_best_scores(db: Session = Depends(get_db),
             Score.max_combo.label("best_max_combo"),
         )
         .join(Score, Score.session_id == GameSession.id)
-        .where(GameSession.user_id == user.id, GameSession.status == "finished")
+        .where(
+            GameSession.user_id == user.id,
+            GameSession.status == "finished",
+            GameSession.mode == "normal",
+        )
         .distinct(GameSession.song_id)
         .order_by(
             GameSession.song_id,
@@ -229,7 +254,11 @@ def player_best_scores(db: Session = Depends(get_db),
             func.max(Score.created_at).label("last_played_at"),
         )
         .join(Score, Score.session_id == GameSession.id)
-        .where(GameSession.user_id == user.id, GameSession.status == "finished")
+        .where(
+            GameSession.user_id == user.id,
+            GameSession.status == "finished",
+            GameSession.mode == "normal",
+        )
         .group_by(GameSession.song_id)
         .subquery()
     )
@@ -248,7 +277,7 @@ def player_best_scores(db: Session = Depends(get_db),
         )
         .join(best_attempt, best_attempt.c.song_id == Song.id)
         .join(attempt_stats, attempt_stats.c.song_id == Song.id)
-        .where(Song.is_published.is_(True), Song.daily_weekday.is_(None))
+        .where(Song.daily_weekday.is_(None))
         .order_by(best_attempt.c.best_score.desc(), Song.title.asc())
     ).all()
 
@@ -286,6 +315,10 @@ def global_leaderboard(limit: int = Query(default=10, ge=1, le=100),
 
     Replays and weaker attempts never raise the rating. ``games_played`` counts
     the songs that contributed a best score, not the raw number of attempts.
+    Hidden songs (unpublished or archived) keep contributing: ``is_published``
+    and ``archived_at`` are intentionally not filters here, so taking a song out
+    of the catalogue can never silently remove anyone's points. Only the Daily
+    Challenge rule still excludes official daily songs.
     """
     best_scores = _best_score_per_song_subquery()
     achievements = (
@@ -320,7 +353,6 @@ def global_leaderboard(limit: int = Query(default=10, ge=1, le=100),
         .join(Song, Song.id == best_scores.c.song_id)
         .where(
             User.is_active.is_(True),
-            Song.is_published.is_(True),
             Song.daily_weekday.is_(None),
         )
         .group_by(
@@ -367,7 +399,8 @@ def leaderboard(song_slug: str | None = None, limit: int = Query(default=20, ge=
             .join(GameSession, GameSession.id == Score.session_id)
             .join(User, User.id == GameSession.user_id)
             .join(Song, Song.id == GameSession.song_id)
-            .where(GameSession.status == "finished", User.is_active.is_(True), Song.is_published.is_(True)))
+            .where(GameSession.status == "finished", User.is_active.is_(True), Song.is_published.is_(True),
+                   Song.archived_at.is_(None)))
     if song_slug:
         stmt = stmt.where(Song.slug == song_slug)
     rows = db.execute(stmt.order_by(Score.score_points.desc(), Score.accuracy_percent.desc(),

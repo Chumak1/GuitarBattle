@@ -40,7 +40,12 @@ class SongBestScore(Base):
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True, nullable=False
     )
     song_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("songs.id", ondelete="CASCADE"), index=True, nullable=False
+        UUID(as_uuid=True),
+        # A personal best is user data: deleting the song must never delete it.
+        # Hard deletion of a song is only possible while no result references it.
+        ForeignKey("songs.id", ondelete="RESTRICT"),
+        index=True,
+        nullable=False,
     )
     best_score: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     best_accuracy: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -153,7 +158,9 @@ class DailySlot(Base):
     weekday: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
     song_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True),
-        ForeignKey("songs.id", ondelete="CASCADE"),
+        # Scheduling data, but RESTRICT keeps a stray hard delete from silently
+        # rewriting the schedule; archiving a song clears its slot explicitly.
+        ForeignKey("songs.id", ondelete="RESTRICT"),
         nullable=False,
         index=True,
     )

@@ -352,6 +352,9 @@
   }
 
   function publishedBadge(song) {
+    if (song.archived_at) {
+      return '<span class="badge-soft badge-draft" title="Скрыта из каталога, результаты сохранены"><i class="bi bi-archive"></i>В архиве</span>';
+    }
     return song.is_published
       ? '<span class="badge-soft badge-published"><i class="bi bi-broadcast"></i>Опубликована</span>'
       : '<span class="badge-soft badge-draft"><i class="bi bi-pencil-square"></i>Черновик</span>';
@@ -389,9 +392,15 @@
 
   function renderStats() {
     el("statTotal").textContent = String(state.total);
-    el("statPublished").textContent = String(state.songs.filter((song) => song.is_published).length);
-    el("statDrafts").textContent = String(state.songs.filter((song) => !song.is_published).length);
-    el("statReady").textContent = String(state.songs.filter((song) => song.readiness?.publish_ready).length);
+    el("statPublished").textContent = String(
+      state.songs.filter((song) => song.is_published && !song.archived_at).length,
+    );
+    el("statDrafts").textContent = String(
+      state.songs.filter((song) => !song.is_published && !song.archived_at).length,
+    );
+    el("statReady").textContent = String(
+      state.songs.filter((song) => !song.archived_at && song.readiness?.publish_ready).length,
+    );
     el("statScope").textContent = state.total > state.songs.length ? "на странице" : "по текущей выборке";
   }
 
@@ -423,9 +432,19 @@
   function songRow(song) {
     const artist = song.artist ? escapeHtml(song.artist) : '<span class="text-secondary">Без исполнителя</span>';
     const initial = escapeHtml((song.title || "?").trim().charAt(0).toUpperCase() || "?");
+    const archived = Boolean(song.archived_at);
     const publishAction = song.is_published ? "unpublish" : "publish";
     const publishIcon = song.is_published ? "bi-eye-slash" : "bi-cloud-arrow-up";
     const publishTitle = song.is_published ? "Снять с публикации" : "Опубликовать";
+    // An archived song cannot be published or unpublished; it is restored first.
+    const publishButton = archived
+      ? `<button type="button" class="action-btn" data-action="restore" title="Вернуть из архива" aria-label="Вернуть из архива">
+              <i class="bi bi-arrow-counterclockwise"></i>
+            </button>`
+      : `<button type="button" class="action-btn" data-action="${publishAction}" title="${publishTitle}" aria-label="${publishTitle}">
+              <i class="bi ${publishIcon}"></i>
+            </button>`;
+    const deleteTitle = archived ? "Удалить навсегда" : "Скрыть из каталога";
     return `
       <tr data-id="${escapeHtml(song.id)}">
         <td>
@@ -448,14 +467,12 @@
             <button type="button" class="action-btn" data-action="files" title="Файлы" aria-label="Файлы">
               <i class="bi bi-folder2-open"></i>
             </button>
-            <button type="button" class="action-btn" data-action="${publishAction}" title="${publishTitle}" aria-label="${publishTitle}">
-              <i class="bi ${publishIcon}"></i>
-            </button>
+            ${publishButton}
             <button type="button" class="action-btn" data-action="edit" title="Редактировать" aria-label="Редактировать">
               <i class="bi bi-pencil"></i>
             </button>
-            <button type="button" class="action-btn action-danger" data-action="delete" title="Удалить" aria-label="Удалить">
-              <i class="bi bi-trash3"></i>
+            <button type="button" class="action-btn action-danger" data-action="delete" title="${deleteTitle}" aria-label="${deleteTitle}">
+              <i class="bi ${archived ? "bi-trash3" : "bi-archive"}"></i>
             </button>
           </div>
         </td>
@@ -485,7 +502,9 @@
       if (state.search) {
         params.set("search", state.search);
       }
-      if (state.published !== "") {
+      if (state.published === "archived") {
+        params.set("archived", "true");
+      } else if (state.published !== "") {
         params.set("published", state.published);
       }
       const data = await request(`/admin/songs?${params.toString()}`);
@@ -713,7 +732,15 @@
 
   function openDeleteModal(song) {
     state.pendingDelete = song;
+    const archived = Boolean(song.archived_at);
     el("deleteSongTitle").textContent = song.title;
+    el("deleteModalTitle").textContent = archived ? "Удалить песню навсегда?" : "Скрыть песню из каталога?";
+    el("deleteModalText").textContent = archived
+      ? "будет удалена из базы вместе с записями о файлах."
+      : "исчезнет из каталога и из новых игровых сессий, а её идентификатор сохранится.";
+    el("deleteModalHint").textContent = archived
+      ? "Удаление возможно только если у песни нет результатов игроков. Если результаты есть, сервер откажет — оставьте песню в архиве."
+      : "Все результаты игроков, личные рекорды, мастерство и Daily Challenge останутся на месте.";
     showModal("deleteModal");
   }
 
@@ -727,26 +754,41 @@
     if (!song) {
       return;
     }
+    const archived = Boolean(song.archived_at);
     setDeleteBusy(true);
     try {
-      await request(`/admin/songs/${song.id}`, { method: "DELETE" });
+      const query = archived ? "?permanent=true" : "";
+      await request(`/admin/songs/${song.id}${query}`, { method: "DELETE" });
       hideModal("deleteModal");
       state.pendingDelete = null;
       if (state.currentSong?.id === song.id) {
         hideModal("filesModal");
         state.currentSong = null;
       }
-      showToast("Песня удалена.");
+      showToast(archived ? "Песня удалена навсегда." : "Песня скрыта из каталога, результаты сохранены.");
       await loadSongs();
     } catch (error) {
       showToast(
         error.status === 409
-          ? "Песню нельзя удалить: она используется в игровых сессиях."
+          ? "Песню нельзя удалить: у неё есть результаты игроков. Оставьте её в архиве."
           : friendlyErrorMessage(error),
         "danger",
       );
     } finally {
       setDeleteBusy(false);
+    }
+  }
+
+  async function restoreSong(song) {
+    try {
+      await request(`/admin/songs/${song.id}/restore`, { method: "POST" });
+      showToast("Песня возвращена из архива как черновик.");
+      await loadSongs();
+      if (state.currentSong?.id === song.id) {
+        await refreshCurrentSong();
+      }
+    } catch (error) {
+      showToast(friendlyErrorMessage(error), "danger");
     }
   }
 
@@ -1020,7 +1062,7 @@
   function renderFiles(detail) {
     const byRole = versionsByRole(detail);
     el("filesTitle").textContent = detail.title;
-    el("filesMeta").textContent = `${detail.is_published ? "Опубликована" : "Черновик"} · ${detail.slug} · ${detail.bpm} BPM · ${formatDuration(detail.duration_seconds)}`;
+    el("filesMeta").textContent = `${detail.archived_at ? "В архиве" : detail.is_published ? "Опубликована" : "Черновик"} · ${detail.slug} · ${detail.bpm} BPM · ${formatDuration(detail.duration_seconds)}`;
     el("filesReadiness").innerHTML = renderReadiness(detail);
     el("filesBody").innerHTML = `
       <div class="file-list">
@@ -1310,6 +1352,8 @@
         openSongModal(song);
       } else if (action === "delete") {
         openDeleteModal(song);
+      } else if (action === "restore") {
+        restoreSong(song);
       } else if (action === "publish" || action === "unpublish") {
         togglePublish(song);
       }

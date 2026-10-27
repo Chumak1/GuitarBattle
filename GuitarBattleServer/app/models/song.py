@@ -33,6 +33,14 @@ class Song(Base):
     daily_weekday: Mapped[int | None] = mapped_column(
         SmallInteger, nullable=True, index=True
     )
+    #: ``NULL`` while the song is a working catalogue entry. Archiving is the
+    #: default outcome of ``DELETE /admin/songs/{id}``: the row keeps its stable
+    #: ``id`` so every user result (``song_best_scores``, ``game_sessions``,
+    #: ``daily_results`` through ``daily_challenges``) stays attached, but the
+    #: song leaves the public catalogue and cannot start new sessions.
+    archived_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
