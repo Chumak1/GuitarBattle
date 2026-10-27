@@ -628,6 +628,10 @@ private:
         int index,
         double sampleRate) const;
 
+    // Frequency window used by pitch analysis. During gameplay it follows the
+    // current target so high frets above 700 Hz are detected.
+    juce::Range<double> getPitchAnalysisRange() const;
+
     void advanceTarget();
 
     //==========================================================================

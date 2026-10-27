@@ -45,12 +45,20 @@ public:
                     if (sampleRate <= 0.0)
                         continue;
 
+                    // Frequency window for the analysis: during gameplay it
+                    // follows the current target, so high frets above 700 Hz
+                    // are detected without octave errors on low strings.
+                    const auto pitchRange =
+                        owner.getPitchAnalysisRange();
+
                     const double pitch =
                         owner.pitchDetector.detectPitch(
                             owner.pitchAnalysisBuffer
                             .getReadPointer(0),
                             owner.pitchAnalysisBuffer.getNumSamples(),
-                            sampleRate);
+                            sampleRate,
+                            pitchRange.getStart(),
+                            pitchRange.getEnd());
 
                     const double rms =
                         owner.pitchDetector.detectRms(
@@ -869,12 +877,17 @@ public:
                     if (sampleRate <= 0.0)
                         continue;
 
+                    const auto displayPitchRange =
+                        owner.getPitchAnalysisRange();
+
                     const double pitch =
                         owner.pitchDetector.detectPitch(
                             owner.pitchAnalysisBuffer2
                             .getReadPointer(0),
                             owner.pitchAnalysisBuffer2.getNumSamples(),
-                            sampleRate);
+                            sampleRate,
+                            displayPitchRange.getStart(),
+                            displayPitchRange.getEnd());
 
                     const double rms =
                         owner.pitchDetector.detectRms(

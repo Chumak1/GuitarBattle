@@ -1018,6 +1018,37 @@ void MainComponent::setTargetFromMidiIndex(
         juce::dontSendNotification);
 }
 
+juce::Range<double> MainComponent::getPitchAnalysisRange() const
+{
+    double minFrequency = 60.0;
+    double maxFrequency = 700.0;
+
+    if (gameState.load(std::memory_order_relaxed) == GameState::Playing)
+    {
+        const int targetIndex = gameSession.getTargetNoteIndex();
+        const auto& midiNotes = gameSession.getMidiNotes();
+
+        if (targetIndex >= 0
+            && targetIndex < static_cast<int>(midiNotes.size()))
+        {
+            const double targetFrequency =
+                juce::MidiMessage::getMidiNoteInHertz(
+                    midiNotes[static_cast<size_t>(targetIndex)].midiNote);
+
+            // High frets on the first two strings go above the default 700 Hz
+            // ceiling. A window around the target keeps them detectable while
+            // avoiding octave errors on the low strings.
+            if (targetFrequency > 600.0)
+            {
+                minFrequency = juce::jmax(60.0, targetFrequency * 0.75);
+                maxFrequency = juce::jmin(1500.0, targetFrequency * 1.35);
+            }
+        }
+    }
+
+    return { minFrequency, maxFrequency };
+}
+
 uint64_t MainComponent::getTargetSample(
     int index,
     double sampleRate) const

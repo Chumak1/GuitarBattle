@@ -13,10 +13,15 @@ public:
         const float* samples,
         int numSamples) const;
 
+    // Optional frequency window. Gameplay narrows it around the current
+    // target so notes above the 12th fret (which exceed the old 700 Hz cap)
+    // are detected without risking octave errors on low strings.
     double detectPitch(
         const float* samples,
         int numSamples,
-        double sampleRate) const;
+        double sampleRate,
+        double minFrequency = 60.0,
+        double maxFrequency = 700.0) const;
 
     int frequencyToMidi(
         double frequency) const;

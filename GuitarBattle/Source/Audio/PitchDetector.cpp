@@ -27,7 +27,9 @@ double PitchDetector::detectRms(
 double PitchDetector::detectPitch(
     const float* samples,
     int numSamples,
-    double sampleRate) const
+    double sampleRate,
+    double minFrequency,
+    double maxFrequency) const
 {
     if (samples == nullptr
         || numSamples <= 0
@@ -108,8 +110,14 @@ double PitchDetector::detectPitch(
 
     // Include notes above C5 (MIDI 72 is about 523.25 Hz).
     // Keep this upper limit consistent with the final validation below.
-    constexpr double maxFrequency = 700.0;
-    constexpr double minFrequency = 60.0;
+    // The range is a parameter: gameplay passes a window around the target,
+    // which lets high frets (well above 700 Hz) be detected.
+
+    if (minFrequency <= 0.0
+        || maxFrequency <= minFrequency)
+    {
+        return 0.0;
+    }
 
     const int minLag =
         static_cast<int>(
