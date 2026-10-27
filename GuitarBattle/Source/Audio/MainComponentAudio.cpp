@@ -878,8 +878,7 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
     track.audio.setSize(channels, samplesToRead);
     track.audio.clear();
 
-    if (samplesToRead <= 0
-        || !reader->read(&track.audio, 0, samplesToRead, sourceStartOffset, true, true))
+    if (samplesToRead <= 0)
     {
         track.audio.setSize(0, 0);
         appendAudioDebugLog("STEM[" + juce::String(index) + "] READ FAILED read="
@@ -888,10 +887,48 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
         DBG("Failed reading external audio track: " + file.getFullPathName());
         return false;
     }
+
+    // JUCE estimates MP3 length from the compressed file size. Without a
+    // gapless header that estimate can overshoot the real number of decoded
+    // samples, and a single read of the whole file then fails at the tail.
+    // Read in blocks and keep everything the decoder actually produced.
+    int writtenSamples = 0;
+    constexpr int chunkSize = 4096;
+
+    while (writtenSamples < samplesToRead)
+    {
+        const int toRead = juce::jmin(chunkSize, samplesToRead - writtenSamples);
+
+        if (! reader->read(&track.audio, writtenSamples, toRead,
+                           sourceStartOffset + writtenSamples, true, true))
+            break;
+
+        writtenSamples += toRead;
+    }
+
+    if (writtenSamples <= 0)
+    {
+        track.audio.setSize(0, 0);
+        appendAudioDebugLog("STEM[" + juce::String(index) + "] READ FAILED read="
+                            + juce::String(samplesToRead)
+                            + " offset=" + juce::String(sourceStartOffset));
+        DBG("Failed reading external audio track: " + file.getFullPathName());
+        return false;
+    }
+
+    if (writtenSamples < samplesToRead)
+    {
+        track.audio.setSize(channels, writtenSamples, true, false, false);
+
+        appendAudioDebugLog("STEM[" + juce::String(index) + "] PARTIAL samples="
+                            + juce::String(writtenSamples) + "/"
+                            + juce::String(samplesToRead));
+    }
+
     track.sourceSampleRate = reader->sampleRate;
     track.loaded.store(true, std::memory_order_release);
     appendAudioDebugLog("STEM[" + juce::String(index) + "] OK samples="
-                        + juce::String(samplesToRead));
+                        + juce::String(writtenSamples));
     DBG("Loaded external audio track: " + file.getFullPathName()
         + " (" + juce::String(samplesToRead) + " samples, "
         + juce::String(reader->sampleRate) + " Hz, "
