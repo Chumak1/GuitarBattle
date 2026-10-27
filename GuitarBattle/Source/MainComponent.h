@@ -21,6 +21,7 @@
 #include "Network/ClientAssets.h"
 #include "UI/GameStyle.h"
 #include "UI/GuitarInputMonitor.h"
+#include "Network/SessionStore.h"
 
 class MainComponent;
 class PitchDetectionThread;
@@ -316,7 +317,8 @@ private:
     void finishOnlineSignIn(bool createAccount,
                             const juce::String& fallbackName,
                             const juce::String& accessToken,
-                            int requestId);
+                            int requestId,
+                            bool silent = false);
     // Clears the local session and returns to the sign-in screen. Used by the
     // LOG OUT button and by the account window.
     void logoutCurrentUser();
@@ -602,6 +604,21 @@ private:
     void updateInputMonitor();
 
     //==========================================================================
+    // Persistent sign-in
+    //
+    // The access token stays in memory. The refresh token lives in the Windows
+    // Credential Manager and is used once at startup to restore the session.
+    juce::String onlineRefreshToken;
+    bool sessionRestoreInFlight = false;
+    bool sessionOfflineRetryAvailable = false;
+    juce::TextButton retryConnectionButton{ "RETRY CONNECTION" };
+
+    void tryRestoreSavedSession();
+    void storeRefreshToken(const juce::String& token);
+    void clearSavedSession();
+    void revokeSavedSession();
+
+    //==========================================================================
     // Preview song and background music
     //
     // One decoded track per role. The audio callback mixes at most one of them
@@ -795,6 +812,30 @@ private:
     juce::Range<double> getPitchAnalysisRange() const;
 
     void advanceTarget();
+
+    //==========================================================================
+    // Practice mode
+    //
+    // Training run: no score, no server session, no results. The transport
+    // freezes at every target note until the player performs it correctly.
+
+    bool practiceMode = false;
+    std::atomic<bool> practiceActive{ false };
+    std::atomic<bool> practiceHoldActive{ false };
+    std::atomic<uint64_t> practiceHoldStartSample{ 0 };
+    std::atomic<double> practiceLastPitch{ 0.0 };
+    uint64_t practiceLastOnsetSample = 0;
+    bool practiceCompleted = false;
+
+    juce::TextButton practiceModeButton{ "PRACTICE MODE" };
+
+    void setPracticeMode(bool enabled);
+    void beginPracticeRun();
+    void updatePracticeMode();
+    void freezePracticeTransport();
+    void releasePracticeTransport();
+    void evaluatePracticeNote();
+    void finishPracticeSession();
 
     //==========================================================================
     // Game helpers

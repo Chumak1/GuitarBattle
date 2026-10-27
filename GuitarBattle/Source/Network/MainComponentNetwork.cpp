@@ -21,12 +21,21 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
             : "Enter your username/email and password.",
         juce::AlertWindow::NoIcon);
 
+    juce::Component::SafePointer<juce::ToggleButton> safeConsent;
+
     if (createAccount)
     {
         prompt->addTextEditor("username", "", "Username");
         prompt->addTextEditor("email", "", "Email");
         prompt->addTextEditor("display_name", "", "Display name (optional)");
         prompt->addTextEditor("password", "", "Password (10+ characters)", true);
+
+        // Consent is required only for a new account, never for a sign-in.
+        auto* consent = new juce::ToggleButton("I agree to the Privacy Policy");
+        consent->setSize(420, 24);
+        prompt->addCustomComponent(consent);
+        safeConsent = consent;
+
         prompt->addButton("CREATE", 1);
     }
     else
@@ -128,6 +137,17 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
 
                 component->onlineAccessToken = accessToken;
 
+                // The refresh token is the only long-lived secret; it goes
+                // straight into the Windows Credential Manager.
+                component->storeRefreshToken(
+                    response.json.getProperty("refresh_token", juce::var()).toString());
+
+                if (auto* settings = component->appProperties.getUserSettings())
+                {
+                    settings->setValue("SavedUsername", usernameOrEmail);
+                    settings->saveIfNeeded();
+                }
+
                 // The dialog closes only after a successful sign-in.
                 if (auto* dialog = safePrompt.getComponent())
                     dialog->exitModalState(1);
@@ -139,7 +159,7 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
 
     if (auto* submit = prompt->getButton(0))
     {
-        submit->onClick = [safeThis, safePrompt, createNewAccount, signIn, showError, setSubmitEnabled]()
+        submit->onClick = [safeThis, safePrompt, createNewAccount, signIn, showError, setSubmitEnabled, safeConsent]()
         {
             auto* self = safeThis.getComponent();
             auto* dialog = safePrompt.getComponent();
@@ -168,6 +188,14 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
                 if (! email.containsChar('@') || ! email.containsChar('.'))
                 {
                     showError("Registration failed", "Enter a valid email address.");
+                    return;
+                }
+
+                if (safeConsent.getComponent() == nullptr
+                    || ! safeConsent->getToggleState())
+                {
+                    showError("Registration failed",
+                              "Please accept the Privacy Policy to create an account.");
                     return;
                 }
             }
@@ -199,6 +227,7 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
             registration->setProperty("username", usernameOrEmail);
             registration->setProperty("email", email);
             registration->setProperty("password", password);
+            registration->setProperty("privacy_consent", true);
             if (displayName.isNotEmpty())
                 registration->setProperty("display_name", displayName);
 
@@ -390,12 +419,13 @@ void MainComponent::recoverOnlineAccountPassword()
 void MainComponent::finishOnlineSignIn(bool createAccount,
                                        const juce::String& fallbackName,
                                        const juce::String& accessToken,
-                                       int requestId)
+                                       int requestId,
+                                       bool silent)
 {
     juce::Component::SafePointer<MainComponent> safeThis(this);
 
     apiClient.getJson("/auth/me", accessToken, 4000,
-        [safeThis, requestId, createAccount, fallbackName](ApiClient::Response response)
+        [safeThis, requestId, createAccount, fallbackName, silent](ApiClient::Response response)
         {
             auto* self = safeThis.getComponent();
             if (self == nullptr || requestId != self->authRequestId)
@@ -425,21 +455,25 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
                 ? "Account created and signed in as " + display + ". Online scores are enabled."
                 : "Signed in as " + display + ". Online scores are enabled.";
             self->accountStatusLabel.setText(successMessage, juce::dontSendNotification);
-            // Defer the confirmation until the credentials dialog has fully closed.
-            // Opening a second async dialog inside the first dialog's modal callback
-            // can leave the confirmation hidden behind the active modal window.
-            const auto title = createAccount ? juce::String("Registration successful")
-                                             : juce::String("Sign-in successful");
-            juce::MessageManager::callAsync([safeThis, title, successMessage]()
+
+            if (! silent)
             {
-                if (auto* component = safeThis.getComponent())
-                    juce::AlertWindow::showMessageBoxAsync(
-                        juce::MessageBoxIconType::NoIcon,
-                        title,
-                        successMessage,
-                        "OK",
-                        component);
-            });
+                // Defer the confirmation until the credentials dialog has fully closed.
+                // Opening a second async dialog inside the first dialog's modal callback
+                // can leave the confirmation hidden behind the active modal window.
+                const auto title = createAccount ? juce::String("Registration successful")
+                                                 : juce::String("Sign-in successful");
+                juce::MessageManager::callAsync([safeThis, title, successMessage]()
+                {
+                    if (auto* component = safeThis.getComponent())
+                        juce::AlertWindow::showMessageBoxAsync(
+                            juce::MessageBoxIconType::NoIcon,
+                            title,
+                            successMessage,
+                            "OK",
+                            component);
+                });
+            }
             self->refreshGlobalLeaderboard();
             // Personal best scores require the freshly obtained token.
             self->refreshOnlineBestScores();
@@ -451,10 +485,137 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
         });
 }
 
+void MainComponent::storeRefreshToken(const juce::String& token)
+{
+    onlineRefreshToken = token;
+
+    if (token.isNotEmpty())
+        SessionStore::saveRefreshToken(token);
+}
+
+void MainComponent::clearSavedSession()
+{
+    onlineRefreshToken.clear();
+    SessionStore::clearRefreshToken();
+}
+
+void MainComponent::revokeSavedSession()
+{
+    const auto token = onlineRefreshToken.isNotEmpty()
+        ? onlineRefreshToken
+        : SessionStore::loadRefreshToken();
+
+    if (token.isEmpty())
+        return;
+
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty("refresh_token", token);
+
+    // Fire-and-forget: the user is already signed out locally, and a failed
+    // revoke must not keep the interface waiting.
+    apiClient.postJson("/auth/logout", juce::var(body.get()), {}, 4000,
+                       [](ApiClient::Response) {});
+}
+
+void MainComponent::tryRestoreSavedSession()
+{
+    if (sessionRestoreInFlight)
+        return;
+
+    const auto savedToken = SessionStore::loadRefreshToken();
+
+    if (savedToken.isEmpty())
+    {
+        sessionOfflineRetryAvailable = false;
+        return;
+    }
+
+    sessionRestoreInFlight = true;
+    showAuthScreen = true;
+    accountStatusLabel.setText("Restoring your session...", juce::dontSendNotification);
+    sessionOfflineRetryAvailable = false;
+    resized();
+    repaint();
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    const int requestId = ++authRequestId;
+
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty("refresh_token", savedToken);
+
+    apiClient.postJson("/auth/refresh", juce::var(body.get()), {}, 6000,
+        [safeThis, requestId, savedToken](ApiClient::Response response)
+        {
+            auto* self = safeThis.getComponent();
+
+            if (self == nullptr)
+                return;
+
+            self->sessionRestoreInFlight = false;
+
+            if (requestId != self->authRequestId)
+                return;
+
+            const auto accessToken =
+                response.json.getProperty("access_token", juce::var()).toString();
+
+            if (accessToken.isNotEmpty())
+            {
+                const auto rotated =
+                    response.json.getProperty("refresh_token", juce::var()).toString();
+
+                self->storeRefreshToken(rotated.isNotEmpty() ? rotated : savedToken);
+                self->onlineAccessToken = accessToken;
+
+                juce::String hint = "player";
+
+                if (auto* settings = self->appProperties.getUserSettings())
+                    hint = settings->getValue("SavedUsername", "player");
+
+                self->finishOnlineSignIn(false, hint, accessToken, requestId, true);
+                return;
+            }
+
+            const bool rejected = response.statusCode == 400
+                || response.statusCode == 401
+                || response.statusCode == 403
+                || response.statusCode == 404
+                || response.statusCode == 422;
+
+            if (rejected)
+            {
+                // The server proved the session is gone: drop the secret and
+                // show the normal sign-in screen.
+                self->clearSavedSession();
+                self->accountStatusLabel.setText(
+                    "Session expired. Sign in again.",
+                    juce::dontSendNotification);
+                self->sessionOfflineRetryAvailable = false;
+            }
+            else
+            {
+                // Transport error or server outage: keep the session and let
+                // the player retry instead of forcing a new password.
+                self->accountStatusLabel.setText(
+                    "Cannot reach the server. Your saved session is kept.",
+                    juce::dontSendNotification);
+                self->sessionOfflineRetryAvailable = true;
+            }
+
+            self->resized();
+            self->repaint();
+        });
+}
+
 void MainComponent::logoutCurrentUser()
 {
     // Invalidate a sign-in chain that may still be waiting for the server.
     ++authRequestId;
+
+    // Revoke the refresh session on the server (best effort) and forget the
+    // local secret. The access token is dropped regardless of the response.
+    revokeSavedSession();
+    clearSavedSession();
     // Server-reported best scores belong to the signed-in account; the
     // locally saved values stay available after signing out.
     ++bestScoresRequestId;

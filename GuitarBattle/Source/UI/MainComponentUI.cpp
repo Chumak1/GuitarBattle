@@ -632,7 +632,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         drawBrand(32.0f, 26.0f);
 
         const float cardWidth = juce::jmin(560.0f, width - 48.0f);
-        const float cardHeight = 344.0f;
+        const float cardHeight = 364.0f;
         const float cardX = (width - cardWidth) * 0.5f;
         const float cardY = juce::jmax(150.0f, (height - cardHeight) * 0.5f);
         const juce::Rectangle<float> card(cardX, cardY, cardWidth, cardHeight);
@@ -1519,6 +1519,17 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     GameUi::drawCard(g, statsCard, 16.0f);
     GameUi::drawCard(g, targetCard, 16.0f);
 
+    // Practice runs are not scored: say it where the score normally lives.
+    if (practiceActive.load(std::memory_order_relaxed))
+    {
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(statsCard.getRight() - 250.0f,
+                                                hudY + 12.0f, 238.0f, 26.0f),
+                         "PRACTICE - NO SCORE",
+                         UiColors::accent,
+                         true);
+    }
+
     GameUi::drawEyebrow(g, "COMBO",
                         juce::Rectangle<float>(comboCard.getX() + 14.0f,
                                                comboCard.getY() + 14.0f,
@@ -1899,6 +1910,8 @@ void MainComponent::resized()
 
     songTitleLabel.setVisible(false);
     previewButton.setVisible(false);
+    practiceModeButton.setVisible(false);
+    retryConnectionButton.setVisible(sessionOfflineRetryAvailable && authScreen);
     loginScreenTitleLabel.setVisible(authScreen);
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
     // Signing out is available only from the profile window; the main screen
@@ -2009,13 +2022,14 @@ void MainComponent::resized()
     if (authScreen)
     {
         const int cardWidth = juce::jmin(560, width - 48);
-        const int cardHeight = 344;
+        const int cardHeight = 364;
         const int cardX = (width - cardWidth) / 2;
         const int cardY = juce::jmax(150, (height - cardHeight) / 2);
 
         loginScreenTitleLabel.setBounds(cardX + 40, cardY + 112, cardWidth - 80, 52);
         accountStatusLabel.setJustificationType(juce::Justification::centred);
-        accountStatusLabel.setBounds(cardX + 40, cardY + 292, cardWidth - 80, 30);
+        accountStatusLabel.setBounds(cardX + 40, cardY + 322, cardWidth - 80, 28);
+        retryConnectionButton.setBounds(cardX + 40, cardY + 288, cardWidth - 80, 30);
 
         const int buttonWidth = (cardWidth - 92) / 2;
         accountLoginButton.setBounds(cardX + 40, cardY + 194, buttonWidth, 44);
@@ -2112,6 +2126,10 @@ void MainComponent::resized()
         // Preview control inside the selected-song card, right of the header.
         previewButton.setVisible(songSelect);
         previewButton.setBounds(48 + leftW - 24 - 170, contentY + 56, 170, 34);
+
+        // Mode switch above START SONG: the player always sees what starts.
+        practiceModeButton.setVisible(songSelect);
+        practiceModeButton.setBounds(48 + leftW - 24 - 170, contentY + 96, 170, 34);
     }
 
     //==========================================================================
@@ -4655,6 +4673,16 @@ void MainComponent::initialiseUi()
     previewButton.onClick = [this] { togglePreviewPlayback(); };
     addAndMakeVisible(previewButton);
 
+    // Training run: no score, no rating, no server session.
+    practiceModeButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    practiceModeButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    practiceModeButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
+    practiceModeButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    practiceModeButton.setTooltip("Practice the song note by note. No score, no rating, no XP.");
+    practiceModeButton.onClick = [this] { setPracticeMode(! practiceMode); };
+    addAndMakeVisible(practiceModeButton);
+    setPracticeMode(false);
+
     // Compact input selector shown on the tuner screen. The guitar may be
     // connected to any interface input, so the player can switch the capture
     // channel without entering a song and opening the full audio settings.
@@ -5421,6 +5449,15 @@ void MainComponent::initialiseUi()
     accountSettingsButton.setTooltip("Open account settings");
     accountSettingsButton.onClick = [this] { openAccountWindow(); };
     addAndMakeVisible(accountSettingsButton);
+
+    retryConnectionButton.setColour(juce::TextButton::buttonColourId,
+                                    UiColors::surface2);
+    retryConnectionButton.setColour(juce::TextButton::textColourOffId,
+                                    UiColors::text);
+    retryConnectionButton.setColour(juce::TextButton::buttonOnColourId,
+                                    UiColors::accent);
+    retryConnectionButton.onClick = [this] { tryRestoreSavedSession(); };
+    addAndMakeVisible(retryConnectionButton);
 
     accountLoginButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);
     accountLoginButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);

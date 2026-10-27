@@ -889,6 +889,9 @@
     <ClCompile Include="..\..\Source\Gameplay\MainComponentGameplay.cpp">
       <Filter>GuitarBattle\Source\Gameplay</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\Gameplay\MainComponentPractice.cpp">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\UI\GameStyle.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
@@ -924,6 +927,9 @@
     </ClCompile>
     <ClCompile Include="..\..\Source\Audio\MusicTrackPlayer.cpp">
       <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Network\SessionStore.cpp">
+      <Filter>GuitarBattle\Source\Network</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Network\MainComponentNetwork.cpp">
       <Filter>GuitarBattle\Source\Network</Filter>
@@ -4238,6 +4244,9 @@
     </ClInclude>
     <ClInclude Include="..\..\Source\Audio\MusicTrackPlayer.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Network\SessionStore.h">
+      <Filter>GuitarBattle\Source\Network</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Network\ApiClient.h">
       <Filter>GuitarBattle\Source\Network</Filter>

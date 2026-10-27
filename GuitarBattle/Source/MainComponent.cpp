@@ -87,6 +87,9 @@ MainComponent::MainComponent()
     // Optional global track: absence is a normal state and never blocks startup.
     fetchBackgroundMusic();
 
+    // Restore a saved sign-in (if any) before the player types a password again.
+    tryRestoreSavedSession();
+
     // Added last so pause/count-in cards paint above the HUD and mixer. The
     // component is transparent and does not intercept mouse input.
     addAndMakeVisible(modalOverlayComponent);
@@ -115,6 +118,10 @@ void MainComponent::timerCallback()
     // Single place that decides whether preview or background music may play.
     // Idempotent, so screen changes never restart the track.
     updateMusicState();
+
+    // Practice mode: hold the transport at the target note and evaluate the
+    // player's attempts. Message thread only.
+    updatePracticeMode();
 
     // Activity heartbeat: every 30 seconds at 30 Hz while signed in. The
     // counter must advance regardless of game state, so it stays above the

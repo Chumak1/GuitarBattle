@@ -26,6 +26,8 @@
               file="Source/Gameplay/GameplayEngine.h"/>
         <FILE id="McGame1" name="MainComponentGameplay.cpp" compile="1" resource="0"
               file="Source/Gameplay/MainComponentGameplay.cpp"/>
+        <FILE id="Prac01" name="MainComponentPractice.cpp" compile="1" resource="0"
+              file="Source/Gameplay/MainComponentPractice.cpp"/>
       </GROUP>
       <GROUP id="{85A8759B-236A-5392-9897-45659AFD7DD1}" name="UI">
         <FILE id="t9kAyH" name="GameStyle.cpp" compile="1" resource="0" file="Source/UI/GameStyle.cpp"/>
@@ -74,6 +76,10 @@
               file="Source/Audio/MusicTrackPlayer.h"/>
       </GROUP>
       <GROUP id="{4B2A6C1E-7F3D-4A9B-8C2E-1D5F6A7B8C9D}" name="Network">
+        <FILE id="SesSt1" name="SessionStore.cpp" compile="1" resource="0"
+              file="Source/Network/SessionStore.cpp"/>
+        <FILE id="SesSt2" name="SessionStore.h" compile="0" resource="0"
+              file="Source/Network/SessionStore.h"/>
         <FILE id="McNet1" name="MainComponentNetwork.cpp" compile="1" resource="0"
               file="Source/Network/MainComponentNetwork.cpp"/>
         <FILE id="McAst1" name="MainComponentAssets.cpp" compile="1" resource="0"

@@ -153,6 +153,7 @@
     <ClCompile Include="..\..\Source\Gameplay\ScoringSystem.cpp"/>
     <ClCompile Include="..\..\Source\Gameplay\GameplayEngine.cpp"/>
     <ClCompile Include="..\..\Source\Gameplay\MainComponentGameplay.cpp"/>
+    <ClCompile Include="..\..\Source\Gameplay\MainComponentPractice.cpp"/>
     <ClCompile Include="..\..\Source\UI\GameStyle.cpp"/>
     <ClCompile Include="..\..\Source\UI\SelectComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\TunerComponent.cpp"/>
@@ -165,6 +166,7 @@
     <ClCompile Include="..\..\Source\Audio\MainComponentAudio.cpp"/>
     <ClCompile Include="..\..\Source\Audio\MainComponentMusic.cpp"/>
     <ClCompile Include="..\..\Source\Audio\MusicTrackPlayer.cpp"/>
+    <ClCompile Include="..\..\Source\Network\SessionStore.cpp"/>
     <ClCompile Include="..\..\Source\Network\MainComponentNetwork.cpp"/>
     <ClCompile Include="..\..\Source\Network\MainComponentAssets.cpp"/>
     <ClCompile Include="..\..\Source\Main.cpp"/>
@@ -3234,6 +3236,7 @@
     <ClInclude Include="..\..\Source\Audio\AudioEngine.h"/>
     <ClInclude Include="..\..\Source\Audio\PitchDetector.h"/>
     <ClInclude Include="..\..\Source\Audio\MusicTrackPlayer.h"/>
+    <ClInclude Include="..\..\Source\Network\SessionStore.h"/>
     <ClInclude Include="..\..\Source\Network\ApiClient.h"/>
     <ClInclude Include="..\..\Source\Network\ClientAssets.h"/>
     <ClInclude Include="..\..\Source\MainComponent.h"/>
