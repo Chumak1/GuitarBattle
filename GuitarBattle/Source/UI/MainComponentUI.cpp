@@ -1785,7 +1785,9 @@ void MainComponent::resized()
     songTitleLabel.setVisible(songSelect);
     loginScreenTitleLabel.setVisible(authScreen);
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
-    logoutButton.setVisible(songSelect && currentUsername.isNotEmpty());
+    // Signing out is available only from the profile window; the main screen
+    // shows EXIT in this row instead.
+    logoutButton.setVisible(false);
     accountSettingsButton.setVisible(songSelect && currentUsername.isNotEmpty());
     quitButton.setVisible(songSelect);
     gameSongTitleLabel.setVisible(showGame || readyScreen);
@@ -1907,17 +1909,16 @@ void MainComponent::resized()
     {
         accountStatusLabel.setJustificationType(juce::Justification::centredLeft);
 
-        // Top-right account row: plain username label, then SETTINGS, AUDIO
-        // SETTINGS and LOG OUT. Keeping the buttons beside the label (instead
-        // of on top of it) avoids the old transparent ACCOUNT button covering
-        // the name.
+        // Top-right account row: plain username label, then SETTINGS and
+        // AUDIO SETTINGS, with EXIT in the slot that used to hold LOG OUT.
+        // Signing out now lives only inside the profile window.
         const int topRight = width - 44;
         const int accountButtonW = 128;
         const int accountButtonH = 32;
         const int topGap = 8;
         const int usernameW = 150;
-        const int logoutX = topRight - accountButtonW;
-        const int audioX = logoutX - topGap - accountButtonW;
+        const int exitX = topRight - accountButtonW;
+        const int audioX = exitX - topGap - accountButtonW;
         const int settingsX = audioX - topGap - accountButtonW;
         const int usernameX = settingsX - 12 - usernameW;
 
@@ -1926,8 +1927,7 @@ void MainComponent::resized()
         accountSettingsButton.setBounds(settingsX, 42, accountButtonW, accountButtonH);
         audioSettingsButton.setButtonText("AUDIO SETTINGS");
         audioSettingsButton.setBounds(audioX, 42, accountButtonW, accountButtonH);
-        logoutButton.setBounds(logoutX, 42, accountButtonW, accountButtonH);
-        quitButton.setBounds(48, 42, 96, 32);
+        quitButton.setBounds(exitX, 42, accountButtonW, accountButtonH);
         songTitleLabel.setBounds(48, 140, width - 96, 44);
 
         const int contentY = 228;
@@ -4670,7 +4670,7 @@ void MainComponent::initialiseUi()
     // shutdown path, so the audio session and telemetry are closed cleanly.
     quitButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
     quitButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
-    quitButton.setColour(juce::TextButton::textColourOffId, UiColors::muted);
+    quitButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
     quitButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
     quitButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     quitButton.setTooltip("Close GuitarBattle");
