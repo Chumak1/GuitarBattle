@@ -117,14 +117,15 @@ double Metronome::getBeatFromSamples(
 //==============================================================================
 
 void Metronome::resetScheduler(
-    uint64_t startSample)
+    uint64_t startSample,
+    uint64_t initialBeatCounter)
 {
     beatCounter.store(
-        0,
+        initialBeatCounter,
         std::memory_order_relaxed);
 
     beatInBar.store(
-        0,
+        static_cast<int>(initialBeatCounter % 4),
         std::memory_order_relaxed);
 
     nextBeatSample.store(
@@ -193,6 +194,46 @@ void Metronome::resumeScheduler(
     nextBeatSample.store(
         static_cast<double>(songStartSample)
             + nextBeatIndex * beatLength,
+        std::memory_order_relaxed);
+}
+
+//==============================================================================
+
+void Metronome::resumeAtBeat(
+    uint64_t currentSample,
+    double currentBeat)
+{
+    const auto beatLength = getBeatLengthSamples();
+
+    metronomeTrigger.store(false, std::memory_order_relaxed);
+    metronomeAccent.store(false, std::memory_order_relaxed);
+
+    if (beatLength <= 0.0)
+    {
+        nextBeatSample.store(static_cast<double>(currentSample),
+                             std::memory_order_relaxed);
+        return;
+    }
+
+    // Next whole beat strictly after the current fractional position. The
+    // epsilon keeps an exact integer beat from being played twice.
+    const double nextBeatIndex =
+        std::ceil(currentBeat + 1.0e-6);
+
+    const auto beatIndex = nextBeatIndex > 0.0
+        ? static_cast<uint64_t>(std::llround(nextBeatIndex))
+        : 0;
+
+    // beatCounter stores how many clicks have already been scheduled. A
+    // trigger at song beat n produces beatInBar = n % 4, so the accented
+    // first beat of every bar survives tempo changes.
+    beatCounter.store(beatIndex, std::memory_order_relaxed);
+    beatInBar.store(static_cast<int>(beatIndex % 4),
+                    std::memory_order_relaxed);
+
+    nextBeatSample.store(
+        static_cast<double>(currentSample)
+            + (nextBeatIndex - currentBeat) * beatLength,
         std::memory_order_relaxed);
 }
 

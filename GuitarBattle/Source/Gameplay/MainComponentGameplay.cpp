@@ -196,9 +196,10 @@ void MainComponent::finishManagedTempoChange()
 
     if (resumeToPlaying)
     {
-        metronome.resumeScheduler(
-            now,
-            gameplayStartSample.load(std::memory_order_relaxed));
+        // Resume on the exact fractional beat with the new tempo: the old
+        // song-start reference no longer maps to beat zero after an anchor
+        // move, which used to shift the bar accent by one beat.
+        metronome.resumeAtBeat(now, pendingTempoBeat);
 
         tablatureComponent.setPlayheadBeat(pendingTempoBeat);
         tablatureComponent.setPlayheadRunning(true);
@@ -272,7 +273,7 @@ void MainComponent::beginGameplayCountIn()
     currentPlayheadBeat.store(0.0, std::memory_order_relaxed);
     tablatureComponent.setPlayheadBeat(0.0);
 
-    metronome.resetScheduler(currentSample);
+    metronome.resetScheduler(currentSample, 1);
 
     metronomeSamplesRemaining = 0;
     metronomePlaybackPosition = 0;
@@ -408,9 +409,21 @@ void MainComponent::resumeGame()
         gameplayStartSample.load(
             std::memory_order_relaxed);
 
-    metronome.resumeScheduler(
-        currentSample,
-        resumeSongStart);
+    const double resumeBeat =
+        getSongBeatForSample(currentSample);
+
+    if (resumeBeat >= 0.0)
+    {
+        // Exact beat position keeps the bar accent intact across pauses.
+        metronome.resumeAtBeat(currentSample, resumeBeat);
+    }
+    else
+    {
+        // Count-in / pre-song: fall back to the grid-based resume.
+        metronome.resumeScheduler(
+            currentSample,
+            resumeSongStart);
+    }
 
     metronomeSamplesRemaining = 0;
 

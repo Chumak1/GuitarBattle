@@ -34,13 +34,22 @@ public:
     // Scheduler
 
     void resetScheduler(
-        uint64_t startSample);
+        uint64_t startSample,
+        uint64_t initialBeatCounter = 0);
 
     void pauseScheduler();
 
     void resumeScheduler(
         uint64_t currentSample,
         uint64_t songStartSample);
+
+    // Resumes on the exact fractional song beat. Used after tempo changes,
+    // where the old song-start reference no longer maps to beat zero.
+    // The bar phase is restored from the integer beat index, so the accent
+    // keeps landing on the first beat of the bar.
+    void resumeAtBeat(
+        uint64_t currentSample,
+        double currentBeat);
 
     // Returns the sample offset of the first beat inside this block, or -1
     // when no beat starts in the block. This lets the caller place the click
