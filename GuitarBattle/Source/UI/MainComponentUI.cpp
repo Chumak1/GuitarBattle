@@ -531,6 +531,10 @@ void MainComponent::selectCatalogSong(int index)
     songListBox.selectRow(index);
     resized();
     repaint();
+
+    // Selecting another row swaps the preview: the old track stops inside
+    // preparePreviewForSelectedSong() before the new file is requested.
+    preparePreviewForSelectedSong();
 }
 
 void MainComponent::updateSongBestScoreLabels()
@@ -859,7 +863,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         g.drawText("CHOOSE YOUR NEXT CHALLENGE",
                    juce::Rectangle<float>(art.getRight() + 20.0f,
                                           leftCard.getY() + 22.0f,
-                                          leftW - 170.0f, 16.0f),
+                                          leftW - 360.0f, 16.0f),
                    juce::Justification::centredLeft, false);
 
         g.setColour(UiColors::muted);
@@ -867,14 +871,14 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         g.drawText(headerKind + "  /  " + juce::String(juce::roundToInt(headerBpm)) + " BPM",
                    juce::Rectangle<float>(art.getRight() + 20.0f,
                                           leftCard.getY() + 42.0f,
-                                          leftW - 170.0f, 16.0f),
+                                          leftW - 360.0f, 16.0f),
                    juce::Justification::centredLeft, false);
         g.setColour(UiColors::text);
         g.setFont(GameUi::heading(30.0f));
         g.drawText(headerTitle,
                    juce::Rectangle<float>(art.getRight() + 20.0f,
                                           leftCard.getY() + 58.0f,
-                                          leftW - 170.0f, 40.0f),
+                                          leftW - 360.0f, 40.0f),
                    juce::Justification::centredLeft, true);
 
         GameUi::drawDivider(g, leftCard.getX() + 24.0f,
@@ -1894,6 +1898,7 @@ void MainComponent::resized()
     //==========================================================================
 
     songTitleLabel.setVisible(false);
+    previewButton.setVisible(false);
     loginScreenTitleLabel.setVisible(authScreen);
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
     // Signing out is available only from the profile window; the main screen
@@ -2097,12 +2102,16 @@ void MainComponent::resized()
         accountStatusLabel.setBounds(24 + 34, footerY + 7, width - 48 - 58, 30);
 
         // Shared input monitor: top-right of the song screen, level panel on
-        // its left.
+    // its left.
         if (inputMonitor != nullptr)
         {
             const int monitorW = inputMonitorCardWidth(width);
             inputMonitor->setBounds(width - 48 - monitorW, 108, monitorW, 124);
         }
+
+        // Preview control inside the selected-song card, right of the header.
+        previewButton.setVisible(songSelect);
+        previewButton.setBounds(48 + leftW - 24 - 170, contentY + 56, 170, 34);
     }
 
     //==========================================================================
@@ -2379,15 +2388,68 @@ class AudioSettingsPanel final : public juce::Component,
 public:
     AudioSettingsPanel(juce::AudioDeviceManager& manager,
                        int initialInputChannel,
-                       std::function<void(int)> onInputChannelChanged)
+                       std::function<void(int)> onInputChannelChanged,
+                       float initialBackgroundVolume,
+                       bool initialBackgroundEnabled,
+                       std::function<void(float)> onBackgroundVolumeChanged,
+                       std::function<void(bool)> onBackgroundEnabledChanged)
         : selector(manager, 0, 32, 0, 2, true, true, true, false),
           deviceManager(manager),
-          inputChannelChanged(onInputChannelChanged)
+          inputChannelChanged(onInputChannelChanged),
+          backgroundVolumeChanged(onBackgroundVolumeChanged),
+          backgroundEnabledChanged(onBackgroundEnabledChanged)
     {
         setSize(760, 680);
         addAndMakeVisible(selector);
         addAndMakeVisible(inputChannelLabel);
         addAndMakeVisible(inputChannelBox);
+
+        // Background music controls: one global loop for the non-game screens.
+        backgroundLabel.setText("BACKGROUND MUSIC", juce::dontSendNotification);
+        backgroundLabel.setJustificationType(juce::Justification::centredLeft);
+        backgroundLabel.setColour(juce::Label::textColourId, UiColors::text);
+        backgroundLabel.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
+        addAndMakeVisible(backgroundLabel);
+
+        backgroundVolume.setSliderStyle(juce::Slider::LinearHorizontal);
+        backgroundVolume.setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 20);
+        backgroundVolume.setRange(0.0, 100.0, 1.0);
+        backgroundVolume.setValue(initialBackgroundVolume * 100.0,
+                                  juce::dontSendNotification);
+        backgroundVolume.setTooltip("Volume of the looped menu music. "
+                                    "Game instruments and the metronome are unaffected.");
+        backgroundVolume.onValueChange = [this]
+        {
+            if (backgroundVolumeChanged)
+                backgroundVolumeChanged(
+                    static_cast<float>(backgroundVolume.getValue() / 100.0));
+        };
+        addAndMakeVisible(backgroundVolume);
+
+        backgroundToggle.setClickingTogglesState(true);
+        backgroundToggle.setToggleState(initialBackgroundEnabled,
+                                        juce::dontSendNotification);
+        backgroundToggle.setButtonText(initialBackgroundEnabled ? "ON" : "OFF");
+        backgroundToggle.setColour(juce::TextButton::buttonOnColourId,
+                                   UiColors::accentStrong);
+        backgroundToggle.setColour(juce::TextButton::textColourOnId,
+                                   UiColors::onAccent);
+        backgroundToggle.onClick = [this]
+        {
+            const bool enabled = backgroundToggle.getToggleState();
+            backgroundToggle.setButtonText(enabled ? "ON" : "OFF");
+
+            if (backgroundEnabledChanged)
+                backgroundEnabledChanged(enabled);
+        };
+        addAndMakeVisible(backgroundToggle);
+
+        backgroundStatusLabel.setText("Loops while browsing songs and in settings.",
+                                      juce::dontSendNotification);
+        backgroundStatusLabel.setJustificationType(juce::Justification::centredLeft);
+        backgroundStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
+        backgroundStatusLabel.setFont(juce::FontOptions().withHeight(11.0f));
+        addAndMakeVisible(backgroundStatusLabel);
 
         // Keep the native selector readable on the dark theme.
         std::function<void(juce::Component&)> applyReadableAudioColours;
@@ -2512,6 +2574,11 @@ public:
     {
         selector.setBounds(30, 108, getWidth() - 60,
                            juce::jmax(80, getHeight() - 268));
+        backgroundLabel.setBounds(30, getHeight() - 198, 170, 24);
+        backgroundVolume.setBounds(204, getHeight() - 200, 280, 28);
+        backgroundToggle.setBounds(496, getHeight() - 200, 90, 28);
+        backgroundStatusLabel.setBounds(596, getHeight() - 198,
+                                        getWidth() - 626, 24);
         bufferLabel.setBounds(30, getHeight() - 146, 130, 24);
         bufferBox.setBounds(168, getHeight() - 148, 200, 28);
         bufferStatusLabel.setBounds(380, getHeight() - 148, getWidth() - 410, 28);
@@ -2608,11 +2675,17 @@ private:
     juce::AudioDeviceSelectorComponent selector;
     juce::AudioDeviceManager& deviceManager;
     std::function<void(int)> inputChannelChanged;
+    std::function<void(float)> backgroundVolumeChanged;
+    std::function<void(bool)> backgroundEnabledChanged;
     juce::Label inputChannelLabel;
     juce::ComboBox inputChannelBox;
     juce::Label bufferLabel;
     juce::ComboBox bufferBox;
     juce::Label bufferStatusLabel;
+    juce::Label backgroundLabel;
+    juce::Slider backgroundVolume;
+    juce::TextButton backgroundToggle;
+    juce::Label backgroundStatusLabel;
     bool syncingBufferBox = false;
 };
 
@@ -4574,6 +4647,14 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(tunerCentsLabel);
     addAndMakeVisible(tunerStatusLabel);
 
+    previewButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    previewButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    previewButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
+    previewButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    previewButton.setTooltip("Play or stop the full-song preview for the selected track");
+    previewButton.onClick = [this] { togglePreviewPlayback(); };
+    addAndMakeVisible(previewButton);
+
     // Compact input selector shown on the tuner screen. The guitar may be
     // connected to any interface input, so the player can switch the capture
     // channel without entering a song and opening the full audio settings.
@@ -5564,6 +5645,16 @@ void MainComponent::initialiseUi()
                     [this](int channel)
                     {
                         setPreferredInputChannel(channel);
+                    },
+                    backgroundMusicVolume.load(std::memory_order_relaxed),
+                    backgroundMusicEnabled.load(std::memory_order_relaxed),
+                    [this](float volume)
+                    {
+                        setBackgroundMusicVolume(volume);
+                    },
+                    [this](bool enabled)
+                    {
+                        setBackgroundMusicEnabled(enabled);
                     }));
 
             options.dialogTitle =

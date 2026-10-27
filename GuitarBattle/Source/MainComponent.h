@@ -12,6 +12,7 @@
 #include "Midi/MidiParser.h"
 #include "Midi/TablatureComponent.h"
 #include "Audio/PitchDetector.h"
+#include "Audio/MusicTrackPlayer.h"
 #include "Tuner/Tuner.h"
 #include "Gameplay/Metronome.h"
 #include "Gameplay/GameSession.h"
@@ -370,6 +371,7 @@ private:
         juce::String slug;      // server slug
         juce::String serverId;  // server UUID, used to open a game session
         juce::String artist;
+        juce::String previewUrl; // full-song MP3 for the in-app preview, optional
         double bpm = 120.0;
         int version = 0;
         bool online = false;
@@ -598,6 +600,35 @@ private:
 
     void setInputSensitivity(float normalised);
     void updateInputMonitor();
+
+    //==========================================================================
+    // Preview song and background music
+    //
+    // One decoded track per role. The audio callback mixes at most one of them
+    // (game audio always wins), and the message thread decides which one is
+    // allowed through updateMusicState().
+    MusicTrackPlayer previewPlayer;
+    MusicTrackPlayer backgroundPlayer;
+    juce::String previewTrackUrl;
+    juce::String backgroundMusicUrl;
+    int previewRequestId = 0;
+    int backgroundRequestId = 0;
+    std::atomic<float> backgroundMusicVolume{ 0.6f };
+    std::atomic<bool> backgroundMusicEnabled{ true };
+    bool previewButtonPlaying = false;
+    juce::TextButton previewButton{ "PREVIEW" };
+
+    static juce::File musicCacheDirectory();
+    void preparePreviewForSelectedSong();
+    void togglePreviewPlayback();
+    void stopPreviewPlayback();
+    void fetchBackgroundMusic();
+    void updateMusicState();
+    void updatePreviewButton();
+    void applyBackgroundMusicSettings();
+    void setBackgroundMusicVolume(float volume);
+    void setBackgroundMusicEnabled(bool enabled);
+    void restoreMusicSettings();
 
     void setPreferredInputChannel(int channel);
     bool ensureInputChannelEnabled(int hardwareChannel);

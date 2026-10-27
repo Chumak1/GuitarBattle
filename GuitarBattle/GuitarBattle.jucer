@@ -66,6 +66,12 @@
         <FILE id="HOHEdQ" name="PitchDetector.h" compile="0" resource="0" file="Source/Audio/PitchDetector.h"/>
         <FILE id="McAud1" name="MainComponentAudio.cpp" compile="1" resource="0"
               file="Source/Audio/MainComponentAudio.cpp"/>
+        <FILE id="McMus1" name="MainComponentMusic.cpp" compile="1" resource="0"
+              file="Source/Audio/MainComponentMusic.cpp"/>
+        <FILE id="MtPly1" name="MusicTrackPlayer.cpp" compile="1" resource="0"
+              file="Source/Audio/MusicTrackPlayer.cpp"/>
+        <FILE id="MtPly2" name="MusicTrackPlayer.h" compile="0" resource="0"
+              file="Source/Audio/MusicTrackPlayer.h"/>
       </GROUP>
       <GROUP id="{4B2A6C1E-7F3D-4A9B-8C2E-1D5F6A7B8C9D}" name="Network">
         <FILE id="McNet1" name="MainComponentNetwork.cpp" compile="1" resource="0"

@@ -919,6 +919,12 @@
     <ClCompile Include="..\..\Source\Audio\MainComponentAudio.cpp">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\Audio\MainComponentMusic.cpp">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Audio\MusicTrackPlayer.cpp">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\Network\MainComponentNetwork.cpp">
       <Filter>GuitarBattle\Source\Network</Filter>
     </ClCompile>
@@ -4228,6 +4234,9 @@
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Audio\PitchDetector.h">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Audio\MusicTrackPlayer.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Network\ApiClient.h">

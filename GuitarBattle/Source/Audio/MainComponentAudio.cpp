@@ -987,6 +987,8 @@ void MainComponent::prepareToPlay(
     // can select any active input without querying the device from the
     // realtime thread.
     cachedSampleRate.store(sampleRate, std::memory_order_relaxed);
+    previewPlayer.setOutputSampleRate(sampleRate);
+    backgroundPlayer.setOutputSampleRate(sampleRate);
     activeInputChannels.store(0, std::memory_order_relaxed);
     activeInputHardwareChannels.fill(-1);
 
@@ -1823,6 +1825,24 @@ void MainComponent::getNextAudioBlock(
             metronomePlaybackPosition = 0;
             metronomeSamplesRemaining = 0;
         }
+    }
+
+    //==========================================================================
+    // Preview song / background music
+    //
+    // The message thread guarantees that at most one of the two is playing,
+    // and that neither plays during a game round (updateMusicState()). The
+    // callback only renders the already-selected source.
+
+    if (previewPlayer.isPlaying())
+    {
+        previewPlayer.render(*bufferToFill.buffer, bufferToFill.startSample,
+                             bufferToFill.numSamples);
+    }
+    else if (backgroundPlayer.isPlaying())
+    {
+        backgroundPlayer.render(*bufferToFill.buffer, bufferToFill.startSample,
+                                bufferToFill.numSamples);
     }
 }
 

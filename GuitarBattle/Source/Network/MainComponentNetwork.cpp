@@ -843,6 +843,7 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
             if (row.title.isEmpty())
                 row.title = slug;
             row.artist = item.getProperty("artist", juce::var()).toString();
+            row.previewUrl = item.getProperty("preview_url", juce::var()).toString();
             row.bpm = static_cast<double>(item.getProperty("bpm", 120));
             row.version = static_cast<int>(item.getProperty("version", 0));
             row.online = true;

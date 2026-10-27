@@ -78,7 +78,14 @@ MainComponent::MainComponent()
 
     initialiseUi();
 
+    // Preview/background music share the existing audio device; settings are
+    // restored before the device starts so the first block already has a gain.
+    restoreMusicSettings();
+
     initialiseAudio();
+
+    // Optional global track: absence is a normal state and never blocks startup.
+    fetchBackgroundMusic();
 
     // Added last so pause/count-in cards paint above the HUD and mixer. The
     // component is transparent and does not intercept mouse input.
@@ -104,6 +111,10 @@ void MainComponent::timerCallback()
     // Input monitor: read the audio-thread atomics and advance the meter
     // smoothing / peak hold. Message thread only.
     updateInputMonitor();
+
+    // Single place that decides whether preview or background music may play.
+    // Idempotent, so screen changes never restart the track.
+    updateMusicState();
 
     // Activity heartbeat: every 30 seconds at 30 Hz while signed in. The
     // counter must advance regardless of game state, so it stays above the

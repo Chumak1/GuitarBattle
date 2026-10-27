@@ -558,6 +558,11 @@ int MainComponent::getBestScoreForSong(const juce::String& slug, const juce::Str
 
 void MainComponent::startSelectedSong()
 {
+    // A new round starts from silence: the preview and the background track are
+    // stopped before any game audio is scheduled.
+    stopPreviewPlayback();
+    backgroundPlayer.stop();
+
     // A catalog pick is always a normal session, never an official daily one.
     currentSessionIsDaily = false;
 
