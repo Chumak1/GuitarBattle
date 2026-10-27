@@ -28,6 +28,9 @@ private:
     int countInDisplayCount = 4;
     double bpm = 120.0;
 
+    // End of the chart in beats; drives the progress bar.
+    double totalBeats = 0.0;
+
     double syncedBeat = 0.0;
     juce::Time lastSyncTime;
 

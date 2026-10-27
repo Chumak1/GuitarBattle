@@ -10,6 +10,16 @@ namespace
 
     constexpr float playheadPosition = 0.50f;
     constexpr double beatsPerMeasure = 4.0;
+
+    juce::String formatClock(double seconds)
+    {
+        const int whole = juce::jmax(0, juce::roundToInt(seconds));
+        const int minutes = whole / 60;
+        const int secs = whole % 60;
+
+        return juce::String(minutes) + ":"
+            + (secs < 10 ? "0" : "") + juce::String(secs);
+    }
 }
 
 //==============================================================================
@@ -33,6 +43,16 @@ void TablatureComponent::setNotes(const std::vector<TabNote>& newNotes)
                      {
                          return a.startBeat < b.startBeat;
                      });
+
+    totalBeats = 0.0;
+
+    for (const auto& note : notes)
+        totalBeats = juce::jmax(totalBeats,
+                                note.startBeat + juce::jmax(0.0, note.durationBeats));
+
+    if (totalBeats <= 0.0 && ! notes.empty())
+        totalBeats = notes.back().startBeat + 1.0;
+
     repaint();
 }
 
@@ -450,17 +470,56 @@ void TablatureComponent::paint(juce::Graphics& g)
     g.fillPath(triangle);
 
     //==========================================================================
-    // Footer beat pill
+    // Song progress: filled bar with elapsed / total time
 
-    if (getHeight() >= 180)
+    if (getHeight() >= 140)
     {
-        const juce::Rectangle<float> beatPill(
-            playheadX - 54.0f, static_cast<float>(getHeight()) - 30.0f,
-            108.0f, 20.0f);
-        GameUi::drawPill(g, beatPill,
-                         "BEAT " + juce::String(playheadBeat, 2),
-                         UiColors::accent,
-                         true);
+        const float barX = 24.0f;
+        const float barW = static_cast<float>(getWidth()) - 48.0f;
+        const float barY = static_cast<float>(getHeight()) - 28.0f;
+        const float barH = 6.0f;
+
+        const float staffBottom = layoutFirstStringY
+            + layoutStringSpacing * 5.0f + 8.0f;
+
+        if (barW > 40.0f && barY > staffBottom + 2.0f)
+        {
+            const double clampedTotal = totalBeats > 0.0 ? totalBeats : 1.0;
+            const double progress =
+                juce::jlimit(0.0, 1.0, playheadBeat / clampedTotal);
+
+            const double safeBpm = juce::jmax(1.0, bpm);
+            const double elapsedSeconds =
+                juce::jmax(0.0, playheadBeat) * 60.0 / safeBpm;
+            const double totalSeconds = clampedTotal * 60.0 / safeBpm;
+
+            g.setColour(UiColors::border);
+            g.fillRoundedRectangle(barX, barY, barW, barH, barH * 0.5f);
+
+            if (progress > 0.0)
+            {
+                g.setColour(UiColors::accent);
+                g.fillRoundedRectangle(barX, barY,
+                                       static_cast<float>(barW * progress),
+                                       barH, barH * 0.5f);
+            }
+
+            g.setFont(GameUi::font(10.0f, true));
+
+            g.setColour(UiColors::accent);
+            g.drawText("BEAT " + juce::String(playheadBeat, 2),
+                       juce::Rectangle<float>(barX, barY - 17.0f, barW, 14.0f),
+                       juce::Justification::centredLeft, false);
+
+            g.setColour(UiColors::muted);
+            g.drawText(formatClock(elapsedSeconds)
+                           + " / " + formatClock(totalSeconds)
+                           + "   "
+                           + juce::String(juce::roundToInt(progress * 100.0))
+                           + "%",
+                       juce::Rectangle<float>(barX, barY - 17.0f, barW, 14.0f),
+                       juce::Justification::centredRight, false);
+        }
     }
 
     juce::ignoreUnused(countInDisplayActive, countInDisplayCount);
