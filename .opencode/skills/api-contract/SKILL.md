@@ -50,7 +50,9 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков (сумма лучших результатов по песням вне Daily Challenge) |
 | GET | `/profile/progression` | Bearer | уровень, XP, мастерство, жанры, статистика |
 | GET | `/profile/personal-bests` | Bearer, `limit` (1–100, по умолчанию 10), `offset` | личные рекорды по опубликованным песням |
-| GET | `/achievements` | Bearer | каталог достижений + прогресс/разблокировка |
+| GET | `/achievements` | Bearer | каталог достижений + прогресс/разблокировка; у каждого элемента `icon` и `icon_url` |
+| GET | `/profile/users/{user_id}` | Bearer | публичная карточка игрока; у выданных достижений `icon` и `icon_url` |
+| GET | `/media/achievements/<icon>.svg` | — (публичный) | SVG иконки достижения, `image/svg+xml` |
 | GET | `/daily/today` | Bearer | `date`, `weekday` (0=Пн…6=Вс, UTC), `song` (или `null`), официальная попытка, топ-5 |
 | GET | `/daily/leaderboard` | Bearer, `date?` (YYYY-MM-DD, по умолчанию сегодня UTC) | официальные результаты дня |
 | GET | `/daily/history` | Bearer, `limit` (1–100, по умолчанию 20), `offset` | официальные результаты игрока по дням с `rank` и `participants` |
@@ -304,6 +306,35 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
 - `daily_first_place` не может быть решён в момент попытки: он выдаётся при
   следующем обращении к `/profile/progression`, `/achievements` или
   `/daily/leaderboard`, когда день уже закончился (фонового планировщика нет).
+
+### Иконки достижений
+
+Миграция `0010_achievement_icons`: `achievements.icon` (`String(128)`, NOT NULL) —
+имя файла из `app/static/media/achievements/`. Те же значения лежат в
+`ACHIEVEMENT_CATALOG` и пересинхронизируются на старте, поэтому код — источник
+истины, а миграция только заполняет существующие БД.
+
+- SVG отдаются тем же FastAPI: `GET /media/achievements/<icon>` (публично, без
+  токена, `image/svg+xml`, файлы в образе, без volume). Префикс — `/media`,
+  как у `/media/landing`; наружу его должен проксировать тот же Caddy.
+- `GET /achievements` и `GET /profile/users/{id}` отдают в каждом элементе
+  достижения два новых поля: `icon` (имя файла, `str | None`) и `icon_url`
+  (`/media/achievements/<icon>`, `str | None`). Остальные поля не менялись,
+  `icon_url` относительный — склеивать с origin сайта.
+- `achievements_awarded` в ответе `POST /games/sessions/{id}/finish` **не**
+  менялся: `[{code, title, xp_bonus}]`, без иконок.
+- 14 файлов: `first_notes.svg`, `notes.svg`, `metronome.svg`, `accuracy.svg`,
+  `target.svg`, `star.svg`, `mastery.svg`, `daily.svg`, `medal.svg`,
+  `diploma.svg`, `genres.svg`, `calendar.svg`, `clock.svg`, `hard.svg`.
+- Лицензия иконок — Tilda Icons (free), обязательна атрибуция
+  «Icons are provided by Tilda Publishing» со ссылкой на https://tilda.cc;
+  она стоит в футере `/account`. Новые иконки качать только из наборов Tilda и
+  не удалять атрибуцию.
+- Веб-кабинет (`app/static/app/account.html` + `account.js`) рисует сетку
+  «Достижения» из `GET /achievements` с тем же токеном: у открытых — иконка,
+  название, описание, дата, XP; у закрытых — серая иконка, `progress/goal` и
+  без даты. Без сети/без достижений блок показывает текстовое состояние и не
+  ломает остальную страницу.
 
 ### Испытание дня (расписание по дням недели)
 

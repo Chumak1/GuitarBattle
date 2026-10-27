@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cmath>
 #include <functional>
+#include <map>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -2875,7 +2876,7 @@ public:
             auto radarArea = juce::Rectangle<int>(
                 accountInner.getX(), accountInner.getY() + 116,
                 accountInner.getWidth(),
-                juce::jmax(80, accountInner.getHeight() - 190));
+                juce::jmax(60, accountInner.getHeight() - 250));
 
             g.setColour(UiColors::muted);
             g.setFont(GameUi::eyebrow(9.0f));
@@ -2971,26 +2972,67 @@ public:
 
         if (achievementsTotalCount > 0)
         {
-            const auto strip = juce::Rectangle<int>(
-                accountInner.getX(), accountInner.getBottom() - 58,
-                accountInner.getWidth(), 24);
+            const int rowY = accountInner.getBottom() - 96;
 
             g.setColour(UiColors::muted);
             g.setFont(GameUi::eyebrow(8.5f));
             g.drawText("ACHIEVEMENTS "
                            + juce::String(achievementsUnlockedCount) + "/"
                            + juce::String(achievementsTotalCount),
-                       strip.withHeight(12).toFloat(),
+                       juce::Rectangle<int>(accountInner.getX(), rowY - 16,
+                                            accountInner.getWidth(), 12).toFloat(),
                        juce::Justification::centredLeft, false);
 
-            g.setColour(UiColors::green);
-            g.setFont(GameUi::font(8.5f));
-            g.drawFittedText(
-                unlockedAchievementNames.isEmpty()
-                    ? juce::String("None yet - play a song to start")
-                    : unlockedAchievementNames.joinIntoString("  ·  "),
-                strip.translated(0, 11),
-                juce::Justification::centredLeft, 2);
+            int shown = 0;
+            constexpr int maxIcons = 5;
+            constexpr int cellWidth = 62;
+            constexpr int iconSize = 30;
+
+            for (const auto& card : achievementCards)
+            {
+                if (! card.unlocked || shown >= maxIcons)
+                    continue;
+
+                const int x = accountInner.getX() + shown * cellWidth;
+                const auto iconIt = achievementIcons.find(card.code);
+
+                if (iconIt != achievementIcons.end())
+                {
+                    g.drawImage(iconIt->second,
+                                juce::Rectangle<float>(static_cast<float>(x),
+                                                       static_cast<float>(rowY),
+                                                       iconSize, iconSize),
+                                juce::RectanglePlacement::centred);
+                }
+                else
+                {
+                    g.setColour(UiColors::accent.withAlpha(0.18f));
+                    g.fillEllipse(static_cast<float>(x), static_cast<float>(rowY),
+                                  iconSize, iconSize);
+                    g.setColour(UiColors::accent);
+                    g.drawEllipse(static_cast<float>(x), static_cast<float>(rowY),
+                                  iconSize, iconSize, 1.0f);
+                }
+
+                g.setColour(UiColors::muted);
+                g.setFont(GameUi::font(7.0f));
+                g.drawFittedText(card.title,
+                                 juce::Rectangle<int>(x - 2, rowY + iconSize + 1,
+                                                      cellWidth - 4, 22),
+                                 juce::Justification::centredTop, 2);
+
+                ++shown;
+            }
+
+            if (shown == 0)
+            {
+                g.setColour(UiColors::muted);
+                g.setFont(GameUi::font(9.0f));
+                g.drawText("None yet - play a song to start",
+                           juce::Rectangle<int>(accountInner.getX(), rowY + 6,
+                                                accountInner.getWidth(), 18),
+                           juce::Justification::centredLeft, false);
+            }
         }
     }
 
@@ -3434,28 +3476,89 @@ private:
                 if (items == nullptr)
                     return;
 
-                self->unlockedAchievementNames.clear();
+                self->achievementCards.clear();
                 self->achievementsUnlockedCount = 0;
                 self->achievementsTotalCount = items->size();
 
+                std::vector<std::pair<juce::String, juce::String>> iconJobs;
+
                 for (const auto& item : *items)
                 {
-                    if (! static_cast<bool>(
-                            static_cast<int>(
-                                item.getProperty("unlocked", 0))))
-                        continue;
+                    AchievementCard card;
+                    card.code = item.getProperty("code", juce::var()).toString();
+                    card.title = item.getProperty("title", juce::var()).toString();
+                    card.iconUrl =
+                        item.getProperty("icon_url", juce::var()).toString();
+                    card.unlocked =
+                        static_cast<int>(item.getProperty("unlocked", 0)) != 0;
 
-                    ++self->achievementsUnlockedCount;
+                    if (card.unlocked)
+                    {
+                        ++self->achievementsUnlockedCount;
 
-                    const auto title =
-                        item.getProperty("title", juce::var()).toString();
+                        if (card.iconUrl.isNotEmpty()
+                            && iconJobs.size() < 12)
+                            iconJobs.push_back({ card.code, card.iconUrl });
+                    }
 
-                    if (title.isNotEmpty()
-                        && self->unlockedAchievementNames.size() < 6)
-                        self->unlockedAchievementNames.add(title);
+                    self->achievementCards.push_back(card);
                 }
 
-                self->repaint();
+                if (iconJobs.empty())
+                {
+                    self->repaint();
+                    return;
+                }
+
+                struct IconResult
+                {
+                    juce::String code;
+                    juce::MemoryBlock bytes;
+                };
+
+                auto results = std::make_shared<std::vector<IconResult>>();
+                auto& apiRef = self->api;
+
+                apiRef.runAsync(
+                    [iconJobs, results]()
+                    {
+                        for (const auto& job : iconJobs)
+                        {
+                            auto bytes = ApiClient::download(job.second, 4000);
+
+                            if (bytes.getSize() > 0)
+                                results->push_back({ job.first, bytes });
+                        }
+                    },
+                    [safeThis, results]()
+                    {
+                        auto* window = safeThis.getComponent();
+
+                        if (window == nullptr)
+                            return;
+
+                        for (const auto& result : *results)
+                        {
+                            auto drawable = juce::Drawable::createFromImageData(
+                                result.bytes.getData(), result.bytes.getSize());
+
+                            if (drawable == nullptr)
+                                continue;
+
+                            juce::Image image(juce::Image::ARGB, 40, 40, true);
+                            {
+                                juce::Graphics imageGraphics(image);
+                                drawable->drawWithin(
+                                    imageGraphics,
+                                    juce::Rectangle<float>(0.0f, 0.0f, 40.0f, 40.0f),
+                                    juce::RectanglePlacement::centred, 1.0f);
+                            }
+
+                            window->achievementIcons[result.code] = image;
+                        }
+
+                        window->repaint();
+                    });
             });
     }
 
@@ -4081,7 +4184,17 @@ private:
     juce::String timingValue = "-";
     juce::StringArray genreNames;
     juce::Array<float> genreValues;
-    juce::StringArray unlockedAchievementNames;
+
+    struct AchievementCard
+    {
+        juce::String code;
+        juce::String title;
+        juce::String iconUrl;
+        bool unlocked = false;
+    };
+
+    std::vector<AchievementCard> achievementCards;
+    std::map<juce::String, juce::Image> achievementIcons;
     int achievementsUnlockedCount = 0;
     int achievementsTotalCount = 0;
     int achievementsRequestId = 0;

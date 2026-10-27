@@ -116,6 +116,19 @@
           <button type="button" id="historyMore" class="hidden" data-i18n="account.history.more">Показать ещё</button>
         </div>
       </section>
+
+      <section class="section">
+        <div class="section__head">
+          <h2 data-i18n="account.achievements.title">Достижения</h2>
+          <span class="ach-summary" id="achievementsSummary"></span>
+          <button class="btn btn--ghost btn--sm" type="button" id="achievementsRefresh">
+            <span class="btn__spinner hidden"></span><span class="btn__label" data-i18n="account.refresh">Обновить</span>
+          </button>
+        </div>
+        <p class="section__hint" data-i18n="account.achievements.hint">Открывайте достижения за точность, новые песни и испытание дня.</p>
+        <div class="ach-grid" id="achievementsGrid"></div>
+        <div class="empty hidden" id="achievementsEmpty" data-i18n="account.achievements.empty">Достижений пока нет. Сыграйте первую песню в клиенте.</div>
+      </section>
     </div>
 
     <aside class="layout__side">
@@ -175,6 +188,10 @@
   <div class="footer">
     © 2026 fretfight · <a href="/">fretfight.online</a> ·
     <a href="/policy" data-i18n="common.policy">Политика конфиденциальности</a>
+    <div class="footer__credit">
+      Icons are provided by
+      <a href="https://tilda.cc" target="_blank" rel="noopener noreferrer">Tilda Publishing</a>
+    </div>
   </div>
 </main>
 

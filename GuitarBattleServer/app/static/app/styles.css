@@ -613,6 +613,86 @@ html[lang="en"] .policy-doc[data-doc="en"] { display: block; }
   .policy-doc h2 { margin-top: 28px; font-size: 1.08rem; }
 }
 
+/* ---------- achievements ---------- */
+
+.ach-summary { color: var(--muted); font-size: 0.84rem; }
+
+.ach-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(232px, 1fr));
+}
+
+.ach {
+  display: flex;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--surface-2);
+}
+
+.ach--locked { opacity: 0.72; }
+
+.ach__icon {
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 9px;
+  border-radius: 13px;
+  background: rgba(233, 239, 246, 0.9);
+}
+
+.ach__icon img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.ach--locked .ach__icon { background: rgba(141, 156, 171, 0.16); }
+.ach--locked .ach__icon img { opacity: 0.35; filter: grayscale(1); }
+
+.ach__body { min-width: 0; }
+
+.ach__title { font-size: 0.94rem; font-weight: 600; }
+
+.ach__desc {
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.ach__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.ach__xp { color: var(--gold); font-weight: 600; }
+
+.ach__bar {
+  margin-top: 8px;
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(141, 156, 171, 0.16);
+  overflow: hidden;
+}
+
+.ach__bar span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c98f12, var(--gold));
+}
+
+.footer__credit { margin-top: 8px; font-size: 0.76rem; }
+
 /* ---------- footer ---------- */
 
 .footer {

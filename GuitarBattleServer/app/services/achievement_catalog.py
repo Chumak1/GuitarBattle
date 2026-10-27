@@ -30,6 +30,8 @@ CATEGORY_DAILY = "daily"
 # ``goal`` is the numeric target for accumulating achievements; ``None`` means
 # the achievement is a single event. ``sort_order`` makes the awarding order
 # deterministic and is used when genre thresholds collapse onto one value.
+# ``icon`` is the file name under ``app/static/media/achievements``; the API
+# turns it into ``/media/achievements/<icon>`` for the website and the clients.
 ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     {
         "code": "first_notes",
@@ -38,6 +40,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_PROGRESS,
         "xp_bonus": 20,
         "goal": None,
+        "icon": "first_notes.svg",
         "sort_order": 10,
     },
     {
@@ -47,6 +50,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_PROGRESS,
         "xp_bonus": 20,
         "goal": None,
+        "icon": "star.svg",
         "sort_order": 20,
     },
     {
@@ -56,6 +60,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_SONGS,
         "xp_bonus": 30,
         "goal": 5,
+        "icon": "notes.svg",
         "sort_order": 30,
     },
     {
@@ -65,6 +70,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_SONGS,
         "xp_bonus": 50,
         "goal": 10,
+        "icon": "notes.svg",
         "sort_order": 40,
     },
     {
@@ -74,6 +80,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_SONGS,
         "xp_bonus": 100,
         "goal": 25,
+        "icon": "notes.svg",
         "sort_order": 50,
     },
     {
@@ -83,6 +90,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_SONGS,
         "xp_bonus": 150,
         "goal": 50,
+        "icon": "notes.svg",
         "sort_order": 60,
     },
     {
@@ -92,6 +100,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 25,
         "goal": 80,
+        "icon": "target.svg",
         "sort_order": 70,
     },
     {
@@ -101,6 +110,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 50,
         "goal": 90,
+        "icon": "accuracy.svg",
         "sort_order": 80,
     },
     {
@@ -110,6 +120,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 100,
         "goal": 95,
+        "icon": "star.svg",
         "sort_order": 90,
     },
     {
@@ -119,6 +130,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_PROGRESS,
         "xp_bonus": 75,
         "goal": None,
+        "icon": "accuracy.svg",
         "sort_order": 100,
     },
     {
@@ -128,6 +140,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_RHYTHM,
         "xp_bonus": 40,
         "goal": 40,
+        "icon": "metronome.svg",
         "sort_order": 110,
     },
     {
@@ -137,6 +150,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 30,
         "goal": 10,
+        "icon": "star.svg",
         "sort_order": 120,
     },
     {
@@ -146,6 +160,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 20,
         "goal": 5,
+        "icon": "accuracy.svg",
         "sort_order": 130,
     },
     {
@@ -155,6 +170,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_GENRES,
         "xp_bonus": 40,
         "goal": 3,
+        "icon": "genres.svg",
         "sort_order": 140,
     },
     {
@@ -164,6 +180,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_GENRES,
         "xp_bonus": 75,
         "goal": 5,
+        "icon": "genres.svg",
         "sort_order": 150,
     },
     {
@@ -173,6 +190,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_GENRES,
         "xp_bonus": 150,
         "goal": 8,
+        "icon": "genres.svg",
         "sort_order": 160,
     },
     {
@@ -182,6 +200,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_GENRES,
         "xp_bonus": 60,
         "goal": None,
+        "icon": "diploma.svg",
         "sort_order": 170,
     },
     {
@@ -191,6 +210,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_MASTERY,
         "xp_bonus": 25,
         "goal": 2,
+        "icon": "first_notes.svg",
         "sort_order": 180,
     },
     {
@@ -200,6 +220,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_MASTERY,
         "xp_bonus": 50,
         "goal": 3,
+        "icon": "mastery.svg",
         "sort_order": 190,
     },
     {
@@ -209,6 +230,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_MASTERY,
         "xp_bonus": 100,
         "goal": 4,
+        "icon": "medal.svg",
         "sort_order": 200,
     },
     {
@@ -218,6 +240,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_MASTERY,
         "xp_bonus": 150,
         "goal": 5,
+        "icon": "diploma.svg",
         "sort_order": 210,
     },
     {
@@ -227,6 +250,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 75,
         "goal": 80,
+        "icon": "hard.svg",
         "sort_order": 220,
     },
     {
@@ -236,6 +260,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_DAILY,
         "xp_bonus": 30,
         "goal": None,
+        "icon": "daily.svg",
         "sort_order": 230,
     },
     {
@@ -245,6 +270,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_DAILY,
         "xp_bonus": 50,
         "goal": 3,
+        "icon": "clock.svg",
         "sort_order": 240,
     },
     {
@@ -254,6 +280,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_DAILY,
         "xp_bonus": 100,
         "goal": 7,
+        "icon": "calendar.svg",
         "sort_order": 250,
     },
     {
@@ -263,6 +290,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_DAILY,
         "xp_bonus": 50,
         "goal": 70,
+        "icon": "target.svg",
         "sort_order": 260,
     },
     {
@@ -272,6 +300,7 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
         "category": CATEGORY_DAILY,
         "xp_bonus": 100,
         "goal": None,
+        "icon": "medal.svg",
         "sort_order": 270,
     },
 ]
@@ -303,6 +332,7 @@ def sync_achievement_catalog(db: Session) -> int:
             "category": stmt.excluded.category,
             "xp_bonus": stmt.excluded.xp_bonus,
             "goal": stmt.excluded.goal,
+            "icon": stmt.excluded.icon,
             "sort_order": stmt.excluded.sort_order,
             "is_active": True,
         },

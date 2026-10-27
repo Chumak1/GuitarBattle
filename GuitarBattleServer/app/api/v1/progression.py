@@ -37,6 +37,16 @@ from app.services.achievement_catalog import catalog_rows
 
 router = APIRouter(tags=["progression"])
 
+#: Where ``app.main`` mounts the bundled achievement SVG files.
+ACHIEVEMENT_ICON_URL_PREFIX = "/media/achievements"
+
+
+def achievement_icon_url(icon: str | None) -> str | None:
+    """Public URL of a bundled achievement icon, or ``None`` without an icon."""
+    if not icon:
+        return None
+    return f"{ACHIEVEMENT_ICON_URL_PREFIX}/{icon}"
+
 
 @router.get(
     "/profile/users/{user_id}",
@@ -61,6 +71,7 @@ def public_profile(
             Achievement.description,
             Achievement.category,
             Achievement.xp_bonus,
+            Achievement.icon,
             UserAchievement.awarded_at,
         )
         .join(UserAchievement, UserAchievement.achievement_code == Achievement.code)
@@ -89,6 +100,8 @@ def public_profile(
                 description=row.description,
                 category=row.category,
                 xp_bonus=row.xp_bonus,
+                icon=row.icon,
+                icon_url=achievement_icon_url(row.icon),
                 awarded_at=row.awarded_at,
             )
             for row in rows
@@ -211,6 +224,8 @@ def achievements_catalog(
                 progress=progress,
                 unlocked=unlocked,
                 awarded_at=unlocked_row.awarded_at if unlocked_row else None,
+                icon=achievement.icon,
+                icon_url=achievement_icon_url(achievement.icon),
             )
         )
     return AchievementCatalogResponse(

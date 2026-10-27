@@ -181,7 +181,11 @@ Endpoints (all require Bearer):
   achievements, last 10 personal bests, mastery per song, mastery per genre and
   the statistics block.
 - `GET /profile/personal-bests?limit=10&offset=0` — personal bests of published songs.
-- `GET /achievements` — the catalog with `progress`, `unlocked` and `awarded_at`.
+- `GET /achievements` — the catalog with `progress`, `unlocked`, `awarded_at`
+  and the icon pair `icon` (file name) / `icon_url`
+  (`/media/achievements/<icon>`).
+- `GET /profile/users/{id}` — public player card; each awarded achievement also
+  carries `icon` and `icon_url`.
 - `GET /daily/today` — today's challenge: `date`, `weekday` (0 = Monday …
   6 = Sunday, UTC), the scheduled `song` or `null` when the slot is free or the
   scheduled song is not published, whether the official attempt is used, the
@@ -394,6 +398,15 @@ index) and the `daily_slots` table (`weekday` primary key with a 0..6 check,
 starts empty and existing `daily_challenges` / `daily_results` rows are kept as
 historical facts. Downgrade
 (`alembic downgrade 0008_progression`) drops the table, the index and the column.
+
+Migration `0010_achievement_icons` adds `achievements.icon` (`String(128)`,
+`NOT NULL`): the file name of a bundled SVG. The 14 icons live in
+`app/static/media/achievements/` and are served by the API at
+`/media/achievements/<icon>` (public, no token, `image/svg+xml`, baked into the
+image — no volume). The migration backfills all 27 catalog rows; the application
+re-syncs the same values on every start. Icons are free Tilda Icons, attribution
+“Icons are provided by Tilda Publishing” (https://tilda.cc) is shown in the
+account page footer. Downgrade drops the column.
 
 
 ### Глобальный рейтинг игроков

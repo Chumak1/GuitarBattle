@@ -181,6 +181,140 @@
       });
   }
 
+  /* ---------- achievements ---------- */
+
+  var achievementsGrid = document.getElementById('achievementsGrid');
+  var achievementsEmpty = document.getElementById('achievementsEmpty');
+  var achievementsSummary = document.getElementById('achievementsSummary');
+
+  function achievementIcon(item) {
+    // Locked cards get a grey version of the same icon via CSS.
+    var src = item.icon_url;
+    if (!src && item.icon) src = '/media/achievements/' + item.icon;
+    if (!src) return null;
+    var img = document.createElement('img');
+    img.src = src;
+    img.alt = '';
+    img.loading = 'lazy';
+    img.decoding = 'async';
+    img.addEventListener('error', function () {
+      // A missing file must not leave a broken-image glyph in the grid.
+      img.remove();
+    });
+    return img;
+  }
+
+  function achievementNode(item) {
+    var card = document.createElement('article');
+    card.className = 'ach' + (item.unlocked ? '' : ' ach--locked');
+
+    var iconBox = document.createElement('div');
+    iconBox.className = 'ach__icon';
+    var icon = achievementIcon(item);
+    if (icon) iconBox.appendChild(icon);
+    card.appendChild(iconBox);
+
+    var body = document.createElement('div');
+    body.className = 'ach__body';
+
+    var title = document.createElement('div');
+    title.className = 'ach__title';
+    title.textContent = item.title || item.code;
+    body.appendChild(title);
+
+    if (item.description) {
+      var desc = document.createElement('div');
+      desc.className = 'ach__desc';
+      desc.textContent = item.description;
+      body.appendChild(desc);
+    }
+
+    var meta = document.createElement('div');
+    meta.className = 'ach__meta';
+
+    if (item.xp_bonus) {
+      var xp = document.createElement('span');
+      xp.className = 'ach__xp';
+      xp.textContent = '+' + FF.formatNumber(item.xp_bonus) + ' XP';
+      meta.appendChild(xp);
+    }
+
+    if (item.unlocked) {
+      if (item.awarded_at) {
+        var date = document.createElement('span');
+        date.textContent = t('account.achievements.unlockedAt', {
+          date: FF.formatDateTime(item.awarded_at)
+        });
+        meta.appendChild(date);
+      }
+    } else {
+      var locked = document.createElement('span');
+      locked.textContent = t('account.achievements.locked');
+      meta.appendChild(locked);
+    }
+
+    body.appendChild(meta);
+
+    if (!item.unlocked && item.goal) {
+      var goal = Number(item.goal) || 0;
+      var progress = Math.max(0, Number(item.progress) || 0);
+      var shown = Math.min(progress, goal);
+
+      var progressText = document.createElement('div');
+      progressText.className = 'ach__meta';
+      progressText.textContent = t('account.achievements.progress', {
+        progress: FF.formatNumber(shown),
+        goal: FF.formatNumber(goal)
+      });
+      body.appendChild(progressText);
+
+      var bar = document.createElement('div');
+      bar.className = 'ach__bar';
+      var fill = document.createElement('span');
+      fill.style.width = (goal > 0 ? Math.min(100, Math.round((shown / goal) * 100)) : 0) + '%';
+      bar.appendChild(fill);
+      body.appendChild(bar);
+    }
+
+    card.appendChild(body);
+    return card;
+  }
+
+  function renderAchievements(data) {
+    var items = (data && data.items) || [];
+    achievementsGrid.textContent = '';
+    items.forEach(function (item) { achievementsGrid.appendChild(achievementNode(item)); });
+
+    var unlocked = Number(data && data.unlocked) || 0;
+    var total = Number(data && data.total) || items.length;
+    achievementsSummary.textContent = total
+      ? t('account.achievements.summary', {
+          unlocked: FF.formatNumber(unlocked),
+          total: FF.formatNumber(total)
+        })
+      : '';
+    achievementsEmpty.classList.toggle('hidden', items.length > 0);
+    if (!items.length) {
+      achievementsEmpty.textContent = t('account.achievements.empty');
+    }
+  }
+
+  function loadAchievements() {
+    return FF.api('/achievements', { auth: true })
+      .then(function (data) {
+        renderAchievements(data);
+      })
+      .catch(function (error) {
+        if (handleAuthError(error)) return;
+        // Offline or a server error: keep the section usable and explain it.
+        achievementsGrid.textContent = '';
+        achievementsSummary.textContent = '';
+        achievementsEmpty.textContent = t('account.achievements.unavailable');
+        achievementsEmpty.classList.remove('hidden');
+        throw error;
+      });
+  }
+
   /* ---------- profile ---------- */
 
   var profileForm = document.getElementById('profileForm');
@@ -263,7 +397,8 @@
         return Promise.all([
           loadSummary().catch(function (error) { if (!handleAuthError(error)) throw error; }),
           loadRating().catch(function (error) { if (!handleAuthError(error)) throw error; }),
-          loadHistory(true).catch(function (error) { if (!handleAuthError(error)) throw error; })
+          loadHistory(true).catch(function (error) { if (!handleAuthError(error)) throw error; }),
+          loadAchievements().catch(function (error) { if (!handleAuthError(error)) throw error; })
         ]);
       })
       .catch(function (error) {
@@ -277,6 +412,14 @@
     var button = this;
     setBusy(button, true);
     loadRating()
+      .catch(function (error) { if (!handleAuthError(error)) showAlert('error', FF.errorMessage(error)); })
+      .then(function () { setBusy(button, false); });
+  });
+
+  document.getElementById('achievementsRefresh').addEventListener('click', function () {
+    var button = this;
+    setBusy(button, true);
+    loadAchievements()
       .catch(function (error) { if (!handleAuthError(error)) showAlert('error', FF.errorMessage(error)); })
       .then(function () { setBusy(button, false); });
   });
@@ -300,6 +443,7 @@
       loadSummary().catch(function () { /* ignore */ });
       loadRating().catch(function () { /* ignore */ });
       loadHistory(true).catch(function () { /* ignore */ });
+      loadAchievements().catch(function () { /* ignore */ });
     });
   }
 
@@ -314,7 +458,8 @@
         return Promise.all([
           loadSummary().catch(function (error) { if (!handleAuthError(error)) throw error; }),
           loadRating().catch(function (error) { if (!handleAuthError(error)) throw error; }),
-          loadHistory(true).catch(function (error) { if (!handleAuthError(error)) throw error; })
+          loadHistory(true).catch(function (error) { if (!handleAuthError(error)) throw error; }),
+          loadAchievements().catch(function (error) { if (!handleAuthError(error)) throw error; })
         ]);
       })
       .catch(function (error) {

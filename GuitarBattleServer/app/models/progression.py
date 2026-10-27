@@ -85,6 +85,10 @@ class Achievement(Base):
     category: Mapped[str] = mapped_column(String(32), nullable=False)
     xp_bonus: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     goal: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: File name under ``app/static/media/achievements`` (served at
+    #: ``/media/achievements/<icon>``). Kept as a bare name so the API can build
+    #: the public URL and the web/desktop clients share one catalog.
+    icon: Mapped[str] = mapped_column(String(128), nullable=False, default="star.svg")
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 

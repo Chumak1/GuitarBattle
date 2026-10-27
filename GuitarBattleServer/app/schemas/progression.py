@@ -27,6 +27,10 @@ class PublicAchievementItem(BaseModel):
     description: str
     category: str
     xp_bonus: int
+    #: Icon file name in the bundled catalog (kept for older clients).
+    icon: str | None = None
+    #: Ready-to-use URL of the icon, e.g. ``/media/achievements/star.svg``.
+    icon_url: str | None = None
     awarded_at: datetime
 
 
@@ -130,6 +134,10 @@ class AchievementItem(BaseModel):
     progress: int
     unlocked: bool
     awarded_at: datetime | None = None
+    #: Icon file name in the bundled catalog (kept for older clients).
+    icon: str | None = None
+    #: Ready-to-use URL of the icon, e.g. ``/media/achievements/star.svg``.
+    icon_url: str | None = None
 
 
 class AchievementCatalogResponse(BaseModel):

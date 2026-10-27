@@ -81,6 +81,18 @@ app.mount(
     name="landing-media",
 )
 
+# Achievement icons are bundled in the image, not uploaded at runtime: they are
+# part of the code catalog, so no volume is needed and every replica serves the
+# same files. The API exposes them as ``/media/achievements/<icon>``.
+achievement_icons_dir = (
+    Path(__file__).resolve().parent / "static" / "media" / "achievements"
+)
+app.mount(
+    "/media/achievements",
+    StaticFiles(directory=achievement_icons_dir, check_dir=False),
+    name="achievement-icons",
+)
+
 auth_page = web_static_dir / "auth.html"
 account_page = web_static_dir / "account.html"
 policy_page = web_static_dir / "policy.html"
