@@ -34,7 +34,7 @@ void MainComponent::updateHitFeedbackAnimation()
     if (elapsed >= animationDurationMs)
     {
         feedbackType = 0;
-        hitLabel.setFont(juce::FontOptions().withHeight(feedbackBaseFontSize).withStyle("Bold"));
+        hitLabel.setFont(GameUi::font(feedbackBaseFontSize, true));
         hitLabel.setColour(juce::Label::textColourId, UiColors::blue);
         repaint();
         return;
@@ -56,7 +56,7 @@ void MainComponent::updateHitFeedbackAnimation()
     }
 
     const float alpha = 1.0f - 0.35f * progress;
-    hitLabel.setFont(juce::FontOptions().withHeight(fontSize).withStyle("Bold"));
+    hitLabel.setFont(GameUi::font(fontSize, true));
     hitLabel.setColour(juce::Label::textColourId, feedbackColour.withAlpha(alpha));
     repaint();
 }
@@ -665,17 +665,25 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         {
             const auto userBounds = currentUserLabel.getBounds().toFloat();
             const float avatarSize = 30.0f;
-            const juce::Rectangle<float> avatar(userBounds.getX() - avatarSize - 8.0f,
-                                                userBounds.getY() - 6.0f,
-                                                avatarSize, avatarSize);
-            g.setColour(UiColors::accent.withAlpha(0.16f));
-            g.fillEllipse(avatar);
-            g.setColour(UiColors::accent.withAlpha(0.55f));
-            g.drawEllipse(avatar, 1.0f);
-            g.setColour(UiColors::accent);
-            g.setFont(GameUi::heading(13.0f));
-            g.drawText(currentUsername.substring(0, 1).toUpperCase(),
-                       avatar, juce::Justification::centred, false);
+            const float avatarX = userBounds.getX() - avatarSize - 8.0f;
+
+            // On narrow windows the account row needs all of its horizontal
+            // space for the three equally-sized buttons. The avatar is
+            // decorative, so drop it before it can collide with the brand.
+            if (avatarX > 286.0f)
+            {
+                const juce::Rectangle<float> avatar(avatarX,
+                                                    userBounds.getY() - 6.0f,
+                                                    avatarSize, avatarSize);
+                g.setColour(UiColors::accent.withAlpha(0.16f));
+                g.fillEllipse(avatar);
+                g.setColour(UiColors::accent.withAlpha(0.55f));
+                g.drawEllipse(avatar, 1.0f);
+                g.setColour(UiColors::accent);
+                g.setFont(GameUi::heading(13.0f));
+                g.drawText(currentUsername.substring(0, 1).toUpperCase(),
+                           avatar, juce::Justification::centred, false);
+            }
 
             g.setColour(UiColors::muted);
             g.setFont(GameUi::eyebrow(8.0f));
@@ -1340,7 +1348,9 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     const float hudH = 96.0f;
     const float bottomH = juce::jlimit(124.0f, 160.0f, height / 6.0f);
     const float bottomY = height - 24.0f - bottomH;
-    const float studioH = juce::jlimit(176.0f, 218.0f, height / 4.0f);
+    // Compact single-row mixer: six channels side by side instead of a
+    // three-column / two-row block. The freed height goes to the tablature.
+    const float studioH = juce::jlimit(132.0f, 146.0f, height / 7.0f);
     const float studioY = bottomY - 14.0f - studioH;
     const float tabY = hudY + hudH + 12.0f;
     const float tabH = juce::jmax(150.0f, studioY - 12.0f - tabY);
@@ -1469,35 +1479,35 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     GameUi::drawCard(g, mixer, 18.0f);
     GameUi::drawEyebrow(g, "MIXER",
                         juce::Rectangle<float>(mixer.getX() + 22.0f,
-                                               mixer.getY() + 16.0f,
+                                               mixer.getY() + 14.0f,
                                                180.0f, 14.0f));
     g.setColour(UiColors::text);
     g.setFont(GameUi::heading(17.0f));
     g.drawText("BACKING TRACK",
                juce::Rectangle<float>(mixer.getX() + 22.0f,
-                                      mixer.getY() + 31.0f,
+                                      mixer.getY() + 29.0f,
                                       mixer.getWidth() - 190.0f, 22.0f),
                juce::Justification::centredLeft, false);
     GameUi::drawPill(g,
                      juce::Rectangle<float>(mixer.getRight() - 122.0f,
-                                            mixer.getY() + 18.0f,
+                                            mixer.getY() + 17.0f,
                                             100.0f, 20.0f),
                      "6 CHANNELS",
                      UiColors::green,
                      false);
     GameUi::drawDivider(g, mixer.getX() + 22.0f,
                         mixer.getRight() - 22.0f,
-                        mixer.getY() + 58.0f);
+                        mixer.getY() + 54.0f);
 
     {
-        const float cellWidth = (mixer.getWidth() - 28.0f - 24.0f) / 3.0f;
-        for (int i = 1; i < 3; ++i)
+        const float cellWidth = (mixer.getWidth() - 28.0f - 8.0f * 5.0f) / 6.0f;
+        for (int i = 1; i < 6; ++i)
         {
             const float dividerX = mixer.getX() + 14.0f
-                + static_cast<float>(i) * (cellWidth + 12.0f) - 6.0f;
-            g.setColour(UiColors::border);
-            g.fillRect(dividerX, mixer.getY() + 68.0f, 1.0f,
-                       mixer.getHeight() - 78.0f);
+                + static_cast<float>(i) * (cellWidth + 8.0f) - 4.0f;
+            g.setColour(UiColors::border.withAlpha(0.55f));
+            g.fillRect(dividerX, mixer.getY() + 60.0f, 1.0f,
+                       mixer.getHeight() - 72.0f);
         }
     }
 
@@ -1856,7 +1866,7 @@ void MainComponent::resized()
     speed50Button.setVisible(showGame);
     speed100Button.setVisible(showGame);
     speed120Button.setVisible(showGame);
-    audioSettingsButton.setVisible(songSelect || showGame);
+    audioSettingsButton.setVisible(songSelect || showGame || tunerScreen);
     easyButton.setVisible(false);
     normalButton.setVisible(false);
     hardButton.setVisible(false);
@@ -1900,22 +1910,21 @@ void MainComponent::resized()
         // of on top of it) avoids the old transparent ACCOUNT button covering
         // the name.
         const int topRight = width - 44;
-        const int logoutW = 90;
-        const int settingsW = 96;
-        const int audioW = 128;
+        const int accountButtonW = 128;
+        const int accountButtonH = 32;
         const int topGap = 8;
-        const int usernameW = 170;
-        const int logoutX = topRight - logoutW;
-        const int audioX = logoutX - topGap - audioW;
-        const int settingsX = audioX - topGap - settingsW;
+        const int usernameW = 150;
+        const int logoutX = topRight - accountButtonW;
+        const int audioX = logoutX - topGap - accountButtonW;
+        const int settingsX = audioX - topGap - accountButtonW;
         const int usernameX = settingsX - 12 - usernameW;
 
         currentUserLabel.setBounds(usernameX, 48, usernameW, 22);
         currentUserLabel.setJustificationType(juce::Justification::centredLeft);
-        accountSettingsButton.setBounds(settingsX, 42, settingsW, 32);
+        accountSettingsButton.setBounds(settingsX, 42, accountButtonW, accountButtonH);
         audioSettingsButton.setButtonText("AUDIO SETTINGS");
-        audioSettingsButton.setBounds(audioX, 42, audioW, 32);
-        logoutButton.setBounds(logoutX, 42, logoutW, 32);
+        audioSettingsButton.setBounds(audioX, 42, accountButtonW, accountButtonH);
+        logoutButton.setBounds(logoutX, 42, accountButtonW, accountButtonH);
         songTitleLabel.setBounds(48, 140, width - 96, 44);
 
         const int contentY = 228;
@@ -1980,6 +1989,15 @@ void MainComponent::resized()
         tunerCentsLabel.setJustificationType(juce::Justification::centredRight);
         tunerStatusLabel.setBounds(rightX + 40, panelY + 368, rightW - 80, 40);
         tunerStatusLabel.setJustificationType(juce::Justification::centred);
+
+        // Quick access to the input/device settings from the tuner. The button
+        // sits immediately to the left of the tuning-status pill, so the rest
+        // of the tuner layout stays untouched.
+        const int audioW = 128;
+        const int audioH = 30;
+        const int audioX = width - 44 - 136 - 12 - audioW;
+        audioSettingsButton.setButtonText("AUDIO SETTINGS");
+        audioSettingsButton.setBounds(audioX, 25, audioW, audioH);
 
         const int buttonWidth = juce::jmin(230, (width - 100) / 2);
         const int buttonGap = 16;
@@ -2057,7 +2075,7 @@ void MainComponent::resized()
         const int hudH = 96;
         const int bottomH = juce::jlimit(124, 160, height / 6);
         const int bottomY = height - 24 - bottomH;
-        const int studioH = juce::jlimit(176, 218, height / 4);
+        const int studioH = juce::jlimit(132, 146, height / 7);
         const int studioY = bottomY - 14 - studioH;
         const int tabY = hudY + hudH + 12;
         const int tabH = juce::jmax(150, studioY - 12 - tabY);
@@ -2109,33 +2127,31 @@ void MainComponent::resized()
         const int mixerX = 24;
         const int mixerW = width - 48;
         const int channelX = mixerX + 14;
-        const int channelTop = studioY + 66;
-        const int cellGap = 12;
-        const int cellW = (mixerW - 28 - cellGap * 2) / 3;
-        const int rowH = (studioH - 66 - 10) / 2;
+        const int channelTop = studioY + 60;
+        const int cellGap = 8;
+        const int cellW = (mixerW - 28 - cellGap * 5) / 6;
 
         auto layoutMixerChannel = [&](juce::TextButton& button, juce::Label& label,
-                                      juce::Slider& slider, int column, int row)
+                                      juce::Slider& slider, int column)
         {
             const int x = channelX + column * (cellW + cellGap);
-            const int y = channelTop + row * rowH;
-            button.setBounds(x, y, cellW, 22);
-            slider.setBounds(x, y + 27, cellW, 18);
-            label.setBounds(x, y + 48, cellW, 12);
+            button.setBounds(x, channelTop, cellW, 22);
+            slider.setBounds(x, channelTop + 26, cellW, 18);
+            label.setBounds(x, channelTop + 46, cellW, 14);
         };
 
         layoutMixerChannel(midiBackingButton, midiBackingVolumeLabel,
-                           midiBackingVolumeSlider, 0, 0);
+                           midiBackingVolumeSlider, 0);
         layoutMixerChannel(midiDrumsButton, midiDrumsVolumeLabel,
-                           midiDrumsVolumeSlider, 1, 0);
+                           midiDrumsVolumeSlider, 1);
         layoutMixerChannel(midiBassButton, midiBassVolumeLabel,
-                           midiBassVolumeSlider, 2, 0);
+                           midiBassVolumeSlider, 2);
         layoutMixerChannel(midiRhythmGuitarButton, midiRhythmGuitarVolumeLabel,
-                           midiRhythmGuitarVolumeSlider, 0, 1);
+                           midiRhythmGuitarVolumeSlider, 3);
         layoutMixerChannel(midiPianoButton, midiPianoVolumeLabel,
-                           midiPianoVolumeSlider, 1, 1);
+                           midiPianoVolumeSlider, 4);
         layoutMixerChannel(metronomeMixerButton, metronomeMixerVolumeLabel,
-                           metronomeMixerVolumeSlider, 2, 1);
+                           metronomeMixerVolumeSlider, 5);
 
         const int bottomW = width - 48;
         const int judgementW = bottomW * 40 / 100;
@@ -4188,10 +4204,7 @@ void MainComponent::initialiseUi()
         midiBackingButton.setToggleState(enabled, juce::dontSendNotification);
     };
     midiBackingVolumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    midiBackingVolumeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 20);
-    midiBackingVolumeSlider.setColour(juce::Slider::textBoxTextColourId, UiColors::text);
-    midiBackingVolumeSlider.setColour(juce::Slider::textBoxBackgroundColourId, UiColors::card);
-    midiBackingVolumeSlider.setColour(juce::Slider::textBoxOutlineColourId, UiColors::border);
+    midiBackingVolumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     midiBackingVolumeSlider.setRange(0.0, 0.8, 0.01);
     midiBackingVolumeSlider.setValue(0.30, juce::dontSendNotification);
     midiBackingVolumeSlider.setTooltip("Solo guitar MIDI volume");
@@ -4204,7 +4217,7 @@ void MainComponent::initialiseUi()
     midiBackingVolumeLabel.setText("SOLO VOL", juce::dontSendNotification);
     midiBackingVolumeLabel.setJustificationType(juce::Justification::centredLeft);
     midiBackingVolumeLabel.setColour(juce::Label::textColourId, UiColors::text);
-    midiBackingVolumeLabel.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
+    midiBackingVolumeLabel.setFont(GameUi::font(12.0f, true));
     addAndMakeVisible(midiBackingVolumeLabel);
 
     midiRhythmGuitarButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
@@ -4223,10 +4236,7 @@ void MainComponent::initialiseUi()
         midiRhythmGuitarButton.setToggleState(enabled, juce::dontSendNotification);
     };
     midiRhythmGuitarVolumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
-    midiRhythmGuitarVolumeSlider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 18);
-    midiRhythmGuitarVolumeSlider.setColour(juce::Slider::textBoxTextColourId, UiColors::text);
-    midiRhythmGuitarVolumeSlider.setColour(juce::Slider::textBoxBackgroundColourId, UiColors::card);
-    midiRhythmGuitarVolumeSlider.setColour(juce::Slider::textBoxOutlineColourId, UiColors::border);
+    midiRhythmGuitarVolumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     midiRhythmGuitarVolumeSlider.setRange(0.0, 0.8, 0.01);
     midiRhythmGuitarVolumeSlider.setValue(0.20, juce::dontSendNotification);
     midiRhythmGuitarVolumeSlider.setTooltip("Guitar stem volume");
@@ -4236,7 +4246,7 @@ void MainComponent::initialiseUi()
     midiRhythmGuitarVolumeLabel.setText("GUITAR VOL", juce::dontSendNotification);
     midiRhythmGuitarVolumeLabel.setJustificationType(juce::Justification::centredLeft);
     midiRhythmGuitarVolumeLabel.setColour(juce::Label::textColourId, UiColors::text);
-    midiRhythmGuitarVolumeLabel.setFont(juce::FontOptions().withHeight(10.5f).withStyle("Bold"));
+    midiRhythmGuitarVolumeLabel.setFont(GameUi::font(10.5f, true));
     addAndMakeVisible(midiRhythmGuitarVolumeLabel);
 
     auto setupBackingChannel = [this](juce::TextButton& button, juce::Slider& slider,
@@ -4262,10 +4272,7 @@ void MainComponent::initialiseUi()
             buttonPtr->setToggleState(next, juce::dontSendNotification);
         };
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
-        slider.setTextBoxStyle(juce::Slider::TextBoxRight, false, 42, 18);
-        slider.setColour(juce::Slider::textBoxTextColourId, UiColors::text);
-        slider.setColour(juce::Slider::textBoxBackgroundColourId, UiColors::card);
-        slider.setColour(juce::Slider::textBoxOutlineColourId, UiColors::border);
+        slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
         slider.setRange(0.0, 0.8, 0.01);
         slider.setValue(initialVolume, juce::dontSendNotification);
         auto* sliderPtr = &slider;
@@ -4276,7 +4283,7 @@ void MainComponent::initialiseUi()
         label.setText(name + " VOL", juce::dontSendNotification);
         label.setJustificationType(juce::Justification::centredLeft);
         label.setColour(juce::Label::textColourId, UiColors::text);
-        label.setFont(juce::FontOptions().withHeight(10.5f).withStyle("Bold"));
+        label.setFont(GameUi::font(10.5f, true));
         addAndMakeVisible(label);
     };
     setupBackingChannel(midiBassButton, midiBassVolumeSlider, midiBassVolumeLabel,
@@ -4629,10 +4636,14 @@ void MainComponent::initialiseUi()
     currentUserLabel.setMinimumHorizontalScale(0.8f);
     addAndMakeVisible(currentUserLabel);
 
-    logoutButton.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
-    logoutButton.setColour(juce::TextButton::buttonOnColourId, UiColors::surface2);
-    logoutButton.setColour(juce::TextButton::textColourOffId, UiColors::muted);
-    logoutButton.setColour(juce::TextButton::textColourOnId, UiColors::text);
+    // LOG OUT uses exactly the same surface/ink treatment as SETTINGS and
+    // AUDIO SETTINGS; the three buttons form one unified account row.
+    logoutButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    logoutButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
+    logoutButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    logoutButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    logoutButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    logoutButton.setTooltip("Sign out of your account");
     logoutButton.onClick = [this] { logoutCurrentUser(); };
     addAndMakeVisible(logoutButton);
 

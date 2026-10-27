@@ -172,6 +172,10 @@ void TablatureComponent::drawMeasureNumbers(juce::Graphics& g, float playheadX)
 
     g.setFont(GameUi::eyebrow(8.5f));
 
+    // Keep the measure numbers attached to the staff instead of a fixed
+    // header offset; the staff is vertically centred in the larger card.
+    const int measureNumberY = static_cast<int>(layoutFirstStringY) - 21;
+
     for (int measure = firstMeasureIndex; measure < firstMeasureIndex + 8; ++measure)
     {
         const double measureBeat = static_cast<double>(measure) * beatsPerMeasure;
@@ -183,7 +187,7 @@ void TablatureComponent::drawMeasureNumbers(juce::Graphics& g, float playheadX)
 
         g.setColour(UiColors::muted.withAlpha(0.78f));
         g.drawText(juce::String(measure + 1),
-                   static_cast<int>(x + 5.0f), 39, 38, 14,
+                   static_cast<int>(x + 5.0f), measureNumberY, 38, 14,
                    juce::Justification::left, false);
     }
 }
@@ -196,7 +200,7 @@ void TablatureComponent::drawNote(juce::Graphics& g,
                                   float y)
 {
     const auto colour = getFingerColour(note.finger);
-    const float noteRadius = juce::jlimit(9.0f, 14.0f, layoutStringSpacing * 0.44f);
+    const float noteRadius = juce::jlimit(9.0f, 22.0f, layoutStringSpacing * 0.40f);
 
     const double distance = note.startBeat - playheadBeat;
 
@@ -229,7 +233,7 @@ void TablatureComponent::drawNote(juce::Graphics& g,
     }
 
     g.setColour(UiColors::background);
-    g.setFont(GameUi::heading(juce::jmax(9.0f, noteRadius * 0.94f)));
+    g.setFont(GameUi::heading(juce::jmax(10.0f, noteRadius * 1.05f)));
     g.drawText(juce::String(note.fret),
                juce::Rectangle<int>(static_cast<int>(x - noteRadius),
                                     static_cast<int>(y - noteRadius),
@@ -245,7 +249,7 @@ void TablatureComponent::drawNote(juce::Graphics& g,
         {
             g.setColour(colour.withAlpha(isPast ? 0.16f : 0.40f));
             g.fillRect(x + noteRadius - 2.0f, y - 1.0f,
-                       juce::jmin(durationWidth - noteRadius, 90.0f), 2.0f);
+                       juce::jmin(durationWidth - noteRadius, 180.0f), 2.0f);
         }
     }
 }
@@ -314,9 +318,18 @@ void TablatureComponent::paint(juce::Graphics& g)
     //==========================================================================
     // Adaptive string layout
 
-    layoutFirstStringY = 60.0f;
-    const float available = static_cast<float>(getHeight()) - 94.0f;
-    layoutStringSpacing = juce::jlimit(18.0f, 30.0f, available / 5.0f);
+    // Use the full height of the enlarged tablature card: centre the six-string
+    // staff between the header and the footer beat pill, and let the strings
+    // breathe much further apart than the old fixed 30 px ceiling.
+    const float headerHeight = 56.0f;
+    const float footerHeight = 38.0f;
+    const float available = juce::jmax(0.0f, static_cast<float>(getHeight())
+                                             - headerHeight - footerHeight);
+    layoutStringSpacing = juce::jlimit(18.0f, 56.0f, available / 5.0f);
+
+    const float staffHeight = layoutStringSpacing * 5.0f;
+    layoutFirstStringY = juce::jmax(58.0f,
+                                    headerHeight + (available - staffHeight) * 0.5f);
 
     const float playheadX = static_cast<float>(getWidth()) * playheadPosition;
 

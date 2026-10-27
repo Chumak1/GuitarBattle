@@ -27,6 +27,8 @@ GuitarBattle/Builds/**/x64/
 /GuitarBattleServer.zip
 /GuitarBattleServer2.zip
 /GuitarBattle/GuitarBattle.zip
+/GuitarBattle.zip
+/Installer/
 *.bak-ui
 
 # Ableton / editor sidecar files
