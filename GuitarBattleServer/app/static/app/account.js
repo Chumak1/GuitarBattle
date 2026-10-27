@@ -63,17 +63,19 @@
 
   /* ---------- identity ---------- */
 
+  function applyMe(me) {
+    state.me = me;
+    document.getElementById('chipName').textContent = me.display_name || me.username;
+    document.getElementById('welcomeLine').textContent =
+      t('account.welcome', { username: me.username, email: me.email });
+    document.getElementById('profileUsername').value = me.username;
+    document.getElementById('profileDisplayName').value = me.display_name || '';
+    document.getElementById('accountEmail').textContent = me.email;
+    document.getElementById('accountSince').textContent = FF.formatDateTime(me.created_at);
+  }
+
   function loadMe() {
-    return FF.api('/auth/me', { auth: true }).then(function (me) {
-      state.me = me;
-      document.getElementById('chipName').textContent = me.display_name || me.username;
-      document.getElementById('welcomeLine').textContent =
-        t('account.welcome', { username: me.username, email: me.email });
-      document.getElementById('profileUsername').value = me.username;
-      document.getElementById('profileDisplayName').value = me.display_name || '';
-      document.getElementById('accountEmail').textContent = me.email;
-      document.getElementById('accountSince').textContent = FF.formatDateTime(me.created_at);
-    });
+    return FF.api('/auth/me', { auth: true }).then(applyMe);
   }
 
   /* ---------- personal summary ---------- */
@@ -382,8 +384,10 @@
   /* ---------- logout / refresh ---------- */
 
   function logout() {
-    FF.clearSession();
-    location.replace('/login');
+    // Revokes the refresh session server-side and clears the HttpOnly cookie.
+    var buttons = [document.getElementById('logoutBtn'), document.getElementById('logoutBtn2')];
+    buttons.forEach(function (button) { if (button) button.disabled = true; });
+    FF.logout().then(function () { location.replace('/login'); });
   }
 
   document.getElementById('logoutBtn').addEventListener('click', logout);
@@ -448,13 +452,15 @@
   }
 
   function boot() {
-    if (!FF.getToken()) {
-      location.replace('/login');
-      return;
-    }
-
-    loadMe()
-      .then(function () {
+    // The access token lives in memory only, so every page load restores the
+    // session from the HttpOnly refresh cookie before rendering anything.
+    FF.restoreSession()
+      .then(function (me) {
+        if (!me) {
+          location.replace('/login');
+          return;
+        }
+        applyMe(me);
         return Promise.all([
           loadSummary().catch(function (error) { if (!handleAuthError(error)) throw error; }),
           loadRating().catch(function (error) { if (!handleAuthError(error)) throw error; }),
@@ -463,6 +469,11 @@
         ]);
       })
       .catch(function (error) {
+        if (error && error.status === 0) {
+          // Offline is not a sign-out: keep the session and explain it.
+          showAlert('error', FF.errorMessage(error));
+          return;
+        }
         if (!handleAuthError(error)) showAlert('error', FF.errorMessage(error));
       });
   }

@@ -9,6 +9,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.schemas.admin_songs import AdminSongCreate, AdminSongUpdate
+from app.schemas.auth import LoginRequest, RegisterRequest, TokenResponse, UserResponse
 from app.schemas.games import GameSessionCreate, ScoreSubmit
 from app.schemas.songs import SongListResponse
 
@@ -190,3 +191,61 @@ def test_song_list_response_contract():
     assert response.total == 0
     with pytest.raises(ValidationError):
         SongListResponse.model_validate({"items": []})
+
+
+def test_register_privacy_consent_defaults_to_false_and_is_boolean():
+    """The endpoint rejects false; the schema stays backward compatible."""
+    base = {
+        "username": "player_1",
+        "email": "player@example.com",
+        "password": "GuitarBattleTest123",
+    }
+    assert RegisterRequest.model_validate(base).privacy_consent is False
+    assert (
+        RegisterRequest.model_validate({**base, "privacy_consent": True}).privacy_consent
+        is True
+    )
+    with pytest.raises(ValidationError):
+        RegisterRequest.model_validate({**base, "privacy_consent": "yes please"})
+
+
+def test_login_payload_ignores_privacy_consent():
+    """Sign-in has no consent field: an extra key is dropped, not stored."""
+    login = LoginRequest.model_validate(
+        {"identifier": "player_1", "password": "x", "privacy_consent": True}
+    )
+    assert not hasattr(login, "privacy_consent")
+
+
+def test_token_response_refresh_fields_are_optional():
+    """Older clients keep the three-field contract."""
+    legacy = TokenResponse.model_validate({"access_token": "a", "expires_in": 60})
+    assert legacy.token_type == "bearer"
+    assert legacy.refresh_token is None
+    assert legacy.refresh_expires_in is None
+
+    modern = TokenResponse.model_validate(
+        {
+            "access_token": "a",
+            "expires_in": 60,
+            "refresh_token": "r",
+            "refresh_expires_in": 2592000,
+        }
+    )
+    assert modern.refresh_token == "r"
+    assert modern.refresh_expires_in == 2592000
+
+
+def test_user_response_consent_timestamp_is_optional():
+    profile = UserResponse.model_validate(
+        {
+            "id": str(uuid.uuid4()),
+            "username": "player_1",
+            "email": "player@example.com",
+            "display_name": "Player",
+            "avatar_key": None,
+            "email_verified": True,
+            "created_at": "2026-01-01T00:00:00Z",
+        }
+    )
+    assert profile.privacy_consent_at is None

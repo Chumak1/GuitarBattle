@@ -292,6 +292,28 @@ a:hover { text-decoration: underline; }
   outline-offset: 2px;
 }
 
+/* ---------- session restore ---------- */
+
+/* While the saved session is being checked the card shows only the spinner:
+   the sign-in form must not flash for an already signed-in visitor. */
+body.is-session-checking .auth-card > .tabs,
+body.is-session-checking .auth-card > form.panel { visibility: hidden; }
+
+.session-check {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 0 6px;
+  color: var(--muted);
+}
+
+.session-check .btn__spinner {
+  border-color: rgba(243, 196, 81, 0.22);
+  border-top-color: var(--gold);
+}
+
+.session-check .hint { margin: 0; }
+
 /* ---------- buttons ---------- */
 
 .btn {

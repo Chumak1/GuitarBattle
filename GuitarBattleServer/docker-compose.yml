@@ -27,6 +27,11 @@ services:
       POSTGRES_HOST: db
       POSTGRES_PORT: 5432
       SECRET_KEY: ${SECRET_KEY}
+      # Persistent sessions (see .env.example). Defaults are safe: a 30-day
+      # rotating refresh token, Secure cookie only on HTTPS, 15s reuse grace.
+      REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-30}
+      REFRESH_COOKIE_SECURE: ${REFRESH_COOKIE_SECURE:-auto}
+      REFRESH_REUSE_GRACE_SECONDS: ${REFRESH_REUSE_GRACE_SECONDS:-15}
       SONG_FILES_DIR: /data/song_files
       CLIENT_ASSETS_DIR: /data/client_assets
       LANDING_MEDIA_DIR: /data/landing_media

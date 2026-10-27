@@ -193,7 +193,15 @@
     sessionStorage.removeItem(TOKEN_KEY);
   }
 
+  // /auth/login also sets the persistent `ff_refresh` cookie. Clearing only the
+  // in-memory admin token would leave a valid 30-day session on the machine, so
+  // sign-out (and an invalid token) revokes it server-side as well.
+  function revokePersistentSession() {
+    request("/auth/logout", { method: "POST", auth: false }).catch(() => {});
+  }
+
   function handleUnauthorized() {
+    revokePersistentSession();
     clearSession();
     showLogin("Сессия истекла или недействительна. Войдите снова.");
   }
@@ -722,6 +730,7 @@
   }
 
   function logout() {
+    revokePersistentSession();
     clearSession();
     showLogin();
   }

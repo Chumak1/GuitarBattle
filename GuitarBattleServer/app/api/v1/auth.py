@@ -3,7 +3,8 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import jwt
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
 from sqlalchemy import func, or_, select
@@ -19,6 +20,7 @@ from app.schemas.auth import (
     MessageResponse,
     PasswordChangeRequest,
     ProfileUpdateRequest,
+    RefreshRequest,
     RegisterRequest,
     ResetPasswordRequest,
     TokenResponse,
@@ -37,6 +39,16 @@ from app.services.email_service import (
     send_password_reset_email,
     send_verification_email,
 )
+from app.services.refresh_tokens import (
+    find_refresh_session,
+    is_expired,
+    issue_refresh_session,
+    refresh_token_expires_in,
+    revoke_chain,
+    revoke_session,
+    revoke_user_sessions,
+    rotating_reuse_is_race,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,6 +56,11 @@ router = APIRouter(prefix="/auth", tags=["authentication"])
 bearer_scheme = HTTPBearer(auto_error=False)
 password_hash = PasswordHash.recommended()
 JWT_ALGORITHM = "HS256"
+
+# The refresh cookie is only sent to the auth endpoints that need it, so it does
+# not travel with every API call.
+REFRESH_COOKIE_NAME = "ff_refresh"
+REFRESH_COOKIE_PATH = "/api/v1/auth"
 
 
 def _create_access_token(user: User) -> tuple[str, int]:
@@ -58,6 +75,93 @@ def _create_access_token(user: User) -> tuple[str, int]:
     }
     token = jwt.encode(payload, settings.secret_key, algorithm=JWT_ALGORITHM)
     return token, expires_in
+
+
+def _cookie_secure(request: Request) -> bool:
+    """Whether the refresh cookie must carry the ``Secure`` flag.
+
+    Behind Caddy the request arrives over plain HTTP with ``X-Forwarded-Proto``;
+    honouring it keeps the flag correct in production and off on localhost.
+    """
+    mode = settings.refresh_cookie_secure
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    forwarded = request.headers.get("x-forwarded-proto")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip().lower() == "https"
+    return request.url.scheme == "https"
+
+
+def _set_refresh_cookie(response: Response, request: Request, raw_token: str) -> None:
+    response.set_cookie(
+        key=REFRESH_COOKIE_NAME,
+        value=raw_token,
+        max_age=refresh_token_expires_in(),
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=_cookie_secure(request),
+        samesite="lax",
+    )
+
+
+def _clear_refresh_cookie(response: Response, request: Request) -> None:
+    response.delete_cookie(
+        key=REFRESH_COOKIE_NAME,
+        path=REFRESH_COOKIE_PATH,
+        httponly=True,
+        secure=_cookie_secure(request),
+        samesite="lax",
+    )
+
+
+def _user_agent(request: Request) -> str | None:
+    return request.headers.get("user-agent")
+
+
+def _issue_tokens(
+    db: Session,
+    user: User,
+    request: Request,
+    response: Response,
+) -> TokenResponse:
+    """Create an access token plus a rotating refresh session for ``user``."""
+    access_token, expires_in = _create_access_token(user)
+    raw_refresh, _session = issue_refresh_session(
+        db, user, user_agent=_user_agent(request)
+    )
+    db.commit()
+    _set_refresh_cookie(response, request, raw_refresh)
+    return TokenResponse(
+        access_token=access_token,
+        expires_in=expires_in,
+        refresh_token=raw_refresh,
+        refresh_expires_in=refresh_token_expires_in(),
+    )
+
+
+def _refresh_failure(request: Request) -> JSONResponse:
+    """A generic 401 that also removes the unusable cookie.
+
+    A raised ``HTTPException`` would build a fresh response and drop the
+    ``Set-Cookie`` header, so the failure is returned as a plain JSON response.
+    """
+    response = JSONResponse(
+        {"detail": "Invalid or expired refresh token"},
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    _clear_refresh_cookie(response, request)
+    return response
+
+
+def _submitted_refresh_token(request: Request, payload: RefreshRequest | None) -> str:
+    """Cookie first (web), JSON body as the fallback (desktop client)."""
+    raw = request.cookies.get(REFRESH_COOKIE_NAME)
+    if not raw and payload is not None and payload.refresh_token:
+        raw = payload.refresh_token
+    return (raw or "").strip()
 
 
 def get_current_user(
@@ -125,6 +229,14 @@ def _send_password_reset_code(db: Session, user: User) -> bool:
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
+    # Consent is checked before the duplicate lookup so a request without
+    # consent never reveals whether an account already exists.
+    if not payload.privacy_consent:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Privacy policy consent is required",
+        )
+
     existing = db.scalar(
         select(User.id).where(
             or_(
@@ -148,6 +260,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
         is_admin=False,
         is_active=True,
         token_version=0,
+        privacy_consent_at=datetime.now(timezone.utc),
     )
     db.add(user)
     try:
@@ -175,7 +288,15 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
 
 
 @router.post("/login", response_model=TokenResponse)
-def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def login(
+    payload: LoginRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
+    # Sign-in never asks for (and never stores) privacy consent: the policy is
+    # accepted once, at registration. An unexpected ``privacy_consent`` field in
+    # the body is ignored by the schema.
     identifier = payload.identifier
     user = db.scalar(
         select(User).where(
@@ -199,12 +320,103 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
             detail="Email address is not verified",
         )
 
-    token, expires_in = _create_access_token(user)
-    return TokenResponse(access_token=token, expires_in=expires_in)
+    return _issue_tokens(db, user, request, response)
+
+
+@router.post("/refresh", response_model=TokenResponse)
+def refresh(
+    request: Request,
+    response: Response,
+    payload: RefreshRequest | None = Body(default=None),
+    db: Session = Depends(get_db),
+) -> TokenResponse | JSONResponse:
+    """Rotate the refresh session and issue a fresh access token.
+
+    The token comes from the ``ff_refresh`` cookie (web) or from
+    ``{"refresh_token": "..."}`` (desktop client). The presented session is
+    revoked and replaced; the new raw token is returned and set as a cookie.
+    """
+    raw_token = _submitted_refresh_token(request, payload)
+    if not raw_token:
+        return _refresh_failure(request)
+
+    now = datetime.now(timezone.utc)
+    session = find_refresh_session(db, raw_token, for_update=True)
+    if session is None:
+        return _refresh_failure(request)
+
+    if session.revoked_at is not None:
+        _handle_reused_token(db, session, now)
+        return _refresh_failure(request)
+
+    if is_expired(session, now):
+        revoke_session(session, now=now)
+        db.commit()
+        return _refresh_failure(request)
+
+    user = db.get(User, session.user_id)
+    if user is None or not user.is_active:
+        revoke_session(session, now=now)
+        db.commit()
+        return _refresh_failure(request)
+
+    raw_refresh, new_session = issue_refresh_session(
+        db, user, user_agent=_user_agent(request), now=now
+    )
+    revoke_session(session, now=now, replaced_by=new_session)
+    db.commit()
+
+    access_token, expires_in = _create_access_token(user)
+    _set_refresh_cookie(response, request, raw_refresh)
+    return TokenResponse(
+        access_token=access_token,
+        expires_in=expires_in,
+        refresh_token=raw_refresh,
+        refresh_expires_in=refresh_token_expires_in(),
+    )
+
+
+def _handle_reused_token(db: Session, session, now: datetime) -> None:
+    """Reusing a rotated token means theft; a very recent reuse is just a race."""
+    if rotating_reuse_is_race(session, now):
+        # Two tabs refreshed at the same moment: the first one already rotated.
+        # Answer 401 but keep the replacement session alive.
+        return
+    revoke_chain(db, session, now=now)
+    db.commit()
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+def logout(
+    request: Request,
+    payload: RefreshRequest | None = Body(default=None),
+    db: Session = Depends(get_db),
+) -> Response:
+    """Revoke the presented refresh session and clear the cookie.
+
+    Idempotent: a missing, unknown or already revoked token still returns 204
+    and clears the cookie. The access token is short-lived and is not tracked
+    server-side, so the client simply drops it.
+    """
+    raw_token = _submitted_refresh_token(request, payload)
+    if raw_token:
+        session = find_refresh_session(db, raw_token)
+        if session is not None and session.revoked_at is None:
+            revoke_session(session)
+            db.commit()
+
+    result = Response(status_code=status.HTTP_204_NO_CONTENT)
+    _clear_refresh_cookie(result, request)
+    return result
 
 
 @router.post("/verify-email", response_model=TokenResponse)
-def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> TokenResponse:
+def verify_email(
+    payload: VerifyEmailRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+) -> TokenResponse:
     user = _find_user_by_email(db, str(payload.email))
     if user is None or not user.is_active:
         raise HTTPException(
@@ -230,8 +442,7 @@ def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> 
     db.commit()
     db.refresh(user)
 
-    token, expires_in = _create_access_token(user)
-    return TokenResponse(access_token=token, expires_in=expires_in)
+    return _issue_tokens(db, user, request, response)
 
 
 @router.post(
@@ -292,7 +503,10 @@ def forgot_password(
 
 @router.post("/reset-password", response_model=TokenResponse)
 def reset_password(
-    payload: ResetPasswordRequest, db: Session = Depends(get_db)
+    payload: ResetPasswordRequest,
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
 ) -> TokenResponse:
     user = _find_user_by_email(db, str(payload.email))
     if user is None or not user.is_active:
@@ -312,11 +526,12 @@ def reset_password(
     user.email_verified = True
     user.token_version += 1
     purge_codes(db, user.id, PURPOSE_EMAIL_VERIFY)
+    # Every device must sign in again with the new password.
+    revoke_user_sessions(db, user.id)
     db.commit()
     db.refresh(user)
 
-    token, expires_in = _create_access_token(user)
-    return TokenResponse(access_token=token, expires_in=expires_in)
+    return _issue_tokens(db, user, request, response)
 
 
 @router.get("/me", response_model=UserResponse)
@@ -370,5 +585,7 @@ def change_password(
     current_user.token_version += 1
     # A code requested before the password change must not remain usable.
     purge_codes(db, current_user.id, PURPOSE_PASSWORD_RESET)
+    # Persistent sessions are invalidated together with the access tokens.
+    revoke_user_sessions(db, current_user.id)
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

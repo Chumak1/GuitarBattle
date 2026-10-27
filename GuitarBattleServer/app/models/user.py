@@ -16,6 +16,12 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    # Set once, at registration, when the user accepts the privacy policy.
+    # Accounts created before the consent requirement keep NULL: the existing
+    # data is never touched.
+    privacy_consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     # Incremented when the password changes so older JWTs stop working.
     token_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"

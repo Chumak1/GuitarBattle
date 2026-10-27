@@ -16,18 +16,20 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 
 | Метод | Путь | Тело / параметры | Ответ |
 |---|---|---|---|
-| POST | `/auth/register` | `username`, `email`, `password`, `display_name?` | профиль, `email_verified=false` |
-| POST | `/auth/login` | `identifier`, `password` | `access_token`, `token_type`; 403, если почта не подтверждена |
-| POST | `/auth/verify-email` | `email`, `code` (6 цифр) | `access_token`; подтверждает почту |
+| POST | `/auth/register` | `username`, `email`, `password`, `display_name?`, `privacy_consent` (**обязательно `true`**, иначе 422 `Privacy policy consent is required`) | профиль, `email_verified=false`, `privacy_consent_at` |
+| POST | `/auth/login` | `identifier`, `password` (поле `privacy_consent` игнорируется) | `access_token`, `token_type`, `expires_in`, аддитивно `refresh_token`, `refresh_expires_in`; cookie `ff_refresh`; 403, если почта не подтверждена |
+| POST | `/auth/refresh` | cookie `ff_refresh` или `{"refresh_token": "..."}` | новые `access_token` + `refresh_token` (ротация), cookie обновляется; 401 без деталей |
+| POST | `/auth/logout` | cookie `ff_refresh` или `{"refresh_token": "..."}` (можно без тела) | 204, cookie очищается, идемпотентно |
+| POST | `/auth/verify-email` | `email`, `code` (6 цифр) | `access_token` (+ `refresh_token`, cookie); подтверждает почту |
 | POST | `/auth/resend-verification` | `email` | 202, всегда одинаковый ответ |
 | POST | `/auth/forgot-password` | `email` | 202, всегда одинаковый ответ |
-| POST | `/auth/reset-password` | `email`, `code`, `new_password` | `access_token`; старые токены инвалидируются |
-| GET | `/auth/me` | Bearer | профиль |
+| POST | `/auth/reset-password` | `email`, `code`, `new_password` | `access_token` (+ `refresh_token`, cookie); старые токены и refresh-сессии инвалидируются |
+| GET | `/auth/me` | Bearer | профиль, аддитивно `privacy_consent_at` (`str \| null`) |
 | PATCH | `/auth/me` | `display_name?`, `username?` (хотя бы одно поле; `username` — 3–32 символа `[A-Za-z0-9_.-]`, приводится к нижнему регистру, 409 если занят) | профиль |
 | POST | `/auth/change-password` | Bearer, `current_password`, `new_password` | 204, без тела; старые токены инвалидируются |
-| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных **без** песен со слотом Daily Challenge; у каждого элемента `readiness` |
-| GET | `/songs/{slug}` | — | детали + `version` + `files` + `assets` + `readiness`; песня дня тоже резолвится (клиент качает ассеты без токена) |
-| GET | `/songs/{slug}/files/{file_id}/download` | — | MIDI/MP3 |
+| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных **без** песен со слотом Daily Challenge; у каждого элемента `readiness` и `preview_url` (`str \| null`, абсолютный URL) |
+| GET | `/songs/{slug}` | — | детали + `version` + `files` + `assets` + `readiness` + `preview_url`; песня дня тоже резолвится (клиент качает ассеты без токена) |
+| GET | `/songs/{slug}/files/{file_id}/download` | — | MIDI/MP3; разрешены роли `midi`, `drums`, `bass`, `guitar`, `others`, `preview` |
 | GET | `/admin/songs` | Bearer admin, `search?`, `published?`, `limit`, `offset` | черновики и опубликованные; у каждой песни `daily_weekday` |
 | POST | `/admin/songs` | Bearer admin, `slug`, `title`, `bpm`, остальные поля опциональны, `daily_weekday?` (0–6 или `null`) | черновик |
 | GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `files[]` (все версии с `is_active`) + `readiness` + `daily_weekday` |
@@ -38,7 +40,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | POST | `/admin/songs/{id}/unpublish` | Bearer admin | снятие с публикации |
 | DELETE | `/admin/songs/{id}` | Bearer admin | 204 |
 | POST | `/admin/songs/{id}/files/midi` | Bearer admin, multipart `file` | новый `SongFile` (`role=midi`), активный; прежние версии роли — архив |
-| POST | `/admin/songs/{id}/files/audio/{role}` | Bearer admin, multipart `file`; `role`: `drums`, `bass`, `guitar`, `others` | новый `SongFile`, активный; прежние версии роли — архив |
+| POST | `/admin/songs/{id}/files/audio/{role}` | Bearer admin, multipart `file`; `role`: `drums`, `bass`, `guitar`, `others`, `preview` | новый `SongFile`, активный; прежние версии роли — архив. `preview` — полный микс, не влияет на `readiness`/публикацию и не меняет `Song.version` |
+| DELETE | `/admin/songs/{id}/files/preview` | Bearer admin | 204, идемпотентно; удаляет все версии preview (файлы и строки), `Song.version` не меняется |
 | GET | `/admin/songs/{id}/files` | Bearer admin | все версии файлов; у каждой `is_active` |
 | GET | `/admin/songs/{id}/files/{file_id}/download` | Bearer admin | файл (активный или архивный) |
 | POST | `/admin/songs/{id}/files/{file_id}/activate` | Bearer admin | 200, файл становится активным для своего `(song, role)`, остальные версии роли — архив; 404 если файл не найден/не относится к песне; `version` песни +1 |
@@ -76,6 +79,11 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `version?` | 201, сборка создаётся неактивной; `.exe/.zip/.msi` |
 | POST | `/admin/site/game-builds/{id}/activate` | Bearer admin | 200, сборка становится единственной активной |
 | DELETE | `/admin/site/game-builds/{id}` | Bearer admin | 204 |
+| GET | `/app/background-music` | — (публичный) | всегда 200: `{url: str \| null, content_type: str \| null, size_bytes: int}`; без файла — `null`/`null`/`0` |
+| GET | `/app/background-music/file` | — (публичный) | текущий MP3 (`audio/mpeg`, `Cache-Control: no-cache`); 404, если трека нет |
+| GET | `/admin/app/background-music` | Bearer admin | `url`, `content_type`, `size_bytes`, `uploaded_at`, `original_name`, `sha256` |
+| POST | `/admin/app/background-music` | Bearer admin, multipart `file` (только MP3) | 201 при первой загрузке, 200 при замене; тот же shape; 400 не-MP3, 413 больше 100 МиБ |
+| DELETE | `/admin/app/background-music` | Bearer admin | 204, идемпотентно |
 
 Публичные страницы сайта: `/` (лендинг), `/policy` (политика конфиденциальности),
 `/login`, `/register`, `/account`, `/admin/` (только администраторы).
@@ -165,9 +173,25 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 4. `POST /auth/resend-verification` и `POST /auth/forgot-password` всегда
    возвращают 202, чтобы не раскрывать наличие аккаунта. Повторная отправка
    ограничена cooldown (по умолчанию 60 секунд).
-5. `POST /auth/reset-password` проверяет код, меняет пароль, подтверждает почту и
-   возвращает новый `access_token`. Старые JWT инвалидируются через
-   `users.token_version`.
+5. `POST /auth/reset-password` проверяет код, меняет пароль, подтверждает почту,
+   возвращает новый `access_token` и отзывает все refresh-сессии. Старые JWT
+   инвалидируются через `users.token_version`.
+
+### Согласие с политикой и постоянная сессия (миграция `0014_privacy_refresh`)
+
+- `privacy_consent_at` (`timestamptz`, nullable) заполняется **только** при
+  регистрации; существующие аккаунты остаются `NULL`. Логин согласие не требует и
+  не меняет. Сайт передаёт `privacy_consent: true` из обязательного чекбокса формы
+  регистрации; чекбокса в форме входа нет.
+- `POST /auth/login` (а также `verify-email`/`reset-password`) создаёт
+  refresh-сессию на 30 дней и возвращает `refresh_token` + `refresh_expires_in`
+  для настольного клиента и ставит HttpOnly cookie `ff_refresh`
+  (`path=/api/v1/auth`, `samesite=lax`, `secure` при HTTPS/`X-Forwarded-Proto`).
+- `POST /auth/refresh` ротирует сессию: старый токен отзывается
+  (`revoked_at`, `replaced_by_id`), выдаётся новый. Повторное использование
+  отозванного токена — 401 и отзыв всей цепочки (защита от кражи); окно 15 с
+  после ротации считается гонкой двух вкладок и цепочку не убивает.
+- В БД хранится только `sha256` токена. Токены и коды не логировать.
 
 Коды хранятся только как HMAC-SHA256, живут 15 минут, одноразовые, максимум
 5 неверных попыток. Существующие аккаунты миграция `0005` помечает
@@ -181,6 +205,24 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   загрузке MIDI (`/files/midi`) или MP3-стема (`/files/audio/{role}`) — в той же
   транзакции, что и создание `SongFile`, а также при
   `POST /admin/songs/{id}/files/{file_id}/activate`.
+- **Preview Song не участвует в версии игровых ассетов.** Загрузка, замена,
+  активация архивной версии и удаление `role=preview` не меняют `Song.version`:
+  иначе клиент перекачал бы неизменившиеся MIDI и стемы. Это единственное
+  исключение из правила «новая загрузка роли увеличивает version».
+- **Background Music** — глобальный MP3 приложения, не ассет песни: таблица
+  `app_audio_assets` (миграция `0013_app_audio`, одна строка на `role`,
+  сейчас `background_music`), каталог `APP_AUDIO_DIR` (`/data/app_audio`,
+  volume `app_audio_data`). Публичный `url` — стабильный маршрут
+  `/api/v1/app/background-music/file`, поэтому замена файла не оставляет
+  битых ссылок; старый файл удаляется после коммита новой строки.
+- **Preview Song** хранится в `song_files` как `role=preview`,
+  `content_type=audio/mpeg`; правила загрузки — как у стемов (только MP3,
+  лимит 100 МиБ, сигнатура `ID3`/MPEG sync, замена = новый `is_active`,
+  прежние версии в архиве). В публичных `GET /songs` и `GET /songs/{slug}`
+  есть аддитивное поле `preview_url` — абсолютный URL
+  (`http://host/api/v1/songs/{slug}/files/{file_id}/download`) или `null`.
+  Preview отсутствует в `files[]`/`assets` публичного детального ответа и не
+  влияет на `readiness`, `publish_ready` и публикацию.
 - `song_files.is_active` (миграция `0011_asset_versions`) — признак опубликованной
   версии файла. У каждой пары `(song_id, role)` активен **ровно один** файл;
   остальные загрузки хранятся как архив, доступны для скачивания по id и могут
@@ -461,7 +503,13 @@ CHECK + индекс) и таблица `daily_slots` (`weekday` PK 0..6, `song_
 - `client_session_id` в телеметрии — UUID запуска клиента (≤64 символа),
   не путать с `app_session_id`/`session_id` на сервере.
 - Время в приложении считает сервер; клиент не отправляет длительность сессии.
-- `access_token` живёт только в памяти; при 401 нужен повторный логин.
+- `access_token` живёт только в памяти; при 401 клиент один раз пробует
+  `/auth/refresh` и повторяет запрос. Refresh-токен — в HttpOnly cookie, в JS и
+  localStorage его нет.
+- `privacy_consent` обязателен только при регистрации; `422` с
+  `Privacy policy consent is required` — отсутствующее согласие, а не ошибка полей.
+- Cookie `ff_refresh` ограничена `path=/api/v1/auth`; браузер не отправляет её в
+  остальные запросы, поэтому access token по-прежнему передаётся в `Authorization`.
 - При 403 на `/auth/login` почта не подтверждена; это не неверный пароль.
 - После смены/сброса пароля старый JWT перестаёт работать (401) из-за `token_version`.
 - Ошибки FastAPI — `{"detail": ...}`; клиент должен это учитывать.
@@ -488,3 +536,10 @@ CHECK + индекс) и таблица `daily_slots` (`weekday` PK 0..6, `song_
   из публичной выдачи, но остаются скачиваемыми по id.
 - `404` от `GET /admin/songs/{id}/files/{file_id}/analysis` — это «MIDI ещё не
   разобран», а не сбой; клиент/админка должны предлагать `POST .../analyze`.
+- `preview_url` — **абсолютный** URL (в отличие от относительных `download_url`
+  и `icon_url`); `null`, если preview не загружен. Preview не входит в
+  `files[]` публичного ответа, не считается в `readiness` и не требуется для
+  публикации — не добавляйте его в `ASSET_ROLES`.
+- `GET /app/background-music` всегда 200; отсутствие трека — `url=null`,
+  `size_bytes=0`, это не 404. Сам MP3 — `GET /app/background-music/file`;
+  URL стабилен при замене, поэтому не кэшируйте его содержимое без revalidate.

@@ -254,6 +254,7 @@ window.FFI18N = (function () {
       'auth.reset.submit': 'Сохранить пароль и войти',
       'auth.consent': 'Я согласен с <a href="/policy" target="_blank" rel="noopener">политикой конфиденциальности</a> и обработкой персональных данных.',
       'auth.consentRequired': 'Отметьте согласие с политикой конфиденциальности.',
+      'auth.session.checking': 'Проверяем сохранённую сессию…',
 
       'auth.msg.unverified': 'Почта ещё не подтверждена. Введите код из письма или запросите новый.',
       'auth.msg.registered': 'Аккаунт создан. Код подтверждения отправлен на {email}.',
@@ -336,6 +337,7 @@ window.FFI18N = (function () {
       'errors.alreadyVerified': 'Почта уже подтверждена — можно войти.',
       'errors.emailUnavailable': 'Не удалось отправить письмо: почтовый сервис недоступен. Попробуйте позже.',
       'errors.registrationUnavailable': 'Регистрация временно недоступна.',
+      'errors.consentRequired': 'Нужно согласие с политикой конфиденциальности.',
       'errors.tooMany': 'Слишком много попыток. Подождите немного.',
       'errors.badRequest': 'Проверьте введённые данные.',
       'errors.forbidden': 'Доступ запрещён. Возможно, нужно подтвердить почту.',
@@ -423,6 +425,7 @@ window.FFI18N = (function () {
       'auth.reset.submit': 'Save password and sign in',
       'auth.consent': 'I agree to the <a href="/policy" target="_blank" rel="noopener">Privacy Policy</a> and to the processing of my personal data.',
       'auth.consentRequired': 'Please accept the Privacy Policy.',
+      'auth.session.checking': 'Checking your saved session…',
 
       'auth.msg.unverified': 'Email is not confirmed yet. Enter the code from the email or request a new one.',
       'auth.msg.registered': 'Account created. A confirmation code was sent to {email}.',
@@ -505,6 +508,7 @@ window.FFI18N = (function () {
       'errors.alreadyVerified': 'Email is already confirmed — you can sign in.',
       'errors.emailUnavailable': 'Could not send the email: the mail service is unavailable. Try again later.',
       'errors.registrationUnavailable': 'Registration is temporarily unavailable.',
+      'errors.consentRequired': 'Please accept the Privacy Policy.',
       'errors.tooMany': 'Too many attempts. Try again later.',
       'errors.badRequest': 'Check the entered data.',
       'errors.forbidden': 'Access denied. You may need to confirm your email.',

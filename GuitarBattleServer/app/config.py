@@ -18,6 +18,17 @@ class Settings(BaseSettings):
     postgres_port: int = 5432
     secret_key: str
     access_token_expire_minutes: int = 60 * 24
+    # Persistent sessions. The web app keeps the raw refresh token in an
+    # HttpOnly cookie; the desktop client receives it in the JSON response.
+    # Only a sha256 hash of the token is stored in the database.
+    refresh_token_expire_days: int = Field(default=30, ge=1, le=365)
+    # A rotated token presented again within this window is treated as a race
+    # between two tabs (401 without revoking the chain); later reuse is treated
+    # as theft and revokes the whole rotation chain.
+    refresh_reuse_grace_seconds: int = Field(default=15, ge=0, le=300)
+    # "auto" sets Secure only for HTTPS requests (X-Forwarded-Proto is honoured
+    # behind the Caddy reverse proxy). "always"/"never" pin the flag.
+    refresh_cookie_secure: Literal["auto", "always", "never"] = "auto"
     song_files_dir: Path = Path("/data/song_files")
     # Generated manifest.json + bundle.zip served by /client-assets.
     client_assets_dir: Path = Path("/data/client_assets")

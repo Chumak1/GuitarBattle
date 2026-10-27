@@ -16,6 +16,7 @@
   var titleEl = document.getElementById('cardTitle');
   var subtitleEl = document.getElementById('cardSubtitle');
   var tabs = document.getElementById('tabs');
+  var sessionCheck = document.getElementById('sessionCheck');
   var panels = Array.prototype.slice.call(document.querySelectorAll('[data-panel]'));
 
   var cooldowns = {};
@@ -35,6 +36,7 @@
     options = options || {};
     currentPanel = name;
     clearAlert();
+    hideSessionCheck();
 
     panels.forEach(function (panel) {
       panel.classList.toggle('hidden', panel.getAttribute('data-panel') !== name);
@@ -102,11 +104,22 @@
       : '';
   }
 
-  function requireConsent(form) {
-    if (form.reportValidity()) return true;
-    var consent = form.querySelector('input[type="checkbox"]');
-    if (consent && !consent.checked) showAlert('info', t('auth.consentRequired'));
-    return false;
+  function hideSessionCheck() {
+    document.body.classList.remove('is-session-checking');
+    if (sessionCheck) sessionCheck.classList.add('hidden');
+  }
+
+  // Only the registration form carries the privacy-policy checkbox. Signing in
+  // never asks for consent again.
+  function requireRegistrationConsent(form) {
+    if (!form.reportValidity()) return false;
+    var consent = document.getElementById('regConsent');
+    if (!consent || !consent.checked) {
+      showAlert('info', t('auth.consentRequired'));
+      if (consent) consent.focus();
+      return false;
+    }
+    return true;
   }
 
   /* ---------- login ---------- */
@@ -114,7 +127,7 @@
   var loginForm = document.getElementById('loginForm');
   loginForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (!requireConsent(loginForm)) return;
+    if (!loginForm.reportValidity()) return;
     clearAlert();
 
     var button = loginForm.querySelector('button[type="submit"]');
@@ -144,7 +157,7 @@
   var registerForm = document.getElementById('registerForm');
   registerForm.addEventListener('submit', function (event) {
     event.preventDefault();
-    if (!requireConsent(registerForm)) return;
+    if (!requireRegistrationConsent(registerForm)) return;
     clearAlert();
 
     var button = registerForm.querySelector('button[type="submit"]');
@@ -152,7 +165,9 @@
     var payload = {
       username: document.getElementById('regUsername').value.trim(),
       email: email,
-      password: document.getElementById('regPassword').value
+      password: document.getElementById('regPassword').value,
+      // Explicit consent, recorded once on the server as users.privacy_consent_at.
+      privacy_consent: true
     };
     var displayName = document.getElementById('regDisplayName').value.trim();
     if (displayName) payload.display_name = displayName;
@@ -288,28 +303,38 @@
 
   if (I18N) {
     I18N.onChange(function () {
-      if (currentPanel) showPanel(currentPanel);
+      if (currentPanel && !document.body.classList.contains('is-session-checking')) {
+        showPanel(currentPanel);
+      }
     });
-  }
-
-  // Already signed in? Go straight to the account page.
-  if (FF.getToken()) {
-    FF.api('/auth/me', { auth: true })
-      .then(function () { location.replace('/account'); })
-      .catch(function () { FF.clearSession(); });
   }
 
   function boot() {
     var params = new URLSearchParams(location.search);
     var mode = params.get('mode') || params.get('tab');
     var email = params.get('email') || '';
-    if (mode && PANELS.indexOf(mode) !== -1) showPanel(mode, { email: email });
-    else if (location.pathname === '/register') showPanel('register', { email: email });
-    else showPanel('login', { email: email });
+    var initialPanel = mode && PANELS.indexOf(mode) !== -1
+      ? mode
+      : (location.pathname === '/register' ? 'register' : 'login');
 
-    if (params.get('changed') === '1') {
-      showAlert('ok', t('auth.msg.passwordChanged'));
-    }
+    // Restore the saved session before revealing any form: the login card must
+    // not flash for a visitor whose refresh cookie is still valid.
+    FF.restoreSession()
+      .then(function (me) {
+        if (me) {
+          location.replace('/account');
+          return;
+        }
+        showPanel(initialPanel, { email: email });
+        if (params.get('changed') === '1') {
+          showAlert('ok', t('auth.msg.passwordChanged'));
+        }
+      })
+      .catch(function (error) {
+        showPanel(initialPanel, { email: email });
+        // A network error means "unknown", not "signed out".
+        if (error && error.status === 0) showAlert('error', FF.errorMessage(error));
+      });
   }
 
   if (document.readyState === 'loading') {

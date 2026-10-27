@@ -9,8 +9,16 @@
   <title>Вход — fretfight</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b10'/%3E%3Cpath d='M24 16h25v9H34v7h13v9H34v17h-10z' fill='%23f3c451'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="/app/styles.css">
+  <noscript>
+    <style>
+      /* Without JavaScript the session cannot be checked: show the forms. */
+      body.is-session-checking .auth-card > .tabs,
+      body.is-session-checking .auth-card > form.panel { visibility: visible; }
+      body.is-session-checking #sessionCheck { display: none; }
+    </style>
+  </noscript>
 </head>
-<body>
+<body class="is-session-checking">
 
 <header class="topbar">
   <div class="topbar__inner">
@@ -34,6 +42,12 @@
 
     <div id="alert" class="alert hidden" role="status" aria-live="polite"></div>
 
+    <!-- Проверка сохранённой сессии до показа формы входа -->
+    <div id="sessionCheck" class="panel session-check" role="status" aria-live="polite">
+      <span class="btn__spinner" aria-hidden="true"></span>
+      <p class="hint" data-i18n="auth.session.checking">Проверяем сессию…</p>
+    </div>
+
     <div class="tabs" id="tabs" role="tablist">
       <button class="tab is-active" type="button" data-tab="login" role="tab" aria-selected="true" data-i18n="auth.tab.login">Вход</button>
       <button class="tab" type="button" data-tab="register" role="tab" aria-selected="false" data-i18n="auth.tab.register">Регистрация</button>
@@ -51,10 +65,6 @@
         <input class="input" id="loginPassword" name="password" type="password"
                autocomplete="current-password" placeholder="••••••••••" required>
       </div>
-      <label class="consent" for="loginConsent">
-        <input type="checkbox" id="loginConsent" required>
-        <span data-i18n-html="auth.consent">Я согласен с <a href="/policy" target="_blank" rel="noopener">политикой конфиденциальности</a> и обработкой персональных данных.</span>
-      </label>
       <button class="btn btn--primary btn--block" type="submit">
         <span class="btn__spinner hidden"></span><span class="btn__label" data-i18n="auth.login.submit">Войти</span>
       </button>

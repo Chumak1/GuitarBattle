@@ -125,14 +125,14 @@ def test_background_music_validation(db_client, admin_user, monkeypatch):
         files={"file": ("bg.wav", helpers.build_mp3_bytes(), "audio/mpeg")},
         headers=admin_user["headers"],
     )
-    assert wrong_extension.status_code == 415
+    assert wrong_extension.status_code == 400
 
     garbage = db_client.post(
         ADMIN,
         files={"file": ("bg.mp3", b"definitely not mp3", "audio/mpeg")},
         headers=admin_user["headers"],
     )
-    assert garbage.status_code == 422
+    assert garbage.status_code == 400
     assert "MP3" in garbage.json()["detail"]
 
     empty = db_client.post(
@@ -140,7 +140,7 @@ def test_background_music_validation(db_client, admin_user, monkeypatch):
         files={"file": ("bg.mp3", b"", "audio/mpeg")},
         headers=admin_user["headers"],
     )
-    assert empty.status_code == 422
+    assert empty.status_code == 400
 
     monkeypatch.setattr(settings, "max_audio_upload_bytes", 64)
     oversized = db_client.post(

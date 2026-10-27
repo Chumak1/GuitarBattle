@@ -17,6 +17,7 @@ def test_register_returns_public_profile(client, db_client):
             "username": username,
             "email": email,
             "password": helpers.DEFAULT_PASSWORD,
+            "privacy_consent": True,
         },
     )
     assert response.status_code == 201, response.text
@@ -26,6 +27,8 @@ def test_register_returns_public_profile(client, db_client):
     assert body["display_name"] == username.lower()
     assert body["email_verified"] is False
     assert body["avatar_key"] is None
+    # Consent is recorded exactly once, at registration.
+    assert body["privacy_consent_at"]
     # Password material must never leak through the API.
     assert "password" not in body
     assert "password_hash" not in body
@@ -40,6 +43,7 @@ def test_duplicate_username_is_rejected(db_client):
             "username": account["username"],
             "email": f"{helpers.unique('other')}@example.com",
             "password": helpers.DEFAULT_PASSWORD,
+            "privacy_consent": True,
         },
     )
     assert response.status_code == 409
@@ -54,6 +58,7 @@ def test_duplicate_email_is_rejected_case_insensitively(db_client):
             "username": helpers.unique("other"),
             "email": account["email"].upper(),
             "password": helpers.DEFAULT_PASSWORD,
+            "privacy_consent": True,
         },
     )
     assert response.status_code == 409
@@ -75,10 +80,64 @@ def test_register_validates_payload(db_client, overrides):
         "username": helpers.unique("user"),
         "email": f"{helpers.unique('mail')}@example.com",
         "password": helpers.DEFAULT_PASSWORD,
+        "privacy_consent": True,
     }
     payload.update(overrides)
     response = db_client.post(f"{helpers.API}/auth/register", json=payload)
     assert response.status_code == 422, response.text
+
+
+@pytest.mark.parametrize("consent", [None, False])
+def test_register_requires_privacy_consent(db_client, consent):
+    username = helpers.unique("noconsent")
+    payload = {
+        "username": username,
+        "email": f"{username}@example.com",
+        "password": helpers.DEFAULT_PASSWORD,
+    }
+    if consent is not None:
+        payload["privacy_consent"] = consent
+    response = db_client.post(f"{helpers.API}/auth/register", json=payload)
+    assert response.status_code == 422, response.text
+    assert "consent" in response.json()["detail"].lower()
+
+    # Nothing was created.
+    login = db_client.post(
+        f"{helpers.API}/auth/login",
+        json={"identifier": username, "password": helpers.DEFAULT_PASSWORD},
+    )
+    assert login.status_code == 401
+
+
+def test_login_ignores_privacy_consent_and_keeps_consent_timestamp(db_client, db_session):
+    from sqlalchemy import select
+
+    from app.models.user import User
+
+    account = helpers.register_user(db_client)
+    before = db_session.scalar(
+        select(User.privacy_consent_at).where(User.id == uuid.UUID(account["id"]))
+    )
+    assert before is not None
+
+    response = db_client.post(
+        f"{helpers.API}/auth/login",
+        json={
+            "identifier": account["username"],
+            "password": account["password"],
+            "privacy_consent": True,
+        },
+    )
+    assert response.status_code == 200, response.text
+    db_session.expire_all()
+    after = db_session.scalar(
+        select(User.privacy_consent_at).where(User.id == uuid.UUID(account["id"]))
+    )
+    assert after == before
+
+    me = db_client.get(f"{helpers.API}/auth/me", headers=account["headers"])
+    assert me.status_code == 200
+    assert me.json()["privacy_consent_at"] is not None
 
 
 @pytest.mark.parametrize("use_email", [False, True])
@@ -163,6 +222,7 @@ def test_registration_requires_email_confirmation_before_login(db_client):
             "username": username,
             "email": email,
             "password": helpers.DEFAULT_PASSWORD,
+            "privacy_consent": True,
         },
     )
     assert response.status_code == 201, response.text
@@ -215,6 +275,7 @@ def test_verification_code_attempts_are_limited_and_resend_recovers(
             "username": username,
             "email": email,
             "password": helpers.DEFAULT_PASSWORD,
+            "privacy_consent": True,
         },
     )
     assert response.status_code == 201, response.text
@@ -344,6 +405,7 @@ def test_registration_rolls_back_when_verification_email_fails(
             "username": username,
             "email": email,
             "password": helpers.DEFAULT_PASSWORD,
+            "privacy_consent": True,
         },
     )
     assert response.status_code == 503

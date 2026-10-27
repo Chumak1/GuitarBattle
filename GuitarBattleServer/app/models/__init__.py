@@ -1,5 +1,6 @@
 from app.models.user import User
 from app.models.email_auth_code import EmailAuthCode
+from app.models.refresh_session import RefreshSession
 from app.models.song import Song, SongFile
 from app.models.game_session import GameSession, Score
 from app.models.song_midi import SongMidiAnalysis, SongMidiNote, SongMidiTempoChange
@@ -18,7 +19,7 @@ from app.models.progression import (
 )
 
 __all__ = [
-    "User", "EmailAuthCode", "Song", "SongFile", "GameSession", "Score",
+    "User", "EmailAuthCode", "RefreshSession", "Song", "SongFile", "GameSession", "Score",
     "SongMidiAnalysis", "SongMidiNote", "SongMidiTempoChange",
     "Competition", "CompetitionParticipant",
     "LandingSettings", "GameBuild", "AppAudioAsset",

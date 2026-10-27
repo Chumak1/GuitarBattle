@@ -73,6 +73,8 @@ def register_user(
         "email": email,
         "password": password,
         "display_name": display_name,
+        # Registration is impossible without accepting the privacy policy.
+        "privacy_consent": True,
     }
     response = client.post(f"{API}/auth/register", json=payload)
     assert response.status_code == 201, response.text

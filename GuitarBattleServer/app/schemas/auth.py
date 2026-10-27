@@ -9,6 +9,13 @@ class RegisterRequest(BaseModel):
     email: EmailStr
     password: str = Field(min_length=6, max_length=128)
     display_name: str | None = Field(default=None, max_length=64)
+    # Mandatory consent to the privacy policy. The default keeps the field
+    # additive in the schema; the endpoint rejects ``false`` with 422 so an
+    # outdated client can never create an account without consent.
+    privacy_consent: bool = Field(
+        default=False,
+        description="Must be true: the user accepts the privacy policy",
+    )
 
     @field_validator("username")
     @classmethod
@@ -71,6 +78,21 @@ class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    # Additive: newer clients keep a long-lived session with the rotating
+    # refresh token. Older clients ignore both fields and keep using
+    # ``access_token`` exactly as before.
+    refresh_token: str | None = None
+    refresh_expires_in: int | None = None
+
+
+class RefreshRequest(BaseModel):
+    """Optional body for /refresh and /logout.
+
+    The web app relies on the HttpOnly ``ff_refresh`` cookie; the desktop client
+    has no cookie jar and sends the token in the body instead.
+    """
+
+    refresh_token: str | None = Field(default=None, max_length=512)
 
 
 class UserResponse(BaseModel):
@@ -83,6 +105,8 @@ class UserResponse(BaseModel):
     avatar_key: str | None
     email_verified: bool
     created_at: datetime
+    # Additive: NULL for accounts created before the consent requirement.
+    privacy_consent_at: datetime | None = None
 
 
 class ProfileUpdateRequest(BaseModel):

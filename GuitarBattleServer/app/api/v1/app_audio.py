@@ -183,7 +183,7 @@ async def upload_background_music(
 ) -> AdminBackgroundMusicResponse:
     if not has_mp3_extension(file.filename):
         raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Background music must be an .mp3 file",
         )
 
@@ -196,7 +196,7 @@ async def upload_background_music(
         )
     if not looks_like_mp3(data):
         raise HTTPException(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="File does not appear to contain MP3 audio",
         )
 
@@ -229,6 +229,7 @@ async def upload_background_music(
             content_type=MP3_CONTENT_TYPE,
             size_bytes=len(data),
             sha256=hashlib.sha256(data).hexdigest(),
+            uploaded_at=datetime.now(timezone.utc),
         )
         db.add(asset)
     else:
@@ -242,7 +243,6 @@ async def upload_background_music(
 
     try:
         db.commit()
-        db.refresh(asset)
     except Exception:
         db.rollback()
         _remove_stored_file(stored_name)

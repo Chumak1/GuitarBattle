@@ -66,17 +66,19 @@ All paths below use `/api/v1`.
 The API returns JSON in UTF-8. PowerShell 5.1 can misdecode response bodies when using `Invoke-RestMethod` on some responses; to inspect Russian text, save response bytes with `curl.exe -o` and read using `[System.IO.File]::ReadAllText(path, [System.Text.Encoding]::UTF8)`.
 
 ### Accounts
-- `POST /auth/register` — `{ "username": "player_1", "email": "player@example.com", "password": "at-least-10-characters" }`; creates an unverified account and sends a 6-digit code.
-- `POST /auth/login` — `{ "identifier": "player_1_or_email", "password": "..." }`; returns a Bearer access token only after the email is verified.
-- `POST /auth/verify-email` — `{ "email": "...", "code": "123456" }`; confirms the address and returns an access token.
+- `POST /auth/register` — `{ "username": "player_1", "email": "player@example.com", "password": "at-least-10-characters", "privacy_consent": true }`; `privacy_consent` is mandatory (422 otherwise) and is stored once as `users.privacy_consent_at`. Creates an unverified account and sends a 6-digit code.
+- `POST /auth/login` — `{ "identifier": "player_1_or_email", "password": "..." }`; returns a Bearer access token only after the email is verified. Additively returns `refresh_token` / `refresh_expires_in` and sets the HttpOnly `ff_refresh` cookie (path `/api/v1/auth`, 30 days). Sign-in never asks for privacy consent.
+- `POST /auth/refresh` — cookie `ff_refresh` or `{ "refresh_token": "..." }`; rotates the session and returns a new access token plus a new refresh token. Reuse of an already rotated token returns 401 and revokes the whole chain.
+- `POST /auth/logout` — cookie or `{ "refresh_token": "..." }` (the body is optional); revokes the session, clears the cookie and returns 204, idempotently.
+- `POST /auth/verify-email` — `{ "email": "...", "code": "123456" }`; confirms the address and returns an access token (plus a refresh session).
 - `POST /auth/resend-verification` — `{ "email": "..." }`; always returns 202 and sends a new code when appropriate.
 - `POST /auth/forgot-password` — `{ "email": "..." }`; always returns 202 and sends a reset code when appropriate.
-- `POST /auth/reset-password` — `{ "email": "...", "code": "123456", "new_password": "..." }`; returns an access token.
-- `GET /auth/me` — authenticated profile.
+- `POST /auth/reset-password` — `{ "email": "...", "code": "123456", "new_password": "..." }`; returns an access token and revokes all refresh sessions of the account.
+- `GET /auth/me` — authenticated profile (additive `privacy_consent_at`, `null` for accounts created before the consent requirement).
 - `PATCH /auth/me` — authenticated partial profile update: `{ "display_name": "Player One" }` and/or `{ "username": "player_one" }` (3–32 characters `[A-Za-z0-9_.-]`, lowercased, 409 if taken).
 - `POST /auth/change-password` — Bearer, `{ "current_password": "...", "new_password": "..." }`; returns 204.
 
-Passwords are Argon2-hashed and access tokens are JWTs. Codes are stored only as HMAC-SHA256 hashes, expire after 15 minutes, are single-use, and allow at most five failed attempts. Registration is rejected with 503 if the verification email cannot be sent, so an unreachable account is not created. Changing or resetting a password increments the user's token version and invalidates all older JWTs. Existing accounts are marked verified by migration `0005` so they are not locked out when this feature is deployed.
+Passwords are Argon2-hashed and access tokens are JWTs. Refresh tokens are stored only as sha256 hashes in `refresh_sessions` (`0001`…`0014` migrations; `0014_privacy_refresh` adds consent and sessions). Codes are stored only as HMAC-SHA256 hashes, expire after 15 minutes, are single-use, and allow at most five failed attempts. Registration is rejected with 503 if the verification email cannot be sent, so an unreachable account is not created. Changing or resetting a password increments the user's token version, invalidates all older JWTs and revokes every refresh session. Existing accounts are marked verified by migration `0005` so they are not locked out when this feature is deployed; they keep `privacy_consent_at = NULL`.
 
 ### Email delivery (SMTP)
 
