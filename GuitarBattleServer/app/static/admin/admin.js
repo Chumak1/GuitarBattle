@@ -38,6 +38,7 @@
     published: "",
     currentSong: null,
     analysis: null,
+    analysisMissing: false,
     pendingDelete: null,
     slugTouched: false,
     loadRequestId: 0,
@@ -779,6 +780,11 @@
     if (!state.currentSong) {
       return null;
     }
+    const versions = state.currentSong.files || [];
+    const stored = versions.find((file) => file?.id === fileId);
+    if (stored) {
+      return stored;
+    }
     const midi = state.currentSong.assets?.midi;
     if (midi?.id === fileId) {
       return midi;
@@ -823,25 +829,48 @@
     }
   }
 
-  function fileSlotHtml(kind, role, file) {
+  function fileVersionHtml(kind, file) {
+    const active = Boolean(file.is_active);
+    const badge = active
+      ? '<span class="badge-soft badge-published">Активен</span>'
+      : '<span class="badge-soft badge-empty">Архив</span>';
+    const analyzeButton = active && kind === "midi"
+      ? `<button type="button" class="btn btn-sm btn-outline-light" data-analyze title="Разобрать MIDI и сохранить ноты">
+           <i class="bi bi-activity me-1"></i>Разобрать
+         </button>`
+      : "";
+    const activateButton = active
+      ? ""
+      : `<button type="button" class="btn btn-sm btn-outline-warning" data-activate="${escapeHtml(file.id)}" title="Сделать эту версию активной">
+           Сделать активной
+         </button>`;
+    return `
+      <div class="file-version ${active ? "is-active" : "is-archive"}">
+        <div class="file-version-info">
+          ${badge}
+          <span class="file-meta">${formatBytes(file.size_bytes)} · ${formatDate(file.created_at)}</span>
+        </div>
+        <div class="file-slot-actions">
+          ${analyzeButton}
+          <button type="button" class="btn btn-sm btn-outline-light" data-download="${escapeHtml(file.id)}" title="Скачать файл">
+            <i class="bi bi-download"></i>
+          </button>
+          ${activateButton}
+        </div>
+      </div>
+    `;
+  }
+
+  function fileSlotHtml(kind, role, versions) {
     const key = role ? `${kind}-${role}` : kind;
     const label = ROLE_LABELS[role || kind] || kind;
     const icon = ROLE_ICONS[role || kind] || "bi-file-earmark";
     const accept = kind === "midi" ? ".mid,.midi" : ".mp3,audio/mpeg";
-    const fileText = file
-      ? `${formatBytes(file.size_bytes)} · ${formatDate(file.created_at)}`
-      : "Файл не загружен";
-    const uploadLabel = file ? "Заменить" : "Загрузить";
-    const analyzeButton = kind === "midi" && file
-      ? `<button type="button" class="btn btn-sm btn-outline-light" data-analyze title="Разобрать MIDI и сохранить ноты">
-           <i class="bi bi-activity me-1"></i>Анализировать
-         </button>`
-      : "";
-    const downloadButton = file
-      ? `<button type="button" class="btn btn-sm btn-outline-light" data-download="${escapeHtml(file.id)}" title="Скачать файл">
-           <i class="bi bi-download"></i>
-         </button>`
-      : "";
+    const files = versions || [];
+    const uploadLabel = files.length ? "Заменить" : "Загрузить";
+    const rows = files.length
+      ? files.map((file) => fileVersionHtml(kind, file)).join("")
+      : '<div class="file-meta">Файл не загружен</div>';
     return `
       <div class="file-slot" data-key="${escapeHtml(key)}">
         <div class="file-slot-head">
@@ -849,14 +878,11 @@
             <span class="slot-icon"><i class="bi ${icon}"></i></span>
             <div>
               <strong>${escapeHtml(label)}</strong>
-              <div class="file-meta">${fileText}</div>
+              <div class="file-meta">${files.length > 1 ? `Версий: ${files.length}` : ""}</div>
             </div>
           </div>
-          <div class="file-slot-actions">
-            ${analyzeButton}
-            ${downloadButton}
-          </div>
         </div>
+        <div class="file-versions">${rows}</div>
         <div class="file-slot-upload">
           <input type="file" class="form-control form-control-sm" accept="${accept}"
                  data-file-kind="${kind}" data-file-role="${escapeHtml(role || "")}"
@@ -904,7 +930,24 @@
   function renderAnalysis() {
     const panel = el("analysisPanel");
     if (!state.analysis) {
-      panel.innerHTML = "";
+      // A song whose MIDI exists but was never parsed is a normal state, not an
+      // error: offer the analyze action instead of showing a failure toast.
+      panel.innerHTML = state.analysisMissing
+        ? `
+          <div class="analysis-card">
+            <div class="d-flex justify-content-between align-items-start gap-2">
+              <div>
+                <div class="fw-semibold"><i class="bi bi-activity me-1 text-warning"></i>Анализ MIDI</div>
+                <div class="small text-secondary">Анализ не найден — ноты ещё не сохранены</div>
+              </div>
+              <button type="button" class="btn btn-sm btn-outline-light" data-analyze>
+                <i class="bi bi-activity me-1"></i>Разобрать
+              </button>
+            </div>
+          </div>
+        `
+        : "";
+      bindAnalysisActions();
       return;
     }
     const analysis = state.analysis;
@@ -933,6 +976,12 @@
     `;
   }
 
+  function bindAnalysisActions() {
+    el("analysisPanel").querySelectorAll("[data-analyze]").forEach((button) => {
+      button.addEventListener("click", () => analyzeMidi(button));
+    });
+  }
+
   function bindFileActions() {
     const body = el("filesBody");
     body.querySelectorAll("[data-upload]").forEach((button) => {
@@ -944,18 +993,39 @@
     body.querySelectorAll("[data-analyze]").forEach((button) => {
       button.addEventListener("click", () => analyzeMidi(button));
     });
+    body.querySelectorAll("[data-activate]").forEach((button) => {
+      button.addEventListener("click", () => activateFile(button));
+    });
+  }
+
+  function versionsByRole(detail) {
+    const groups = {};
+    (detail.files || []).forEach((file) => {
+      if (!file || !file.role) {
+        return;
+      }
+      (groups[file.role] = groups[file.role] || []).push(file);
+    });
+    Object.keys(groups).forEach((role) => {
+      groups[role].sort((left, right) => {
+        if (Boolean(left.is_active) !== Boolean(right.is_active)) {
+          return left.is_active ? -1 : 1;
+        }
+        return new Date(right.created_at) - new Date(left.created_at);
+      });
+    });
+    return groups;
   }
 
   function renderFiles(detail) {
-    const assets = detail.assets || {};
-    const stems = assets.stems || {};
+    const byRole = versionsByRole(detail);
     el("filesTitle").textContent = detail.title;
     el("filesMeta").textContent = `${detail.is_published ? "Опубликована" : "Черновик"} · ${detail.slug} · ${detail.bpm} BPM · ${formatDuration(detail.duration_seconds)}`;
     el("filesReadiness").innerHTML = renderReadiness(detail);
     el("filesBody").innerHTML = `
       <div class="file-list">
-        ${fileSlotHtml("midi", "", assets.midi)}
-        ${AUDIO_ROLES.map((role) => fileSlotHtml("audio", role, stems[role])).join("")}
+        ${fileSlotHtml("midi", "", byRole.midi)}
+        ${AUDIO_ROLES.map((role) => fileSlotHtml("audio", role, byRole[role])).join("")}
       </div>
     `;
     bindFileActions();
@@ -964,6 +1034,7 @@
 
   async function loadAnalysis(detail) {
     state.analysis = null;
+    state.analysisMissing = false;
     if (!detail.assets?.midi) {
       return;
     }
@@ -972,9 +1043,12 @@
         `/admin/songs/${detail.id}/files/${detail.assets.midi.id}/analysis`,
       );
     } catch (error) {
-      if (error.status !== 404) {
-        // A missing analysis is normal; other errors are shown by the action
-        // that triggered the refresh, not while opening the file manager.
+      if (error.status === 404) {
+        // 404 means "not analyzed yet" — the UI offers the analyze action.
+        state.analysisMissing = true;
+      } else {
+        // Other failures are reported by the action that triggered the refresh,
+        // not while opening the file manager.
         console.warn("Could not load MIDI analysis", error);
       }
     }
@@ -1088,6 +1162,29 @@
     }
   }
 
+  async function activateFile(button) {
+    const song = state.currentSong;
+    if (!song) {
+      return;
+    }
+    const fileId = button.dataset.activate;
+    if (!fileId) {
+      return;
+    }
+    setSlotBusy(button, true);
+    try {
+      await request(`/admin/songs/${song.id}/files/${fileId}/activate`, {
+        method: "POST",
+      });
+      showToast("Версия файла активирована.");
+      state.analysis = null;
+      await refreshCurrentSong();
+    } catch (error) {
+      showToast(friendlyErrorMessage(error), "danger");
+      setSlotBusy(button, false);
+    }
+  }
+
   async function analyzeMidi(button) {
     const song = state.currentSong;
     const midi = song?.assets?.midi;
@@ -1102,6 +1199,7 @@
         `/admin/songs/${song.id}/files/${midi.id}/analyze`,
         { method: "POST" },
       );
+      state.analysisMissing = false;
       renderAnalysis();
       showToast("MIDI проанализирован.");
     } catch (error) {

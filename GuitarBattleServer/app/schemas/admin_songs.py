@@ -99,6 +99,8 @@ class AdminSongFileResponse(BaseModel):
     content_type: str
     size_bytes: int
     sha256: str
+    #: ``True`` for the published version of its role, ``False`` for an archived upload.
+    is_active: bool = True
     created_at: datetime
     download_url: str | None = None
 
@@ -117,3 +119,5 @@ class AdminSongAssetsResponse(BaseModel):
 
 class AdminSongDetailResponse(AdminSongResponse):
     assets: AdminSongAssetsResponse = Field(default_factory=AdminSongAssetsResponse)
+    #: Every stored version of every role, active and archived, newest first.
+    files: list[AdminSongFileResponse] = Field(default_factory=list)

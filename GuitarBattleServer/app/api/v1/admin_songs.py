@@ -1,6 +1,7 @@
 import hashlib
 import os
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 from app.models.song_midi import SongMidiAnalysis, SongMidiNote, SongMidiTempoChange
 from app.schemas.midi_analysis import MidiAnalysisResponse, MidiNoteResponse, MidiTempoChangeResponse
@@ -28,7 +29,11 @@ from app.schemas.admin_songs import (
     AdminSongUpdate,
 )
 from app.services.daily_slots import apply_song_weekday
-from app.services.song_assets import build_readiness, load_newest_files_by_song
+from app.services.song_assets import (
+    build_readiness,
+    deactivate_role_files,
+    load_active_files_by_song,
+)
 
 router = APIRouter(prefix="/admin/songs", tags=["admin: songs"])
 
@@ -52,7 +57,11 @@ def _admin_song_response(song: Song, files_by_role: dict[str, SongFile]) -> Admi
     return result
 
 
-def _admin_song_detail(song: Song, files_by_role: dict[str, SongFile]) -> AdminSongDetailResponse:
+def _admin_song_detail(
+    song: Song,
+    files_by_role: dict[str, SongFile],
+    all_files: Sequence[SongFile] | None = None,
+) -> AdminSongDetailResponse:
     result = AdminSongDetailResponse.model_validate(song)
     result.readiness = build_readiness(files_by_role)
 
@@ -69,6 +78,9 @@ def _admin_song_detail(song: Song, files_by_role: dict[str, SongFile]) -> AdminS
             others=optional("others"),
         ),
     )
+    result.files = [
+        _admin_file_response(song.id, stored_file) for stored_file in (all_files or [])
+    ]
     return result
 
 @router.get("", response_model=AdminSongListResponse, summary="List all songs, including drafts")
@@ -88,7 +100,7 @@ def list_all_songs(
         filters.append(Song.is_published.is_(published))
     total = db.scalar(select(func.count()).select_from(Song).where(*filters)) or 0
     items = db.scalars(select(Song).where(*filters).order_by(Song.updated_at.desc(), Song.id.asc()).limit(limit).offset(offset)).all()
-    files_by_song = load_newest_files_by_song(db, (song.id for song in items))
+    files_by_song = load_active_files_by_song(db, (song.id for song in items))
     responses = [_admin_song_response(song, files_by_song.get(song.id, {})) for song in items]
     return AdminSongListResponse(items=responses, total=total, limit=limit, offset=offset)
 
@@ -113,8 +125,13 @@ def get_admin_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depen
     song = db.get(Song, song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
-    files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
-    return _admin_song_detail(song, files_by_role)
+    files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
+    all_files = db.scalars(
+        select(SongFile)
+        .where(SongFile.song_id == song.id)
+        .order_by(SongFile.created_at.desc(), SongFile.id.asc())
+    ).all()
+    return _admin_song_detail(song, files_by_role, all_files)
 
 @router.patch("/{song_id}", response_model=AdminSongResponse, summary="Update song metadata")
 def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> AdminSongResponse:
@@ -123,7 +140,7 @@ def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(g
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
     changes = payload.model_dump(exclude_unset=True)
     if not changes:
-        files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+        files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
         return _admin_song_response(song, files_by_role)
     non_nullable_fields = {"slug", "title", "genre", "bpm", "difficulty", "duration_seconds"}
     if any(key in non_nullable_fields and value is None for key, value in changes.items()):
@@ -141,7 +158,7 @@ def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(g
     except IntegrityError:
         db.rollback()
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Song slug already exists")
-    files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+    files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
     return _admin_song_response(song, files_by_role)
 
 @router.post("/{song_id}/publish", response_model=AdminSongResponse, summary="Publish a song")
@@ -152,7 +169,7 @@ def publish_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depends
     song.is_published = True
     db.commit()
     db.refresh(song)
-    files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+    files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
     return _admin_song_response(song, files_by_role)
 
 @router.post("/{song_id}/unpublish", response_model=AdminSongResponse, summary="Unpublish a song")
@@ -163,7 +180,7 @@ def unpublish_song(song_id: UUID, db: Session = Depends(get_db), _: User = Depen
     song.is_published = False
     db.commit()
     db.refresh(song)
-    files_by_role = load_newest_files_by_song(db, [song.id]).get(song.id, {})
+    files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
     return _admin_song_response(song, files_by_role)
 
 @router.delete("/{song_id}", status_code=status.HTTP_204_NO_CONTENT, summary="Delete a song")
@@ -235,7 +252,11 @@ async def upload_song_midi(
         content_type="audio/midi",
         size_bytes=len(data),
         sha256=hashlib.sha256(data).hexdigest(),
+        is_active=True,
     )
+    # The new upload wins, but it must be the only active MIDI version: the
+    # previous one stays downloadable as an archive.
+    deactivate_role_files(db, song_id, "midi", keep_file_id=file_id)
     db.add(record)
     # Song.version is the content/cache version clients use for offline assets.
     # Bump it in the same transaction as the new file record.
@@ -326,7 +347,9 @@ async def upload_song_audio_stem(
         content_type="audio/mpeg",
         size_bytes=len(data),
         sha256=hashlib.sha256(data).hexdigest(),
+        is_active=True,
     )
+    deactivate_role_files(db, song_id, role, keep_file_id=file_id)
     db.add(record)
     # Song.version is the content/cache version clients use for offline assets.
     # Bump it in the same transaction as the new file record.
@@ -359,8 +382,45 @@ def list_song_files(
     if db.get(Song, song_id) is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
     return db.scalars(
-        select(SongFile).where(SongFile.song_id == song_id).order_by(SongFile.created_at.desc())
+        select(SongFile)
+        .where(SongFile.song_id == song_id)
+        .order_by(SongFile.created_at.desc(), SongFile.id.asc())
     ).all()
+
+
+@router.post(
+    "/{song_id}/files/{file_id}/activate",
+    response_model=AdminSongFileResponse,
+    summary="Make a stored file the published version of its role",
+)
+def activate_song_file(
+    song_id: UUID,
+    file_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> AdminSongFileResponse:
+    """Switch the active version of ``(song, role)`` to ``file_id``.
+
+    Every other file of the same role is archived in the same transaction, so
+    the public API always serves exactly one version per role. ``Song.version``
+    is bumped because clients cache downloadable assets by that value.
+    """
+    song = db.get(Song, song_id)
+    if song is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
+
+    record = db.scalar(
+        select(SongFile).where(SongFile.id == file_id, SongFile.song_id == song_id)
+    )
+    if record is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song file not found")
+
+    deactivate_role_files(db, song_id, record.role, keep_file_id=record.id)
+    record.is_active = True
+    song.version += 1
+    db.commit()
+    db.refresh(record)
+    return _admin_file_response(song_id, record)
 
 
 @router.get(

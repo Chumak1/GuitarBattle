@@ -19,8 +19,7 @@ from app.schemas.songs import (
 from app.services.song_assets import (
     ASSET_ROLES,
     build_readiness,
-    load_newest_files_by_song,
-    newest_files_by_role,
+    load_active_files_by_song,
 )
 
 router = APIRouter(prefix="/songs", tags=["songs"])
@@ -96,7 +95,7 @@ def list_songs(
         .limit(limit)
         .offset(offset)
     ).all()
-    files_by_song = load_newest_files_by_song(db, (song.id for song in songs))
+    files_by_song = load_active_files_by_song(db, (song.id for song in songs))
     items = [_public_summary(song, files_by_song.get(song.id, {})) for song in songs]
     return SongListResponse(items=items, total=total, limit=limit, offset=offset)
 
@@ -110,14 +109,10 @@ def get_song(slug: str, db: Session = Depends(get_db)) -> SongDetailResponse:
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
 
-    # Return only the newest version of each role. This also keeps old uploaded
-    # replacements from being downloaded by clients after a song is updated.
-    all_files = db.scalars(
-        select(SongFile)
-        .where(SongFile.song_id == song.id)
-        .order_by(SongFile.role.asc(), SongFile.created_at.desc(), SongFile.id.desc())
-    ).all()
-    files_by_role = newest_files_by_role(all_files)
+    # Serve only the active version of each role. Archived uploads stay
+    # downloadable by id but never replace the published asset set; an admin
+    # can switch versions with ``POST /admin/songs/{id}/files/{file_id}/activate``.
+    files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
 
     result = SongDetailResponse.model_validate(song)
     result.readiness = build_readiness(files_by_role)

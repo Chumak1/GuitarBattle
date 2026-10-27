@@ -327,6 +327,7 @@ Every `/admin/songs` route requires a Bearer token for a user whose `is_admin` f
 - `DELETE /admin/songs/{song_id}`
 - MIDI upload, download and analysis endpoints under `/admin/songs/{song_id}/files/...`
 - `POST /admin/songs/{song_id}/files/audio/{role}` — upload an instrumental MP3. Supported roles: `drums`, `bass`, `guitar`, `others`; maximum size is 100 MiB.
+- `POST /admin/songs/{song_id}/files/{file_id}/activate` — publish any stored version of a role again. The other versions of that role become an archive in the same transaction and `songs.version` is bumped.
 
 Grant the first administrator locally after registering an account (substitute the email and use the DB name/user from your own `.env`):
 
@@ -337,6 +338,14 @@ docker compose exec db psql -U <POSTGRES_USER> -d <POSTGRES_DB> -c "UPDATE users
 Log in again after the role change, then use the new access token in Swagger's Authorize dialog.
 
 To add a track, open `http://localhost:8000/docs`, authorize as admin, choose `POST /api/v1/admin/songs/{song_id}/files/audio/{role}`, enter the song UUID and one role (`drums`, `bass`, `guitar`, or `others`), then attach an `.mp3` file. The MIDI remains uploaded through `POST /api/v1/admin/songs/{song_id}/files/midi`. Upload aligned stems exported from the same timeline/start point so the four mixer channels remain synchronized.
+
+Every upload is kept as a version and exactly one file per `(song, role)` is active
+(`song_files.is_active`); the public API serves only active files. A new upload
+becomes active automatically, and the admin file dialog shows the badge
+“Активен” / “Архив” with a “Сделать активной” button for older versions, so a bad
+upload can be rolled back without re-uploading the file. `GET /admin/songs/{id}`
+returns every version in `files[]` with `is_active`; `GET /admin/songs/{id}/files`
+returns the same list.
 
 ## Landing page CMS, game builds and GeoIP
 
@@ -407,6 +416,14 @@ image — no volume). The migration backfills all 27 catalog rows; the applicati
 re-syncs the same values on every start. Icons are free Tilda Icons, attribution
 “Icons are provided by Tilda Publishing” (https://tilda.cc) is shown in the
 account page footer. Downgrade drops the column.
+
+Migration `0011_asset_versions` adds `song_files.is_active` (`BOOLEAN NOT NULL
+DEFAULT TRUE`) and the index `(song_id, role, is_active)`. The same migration
+repairs the 27.10 19:26–19:31 bad uploads: every file created at or after
+`2026-10-27 19:00+00` is archived, the earliest remaining file of each role
+becomes the active version again, and `songs.version` is bumped for every song
+whose published asset set changed (the client caches downloads by that number).
+Downgrade drops the index and the column; archived versions are not restored.
 
 
 ### Глобальный рейтинг игроков

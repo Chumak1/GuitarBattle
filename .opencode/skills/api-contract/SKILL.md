@@ -30,18 +30,19 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/songs/{slug}/files/{file_id}/download` | — | MIDI/MP3 |
 | GET | `/admin/songs` | Bearer admin, `search?`, `published?`, `limit`, `offset` | черновики и опубликованные; у каждой песни `daily_weekday` |
 | POST | `/admin/songs` | Bearer admin, `slug`, `title`, `bpm`, остальные поля опциональны, `daily_weekday?` (0–6 или `null`) | черновик |
-| GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `readiness` + `daily_weekday` |
+| GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `files[]` (все версии с `is_active`) + `readiness` + `daily_weekday` |
 | PATCH | `/admin/songs/{id}` | Bearer admin, поля песни; `daily_weekday: null` снимает слот | обновлённая песня |
 | GET | `/admin/daily` | Bearer admin | 7 слотов `{weekday, weekday_name, song \| null, updated_at}` |
 | PUT | `/admin/daily/{weekday}` | Bearer admin, `{song_id: UUID \| null}`, weekday 0–6 | слот; назначение переносит песню, `422` вне 0–6, `404` неизвестная песня |
 | POST | `/admin/songs/{id}/publish` | Bearer admin | публикация |
 | POST | `/admin/songs/{id}/unpublish` | Bearer admin | снятие с публикации |
 | DELETE | `/admin/songs/{id}` | Bearer admin | 204 |
-| POST | `/admin/songs/{id}/files/midi` | Bearer admin, multipart `file` | новый `SongFile` (`role=midi`) |
-| POST | `/admin/songs/{id}/files/audio/{role}` | Bearer admin, multipart `file`; `role`: `drums`, `bass`, `guitar`, `others` | новый `SongFile` |
-| GET | `/admin/songs/{id}/files` | Bearer admin | все версии файлов |
-| GET | `/admin/songs/{id}/files/{file_id}/download` | Bearer admin | файл |
-| POST | `/admin/songs/{id}/files/{file_id}/analyze` | Bearer admin | сохранённый анализ MIDI |
+| POST | `/admin/songs/{id}/files/midi` | Bearer admin, multipart `file` | новый `SongFile` (`role=midi`), активный; прежние версии роли — архив |
+| POST | `/admin/songs/{id}/files/audio/{role}` | Bearer admin, multipart `file`; `role`: `drums`, `bass`, `guitar`, `others` | новый `SongFile`, активный; прежние версии роли — архив |
+| GET | `/admin/songs/{id}/files` | Bearer admin | все версии файлов; у каждой `is_active` |
+| GET | `/admin/songs/{id}/files/{file_id}/download` | Bearer admin | файл (активный или архивный) |
+| POST | `/admin/songs/{id}/files/{file_id}/activate` | Bearer admin | 200, файл становится активным для своего `(song, role)`, остальные версии роли — архив; 404 если файл не найден/не относится к песне; `version` песни +1 |
+| POST | `/admin/songs/{id}/files/{file_id}/analyze` | Bearer admin | сохранённый анализ MIDI (404 `MIDI has not been analyzed yet`, если анализ ещё не запускали) |
 | POST | `/games/sessions` | `song_id` (UUID), `speed_percent`, `daily?` (bool, по умолчанию `false`) | сессия; `mode` = `normal`/`daily` |
 | POST | `/games/sessions/{id}/finish` | `score_points`, `accuracy_percent`, `max_combo`, `perfect_count`, `good_count`, `miss_count`, опционально `completion_percent`, `avg_timing_error_ms`, `notes_total`, `notes_played` | score + блок прогрессии (см. ниже) |
 | GET | `/games/history` | Bearer, `limit`, `offset` | история |
@@ -176,11 +177,25 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 
 - `Song.version` — целочисленная **версия контента/кэша**, а не версия файла. Она
   возвращается в `GET /songs/{slug}` (и в админских ответах песни).
-- `version` увеличивается на 1 при `PATCH /admin/songs/{id}` и при каждой успешной
+- `version` увеличивается на 1 при `PATCH /admin/songs/{id}`, при каждой успешной
   загрузке MIDI (`/files/midi`) или MP3-стема (`/files/audio/{role}`) — в той же
-  транзакции, что и создание `SongFile`.
-- `GET /songs/{slug}` отдаёт только самый новый файл для каждой роли; у файлов есть
+  транзакции, что и создание `SongFile`, а также при
+  `POST /admin/songs/{id}/files/{file_id}/activate`.
+- `song_files.is_active` (миграция `0011_asset_versions`) — признак опубликованной
+  версии файла. У каждой пары `(song_id, role)` активен **ровно один** файл;
+  остальные загрузки хранятся как архив, доступны для скачивания по id и могут
+  быть возвращены в публикацию эндпоинтом `activate`.
+- Новая загрузка автоматически становится активной, прежняя версия этой роли
+  архивируется в той же транзакции (правило «новый файл побеждает» без
+  множественных активных версий).
+- `GET /songs/{slug}` отдаёт только активный файл каждой роли; у файлов есть
   `role`, `size_bytes`, `sha256`, `download_url`.
+- Миграция `0011` выполнила разовый откат: все файлы, загруженные 27.10.2026
+  начиная с 19:00 UTC (ошибочные короткие сеты «Придумай светлый мир» и
+  «Metal song»), переведены в архив, активными снова стали самые ранние версии
+  каждой роли (First song: midi 7223 байта от 21.10 09:46, стемы 960722 байта
+  от 21.10 14:43; Metal: midi 6912, стемы 11480293 от 22.10 08:05), а
+  `songs.version` обеих песен увеличен на 1, чтобы клиенты перекачали ассеты.
 - Клиент (`loadFirstOnlineCatalogSong`) хранит `version.txt` в
   `%APPDATA%/GuitarBattle/OnlineSongs/<slug>/`. Если версия на сервере > 0 и совпадает
   с `version.txt`, а MIDI (с заголовком `MThd`) и все опубликованные стемы существуют с
@@ -203,9 +218,19 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 - `is_playable` требует только MIDI: MIDI-only песня остаётся рабочей.
   `is_complete` и `publish_ready` требуют MIDI + все четыре MP3-стема.
 - Админские `GET /admin/songs` и `GET /admin/songs/{id}` содержат тот же `readiness`;
-  детальный ответ дополнительно содержит `assets` с админскими `download_url`.
-  Публикация не блокируется при неполном наборе стемов, чтобы не ломать MIDI-only
-  песни; администратор видит `publish_ready` и `missing_roles` до публикации.
+  детальный ответ дополнительно содержит `assets` (только активные файлы, с
+  админскими `download_url`) и `files[]` — все версии всех ролей с `is_active`,
+  `size_bytes` и `created_at`, новые сверху. `GET /admin/songs/{id}/files` отдаёт
+  тот же список отдельным запросом. Публикация не блокируется при неполном
+  наборе стемов, чтобы не ломать MIDI-only песни; администратор видит
+  `publish_ready` и `missing_roles` до публикации.
+- Админка (`admin.js`, модалка «Файлы песни»): в каждом слоте перечислены все
+  версии; активная помечена бейджем «Активен», архивные — «Архив» с размером и
+  датой; у архивных есть кнопка «Сделать активной»
+  (`POST /admin/songs/{id}/files/{file_id}/activate`), у всех версий — скачивание.
+  `404` от `/files/{file_id}/analysis` — нормальное состояние «анализ ещё не
+  сохранён»: панель показывает «Анализ не найден» и кнопку «Разобрать»
+  (`POST .../analyze`), без красного тоста при открытии песни.
 
 ## Клиентские ассеты (метроном и сэмплы)
 
@@ -449,3 +474,9 @@ CHECK + индекс) и таблица `daily_slots` (`weekday` PK 0..6, `song_
 - `mastery` в ответе `finish` — объект, а `achievements_awarded` — массив объектов,
   а не строк.
 - XP за повторные попытки падает (100/50/25/0 %), даже если рекорд растёт.
+- Публичные `/songs` и `/songs/{slug}` отдают только файлы с `is_active = TRUE`.
+  Не меняйте выборку обратно на «самый новый по `created_at`»: активную версию
+  задаёт админ (`activate` или новая загрузка), архивные файлы намеренно скрыты
+  из публичной выдачи, но остаются скачиваемыми по id.
+- `404` от `GET /admin/songs/{id}/files/{file_id}/analysis` — это «MIDI ещё не
+  разобран», а не сбой; клиент/админка должны предлагать `POST .../analyze`.

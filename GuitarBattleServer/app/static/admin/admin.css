@@ -715,6 +715,41 @@ code {
   font-size: 0.72rem;
 }
 
+.file-versions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-top: 0.6rem;
+}
+
+.file-version {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--gb-border);
+  border-radius: 0.6rem;
+  background: rgba(0, 0, 0, 0.14);
+}
+
+.file-version.is-active {
+  border-color: rgba(66, 211, 146, 0.26);
+  background: rgba(66, 211, 146, 0.06);
+}
+
+.file-version.is-archive {
+  opacity: 0.82;
+}
+
+.file-version-info {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
 .file-slot-actions {
   display: flex;
   gap: 0.3rem;

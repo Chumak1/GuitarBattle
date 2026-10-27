@@ -3,6 +3,10 @@
 The public and admin APIs must agree on which files make a song playable and
 which files make it fully publishable.  Keep the role lists and the readiness
 calculation in one place so a new role cannot be added to only one endpoint.
+
+Only files with ``is_active = TRUE`` are published.  ``song_files`` keeps every
+upload as a version history; exactly one file per ``(song_id, role)`` is active
+at a time and the admin panel can switch the active version.
 """
 
 from __future__ import annotations
@@ -10,7 +14,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from app.models.song import SongFile
@@ -21,30 +25,18 @@ ASSET_ROLES = ("midi", "drums", "bass", "guitar", "others")
 AUDIO_STEM_ROLES = ("drums", "bass", "guitar", "others")
 
 
-def newest_files_by_role(files: Iterable[SongFile]) -> dict[str, SongFile]:
-    """Return the newest file per role.
-
-    Callers should order the query by ``created_at DESC, id DESC``; the first
-    row wins when timestamps are equal.
-    """
-    newest: dict[str, SongFile] = {}
-    for stored_file in files:
-        newest.setdefault(stored_file.role, stored_file)
-    return newest
-
-
-def load_newest_files_by_song(
+def load_active_files_by_song(
     db: Session,
     song_ids: Iterable[UUID],
 ) -> dict[UUID, dict[str, SongFile]]:
-    """Load the newest file for every role of the given songs in one query."""
+    """Load the active file for every role of the given songs in one query."""
     ids = list(dict.fromkeys(song_ids))
     if not ids:
         return {}
 
     rows = db.scalars(
         select(SongFile)
-        .where(SongFile.song_id.in_(ids))
+        .where(SongFile.song_id.in_(ids), SongFile.is_active.is_(True))
         .order_by(
             SongFile.song_id.asc(),
             SongFile.role.asc(),
@@ -57,6 +49,30 @@ def load_newest_files_by_song(
     for stored_file in rows:
         grouped[stored_file.song_id].setdefault(stored_file.role, stored_file)
     return grouped
+
+
+def deactivate_role_files(
+    db: Session,
+    song_id: UUID,
+    role: str,
+    *,
+    keep_file_id: UUID | None = None,
+) -> None:
+    """Archive the other versions of ``(song_id, role)`` in this transaction.
+
+    ``keep_file_id`` is the version that must stay active (the newly uploaded
+    file or the one selected in the admin panel).  Passing ``None`` archives
+    every current version of the role, which is what an upload does before it
+    inserts its own record.
+    """
+    statement = update(SongFile).where(
+        SongFile.song_id == song_id,
+        SongFile.role == role,
+        SongFile.is_active.is_(True),
+    )
+    if keep_file_id is not None:
+        statement = statement.where(SongFile.id != keep_file_id)
+    db.execute(statement.values(is_active=False))
 
 
 def build_readiness(files_by_role: Mapping[str, SongFile]) -> SongReadinessResponse:
