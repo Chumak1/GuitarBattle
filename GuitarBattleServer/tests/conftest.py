@@ -217,7 +217,14 @@ def _prepare_schema() -> None:
 
 
 def _truncate_all() -> None:
-    table_names = ", ".join(f'"{table.name}"' for table in Base.metadata.sorted_tables)
+    # ``achievements`` is a reference catalog seeded by migration 0008 and kept
+    # in sync at startup; it is not per-test data and must survive truncation.
+    preserved = {"achievements"}
+    table_names = ", ".join(
+        f'"{table.name}"'
+        for table in Base.metadata.sorted_tables
+        if table.name not in preserved
+    )
     if not table_names:
         return
     with app_engine.begin() as connection:

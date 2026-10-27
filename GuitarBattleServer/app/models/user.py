@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, Integer, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
@@ -19,6 +19,14 @@ class User(Base):
     # Incremented when the password changes so older JWTs stop working.
     token_version: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
+    )
+    # Progression counters. ``level`` is derived from ``xp_total`` but stored so
+    # leaderboards can sort players without recomputing the curve.
+    xp_total: Mapped[int] = mapped_column(
+        BigInteger, nullable=False, default=0, server_default="0"
+    )
+    level: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=1, server_default="1"
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

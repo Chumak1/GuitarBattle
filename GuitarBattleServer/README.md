@@ -126,17 +126,98 @@ The API currently relies on this application-level resend cooldown and code atte
 
 ### Game sessions and scores
 All endpoints below except leaderboard require `Authorization: Bearer <access_token>`:
-- `POST /games/sessions` — start a session. Body: `{ "song_id": "<published-song-uuid>", "speed_percent": 100 }`.
+- `POST /games/sessions` — start a session. Body: `{ "song_id": "<published-song-uuid>", "speed_percent": 100, "daily": false }`. `daily: true` asks for the official daily-challenge attempt (see below) and creates a session with `mode: "daily"`.
 - `POST /games/sessions/{session_id}/finish` — submit final score and mark the session finished. Body example:
   `{ "score_points": 1200, "accuracy_percent": 92.5, "max_combo": 14, "perfect_count": 8, "good_count": 4, "miss_count": 2 }`
+  Optional progression fields: `completion_percent` (0–100, default 100), `avg_timing_error_ms` (0–2000), `notes_total`, `notes_played`. The response contains the score fields plus `xp_earned`, `xp_total`, `level`, `level_up`, `xp_to_next`, `xp_remaining`, `personal_best_updated`, `mastery` and `achievements_awarded`; a client that only reads the score fields keeps working.
 - `GET /games/history` - current player's recent sessions.
 - `GET /games/best-scores` - signed-in player's best score for every published song, plus the personal rating total (`rating_points` = sum of those best scores). Used by the client to show a best score next to each catalogue row.
 
-Important: score submission is currently client-reported. This is suitable for local development and basic leaderboards, but scores are not cheat-resistant; competitive/public deployment should add server-side validation, replay/event validation or signed gameplay records.
+Important: score submission is still client-reported. Progression clamps everything
+it can (`completion_percent` never exceeds `notes_played / notes_total`, XP is capped
+at 600 per attempt, achievements are derived from server-side state), but a modified
+client can still report accuracy it did not play. Competitive/public deployment should
+add replay or signed gameplay records.
+
+### Progression, achievements and daily challenge
+
+Migration `0008_progression` adds the whole progression model: `users.xp_total` /
+`users.level`, progression columns on `scores` (`completion_percent`,
+`avg_timing_error_ms`, `notes_total`, `notes_played`), `game_sessions.mode`
+(`normal` / `daily`), `song_best_scores`, the `xp_awards` ledger, the
+`achievements` catalog with `user_achievements`, and `daily_challenges` /
+`daily_results`. Existing players start at level 1 with 0 XP and every historical
+score counts as a 100 % completion, so no backfill script is needed.
+
+Formulas (single implementation: `app/services/progression.py`; the tests in
+`tests/test_progression.py` pin them):
+
+| Value | Rule |
+|---|---|
+| Level cost | `XP_REQ(L) = round(50 * L ** 1.5)` for the step `L -> L+1`; `level_for_xp` is the largest `L` whose cumulative cost fits |
+| Attempt XP | `round(100 * score * difficulty * tempo * content * repeat)`, clamped to `[3, 600]`; `0` when completion < 50 % |
+| `score` | accuracy / 100 — the maximum score of a song is not known server-side, so accuracy is the only fair normalisation and `score_points` is never used for XP |
+| `difficulty` | 1→0.8, 2→1.0, 3→1.2, 4→1.35, 5→1.5, >5→`min(1.8, 1.5 + 0.05*(d-5))`, <1→0.6 |
+| `tempo` | `clamp(0.90, 1.15, 0.90 + (bpm - 60) / 120 * 0.25)` — at most +15 % |
+| `content` | `clamp(0.6, 1.4, sqrt(duration_seconds / 90)) * completion / 100` |
+| `repeat` | N-th **normal** attempt of the same song today (UTC): 1.0, 0.5, 0.25, 0.0 — the 4th and later attempts give no XP |
+| Mastery | `clamp(0, 100, best_accuracy + (difficulty - 1) * 2)`; `<60` Novice, `<75` Learner, `<87` Guitarist, `<95` Pro, `>=95` Master |
+| Genre mastery | mean mastery of the player's personal bests in that genre |
+
+Achievement XP is a fixed bonus: it is added to `users.xp_total` and never
+multiplied by `repeat`. The catalog (27 rows) lives in
+`app/services/achievement_catalog.py`, is seeded by the migration and re-synced on
+startup, so code and database cannot drift apart.
+
+Endpoints (all require Bearer):
+
+- `GET /profile/progression` — level, XP, mastered songs, unlocked/total
+  achievements, last 10 personal bests, mastery per song, mastery per genre and
+  the statistics block.
+- `GET /profile/personal-bests?limit=10&offset=0` — personal bests of published songs.
+- `GET /achievements` — the catalog with `progress`, `unlocked` and `awarded_at`.
+- `GET /daily/today` — the song of the day, whether the official attempt is used,
+  the official result and the top 5.
+- `GET /daily/leaderboard?date=YYYY-MM-DD` — official results of a day.
+
+Statistics block (last 100 finished attempts with `completion_percent > 25`):
+`accuracy` (mean accuracy), `timing` (`100 - clamp(0, 100, avg_timing_error_ms / 1.5)`,
+`null` without timing data), `speed` (`clamp(0, 100, (avg_speed - 50) / 70 * 100)`),
+`consistency` (`100 - min(100, stddev(accuracy of the last 20 attempts))`, `0` with
+fewer than 2 samples), `versatility`
+(`100 * (0.6 * distinct_songs / published_songs + 0.4 * distinct_genres / published_genres)`),
+`samples`.
+
+Daily challenge rules:
+
+- The song of the day is deterministic: `sha256(date_iso) % count` over published
+  songs ordered by `slug`, persisted in `daily_challenges` (so it never changes
+  retroactively). There is no per-genre rotation in the catalog yet.
+- `POST /games/sessions` with `daily: true` requires that exact song and an unused
+  official attempt, otherwise `409`. Practice sessions on the same song stay
+  `mode: "normal"` and never enter the daily ranking.
+- `finish` of a daily session inserts `daily_results` (unique `(date, user_id)`);
+  a second official attempt returns `409`. Timing, score and accuracy are stored
+  for the daily ranking, which sorts by score desc, then accuracy desc.
+
+Known limitations:
+
+- No background scheduler: `daily_first_place` ("На вершине дня") is granted on the
+  next `/profile/progression`, `/achievements` or `/daily/leaderboard` call after
+  the day has ended, not at midnight.
+- The genre achievements adapt to the real catalog: the effective threshold is
+  `min(goal, published genres)` and when two achievements collapse onto the same
+  threshold only the first one stays attainable (the rest remain locked and their
+  description says how many genres exist). With the current two-genre catalog
+  `genres_3` is reachable, `genres_5` / `genres_8` are not.
+- `xp_to_next` and `xp_remaining` are the same number (XP left before the next
+  level); both names are returned for client convenience.
+- `song_best_scores` and the global leaderboard are independent: the leaderboard
+  keeps its own `max(score_points)` aggregation, so its rules did not change.
 
 ### Scope note
 
-Competition rooms and lobby endpoints are not enabled in the API router; the current implementation is limited to accounts, online song catalog, game results, history, and leaderboards. The historical database migration is retained so existing databases can still upgrade without rewriting migration history.
+Competition rooms and lobby endpoints are not enabled in the API router; the current implementation is limited to accounts, online song catalog, game results, history, leaderboards and progression. The historical database migration is retained so existing databases can still upgrade without rewriting migration history.
 
 ### Activity telemetry and admin statistics
 
@@ -266,6 +347,11 @@ Migration `0007_app_statistics` adds `app_sessions` and `game_launches` (unique
 `(user_id, client_session_id)`, `ON DELETE CASCADE` from `users`,
 `ON DELETE SET NULL` for `app_session_id`/`song_id`). Both tables are written only
 by the telemetry endpoints and are safe to truncate if the history is not needed.
+
+Migration `0008_progression` adds the progression tables and seeds the
+`achievements` catalog. It is reversible (`alembic downgrade 0007_app_statistics`);
+downgrading drops per-player XP, personal bests, achievements and daily results,
+while `scores` / `game_sessions` keep their historical rows minus the new columns.
 
 
 ### Глобальный рейтинг игроков

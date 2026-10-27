@@ -8,7 +8,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from app.models.app_session import AppSession, GameLaunch
 from app.models.email_auth_code import EmailAuthCode
@@ -292,6 +292,8 @@ def test_users_statistics_aggregate(db_client, db_session, admin_user):
     assert admin_row["launches_count"] == 0
     assert admin_row["scores_count"] == 0
     assert admin_row["best_score"] is None
+    assert admin_row["level"] >= 1
+    assert admin_row["xp_total"] >= 0
 
 
 def test_users_statistics_search_is_case_insensitive(db_client, admin_user):
@@ -813,3 +815,31 @@ def test_statistics_is_a_tab_in_the_admin_spa(db_client):
     assert 'data-admin-panel="statistics"' in html
     assert "admin-statistics.js" in html
     assert "Статистика" in html
+
+
+def test_users_statistics_exposes_level_and_xp(db_client, db_session, admin_user):
+    """Level and XP are returned and the column is sortable."""
+    low = helpers.register_user(db_client, username=helpers.unique("lvl-low"))
+    high = helpers.register_user(db_client, username=helpers.unique("lvl-high"))
+
+    db_session.execute(
+        update(User)
+        .where(User.id == uuid.UUID(low["id"]))
+        .values(xp_total=0, level=1)
+    )
+    db_session.execute(
+        update(User)
+        .where(User.id == uuid.UUID(high["id"]))
+        .values(xp_total=5000, level=12)
+    )
+    db_session.commit()
+
+    response = db_client.get(
+        f"{helpers.API}/admin/statistics/users?sort=level&order=desc&limit=200",
+        headers=admin_user["headers"],
+    )
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert items[0]["user_id"] == high["id"]
+    assert items[0]["level"] == 12
+    assert items[0]["xp_total"] == 5000

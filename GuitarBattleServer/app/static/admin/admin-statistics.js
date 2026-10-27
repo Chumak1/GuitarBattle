@@ -30,6 +30,7 @@
     "sessions_count",
     "launches_count",
     "scores_count",
+    "level",
   ];
 
   const state = {
@@ -297,6 +298,9 @@
       "<td><span class=\"text-nowrap\">" + formatNumber(user.launches_count) + "</span></td>" +
       "<td><span class=\"text-nowrap\">" + formatNumber(user.scores_count) + "</span>" +
       bestScore + "</td>" +
+      "<td><span class=\"text-nowrap\">LVL " + formatNumber(user.level) + "</span>" +
+      (user.xp_total == null ? "" :
+        '<div class="stats-mono">' + formatNumber(user.xp_total) + " XP</div>") + "</td>" +
       '<td class="d-none d-xl-table-cell">' +
       '<span class="text-nowrap small text-secondary">' + formatDateTime(user.last_launch_at) + "</span>" +
       "</td>" +
@@ -320,7 +324,7 @@
         ? "Никого не нашли по этому запросу."
         : "Пока нет ни одного игрока.";
       body.innerHTML =
-        '<tr><td colspan="10" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
+        '<tr><td colspan="11" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
     } else {
       body.innerHTML = state.users.map(userRow).join("");
     }
@@ -340,7 +344,7 @@
     });
     if (loading) {
       el("statsUsersBody").innerHTML =
-        '<tr><td colspan="10" class="table-loading">' +
+        '<tr><td colspan="11" class="table-loading">' +
         '<span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
     }
   }

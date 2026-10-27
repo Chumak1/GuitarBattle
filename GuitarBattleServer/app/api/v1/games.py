@@ -2,10 +2,12 @@ from datetime import datetime, timezone
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_user
 from app.database import get_db
 from app.models.game_session import GameSession, Score
+from app.models.progression import DailyResult
 from app.models.song import Song
 from app.models.user import User
 from app.schemas.games import (
@@ -13,10 +15,12 @@ from app.schemas.games import (
     GameSessionCreate,
     GameSessionResponse,
     PlayerRatingResponse,
+    ScoreFinishResponse,
     ScoreResponse,
     ScoreSubmit,
     SongBestScore,
 )
+from app.services import progression
 
 router = APIRouter(tags=["games"])
 
@@ -48,31 +52,122 @@ def create_session(payload: GameSessionCreate, db: Session = Depends(get_db),
     song = db.scalar(select(Song).where(Song.id == payload.song_id, Song.is_published.is_(True)))
     if song is None:
         raise HTTPException(status_code=404, detail="Published song not found")
+
+    mode = "normal"
+    if payload.daily:
+        # The song of the day is fixed server-side; a daily session may only be
+        # created for it and only while the official attempt is still unused.
+        today = progression.utc_today()
+        challenge = progression.ensure_daily_challenge(db, today)
+        if challenge is None:
+            raise HTTPException(status_code=404, detail="Daily challenge is not available")
+        if challenge.song_id != song.id:
+            raise HTTPException(
+                status_code=409, detail="Song is not today's daily challenge"
+            )
+        if _official_daily_result(db, user.id, today) is not None:
+            raise HTTPException(
+                status_code=409, detail="Official daily attempt is already used"
+            )
+        mode = "daily"
+
     session = GameSession(user_id=user.id, song_id=song.id, song_version=song.version,
-                          speed_percent=payload.speed_percent, started_at=datetime.now(timezone.utc),
-                          status="started")
+                          speed_percent=payload.speed_percent, mode=mode,
+                          started_at=datetime.now(timezone.utc), status="started")
     db.add(session)
     db.commit()
     db.refresh(session)
     return session
 
-@router.post("/games/sessions/{session_id}/finish", response_model=ScoreResponse)
+
+def _official_daily_result(db: Session, user_id: UUID, day) -> DailyResult | None:
+    return db.scalar(
+        select(DailyResult).where(
+            DailyResult.challenge_date == day, DailyResult.user_id == user_id
+        )
+    )
+
+
+@router.post("/games/sessions/{session_id}/finish", response_model=ScoreFinishResponse)
 def finish_session(session_id: UUID, payload: ScoreSubmit, db: Session = Depends(get_db),
-                   user: User = Depends(get_current_user)) -> Score:
-    session = db.scalar(select(GameSession).where(GameSession.id == session_id, GameSession.user_id == user.id))
+                   user: User = Depends(get_current_user)) -> ScoreFinishResponse:
+    """Finish one attempt: score, personal best, XP, daily result, achievements.
+
+    The session row is locked, so two parallel submissions of the same session
+    produce exactly one score and one XP award; the loser gets ``409``.
+    ``xp_awards.session_id`` is unique as a second line of defence.
+    """
+    session = db.scalar(
+        select(GameSession)
+        .where(GameSession.id == session_id, GameSession.user_id == user.id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
     if session is None:
         raise HTTPException(status_code=404, detail="Game session not found")
     if session.status != "started":
         raise HTTPException(status_code=409, detail="Game session is already finished")
     if payload.perfect_count + payload.good_count + payload.miss_count > 1_000_000:
         raise HTTPException(status_code=422, detail="Invalid note counters")
-    score = Score(session_id=session.id, **payload.model_dump())
+
+    song = db.get(Song, session.song_id)
+    if song is None:  # pragma: no cover - enforced by the foreign key
+        raise HTTPException(status_code=404, detail="Song not found")
+
+    # Serialise per player: XP, level and personal bests are read-modify-write.
+    db.refresh(user, with_for_update=True)
+
+    daily_date = None
+    if session.mode == "daily":
+        started = session.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        daily_date = started.astimezone(timezone.utc).date()
+        if progression.ensure_daily_challenge(db, daily_date) is None:
+            raise HTTPException(status_code=404, detail="Daily challenge is not available")
+        if _official_daily_result(db, user.id, daily_date) is not None:
+            raise HTTPException(
+                status_code=409, detail="Official daily attempt is already used"
+            )
+
+    payload_data = payload.model_dump()
+    completion = progression.effective_completion(
+        payload_data["completion_percent"],
+        payload_data.get("notes_total"),
+        payload_data.get("notes_played"),
+    )
+    payload_data["completion_percent"] = completion
+
+    score = Score(session_id=session.id, **payload_data)
     session.status = "finished"
     session.finished_at = datetime.now(timezone.utc)
     db.add(score)
-    db.commit()
+
+    outcome = progression.apply_attempt_progression(
+        db, user=user, session=session, score=score, song=song, daily_date=daily_date
+    )
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        # The unique daily result index or the score/session uniqueness caught a
+        # concurrent request: this attempt is not the official one.
+        raise HTTPException(status_code=409, detail="Attempt was already submitted")
     db.refresh(score)
-    return score
+
+    return ScoreFinishResponse(
+        **ScoreResponse.model_validate(score).model_dump(),
+        xp_earned=outcome.xp_earned,
+        xp_total=outcome.xp_total,
+        level=outcome.level,
+        level_up=outcome.level_up,
+        xp_to_next=outcome.xp_to_next,
+        xp_remaining=outcome.xp_remaining,
+        personal_best_updated=outcome.personal_best_updated,
+        mastery=outcome.mastery,
+        achievements_awarded=outcome.achievements_awarded,
+    )
+
 
 @router.get("/games/history", response_model=list[GameHistoryItem])
 def game_history(limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0),

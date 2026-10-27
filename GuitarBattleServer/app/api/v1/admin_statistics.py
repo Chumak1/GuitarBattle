@@ -140,6 +140,8 @@ def statistics_users(
         "sessions_count",
         "launches_count",
         "scores_count",
+        "level",
+        "xp_total",
     ] = Query(default="last_seen", description="Column to sort by"),
     order: Literal["asc", "desc"] | None = Query(
         default=None,
@@ -207,6 +209,8 @@ def statistics_users(
         "sessions_count": sessions,
         "launches_count": launches,
         "scores_count": scores,
+        "level": User.level,
+        "xp_total": User.xp_total,
         "last_seen": last_activity,
     }
     column = sort_columns[sort]
@@ -235,6 +239,8 @@ def statistics_users(
             User.email,
             User.is_active,
             User.created_at,
+            User.level,
+            User.xp_total,
             app_seconds.label("app_seconds_total"),
             sessions.label("sessions_count"),
             session_agg.c.last_seen_at,
@@ -272,6 +278,8 @@ def statistics_users(
             games_distinct=int(row.games_distinct or 0),
             scores_count=int(row.scores_count or 0),
             best_score=int(row.best_score) if row.best_score is not None else None,
+            level=int(row.level or 1),
+            xp_total=int(row.xp_total or 0),
         )
         for row in rows
     ]

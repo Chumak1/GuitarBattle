@@ -104,6 +104,9 @@ class StatisticsUserItem(BaseModel):
     # Game results are stored in ``scores`` and linked through ``game_sessions``.
     scores_count: int
     best_score: int | None
+    # Server-authoritative progression.
+    level: int
+    xp_total: int
 
 
 class StatisticsUserList(BaseModel):

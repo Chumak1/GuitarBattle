@@ -1,4 +1,5 @@
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -8,17 +9,48 @@ from fastapi.staticfiles import StaticFiles
 from app.api.health import router as health_router
 from app.api.v1.router import router as v1_router
 from app.config import settings
+from app.database import SessionLocal
 from app.services.email_service import log_email_configuration
 from app.services.geo import country_for_ip, language_for_country
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 log_email_configuration()
+logger = logging.getLogger(__name__)
+
+
+def _sync_reference_data() -> None:
+    """Keep the achievement catalog in sync with the code on every start.
+
+    The catalog is reference data, so this is an idempotent upsert, never a
+    destructive step. A missing database must not stop the API from booting;
+    ``/health/ready`` reports that instead.
+    """
+    from app.services.achievement_catalog import sync_achievement_catalog
+
+    db = SessionLocal()
+    try:
+        count = sync_achievement_catalog(db)
+        logger.info("Achievement catalog synced: %s rows", count)
+    except Exception:  # pragma: no cover - startup must survive a cold database
+        db.rollback()
+        logger.exception("Could not sync the achievement catalog")
+    finally:
+        db.close()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    _sync_reference_data()
+    yield
+
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     description="GuitarBattle backend API",
     docs_url="/docs" if settings.app_env != "production" else None,
     redoc_url="/redoc" if settings.app_env != "production" else None,
+    lifespan=lifespan,
 )
 app.include_router(health_router)
 app.include_router(v1_router, prefix=settings.api_v1_prefix)

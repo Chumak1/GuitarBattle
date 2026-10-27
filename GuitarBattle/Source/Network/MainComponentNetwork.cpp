@@ -644,7 +644,9 @@ void MainComponent::submitOnlineGameResult()
                     self->lastLevel =
                         static_cast<int>(json.getProperty("level", 1));
                     self->lastXpForNext =
-                        static_cast<int>(json.getProperty("xp_for_next", 0));
+                        static_cast<int>(json.getProperty(
+                            "xp_to_next",
+                            json.getProperty("xp_for_next", 0)));
 
                     juce::String achievements;
 

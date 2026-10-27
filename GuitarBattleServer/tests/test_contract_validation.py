@@ -62,6 +62,54 @@ def test_session_payload_accepts_supported_speed_range():
         assert session.speed_percent == speed
 
 
+def test_session_payload_daily_flag_defaults_to_false():
+    song_id = str(uuid.uuid4())
+    assert GameSessionCreate.model_validate(
+        {"song_id": song_id, "speed_percent": 100}
+    ).daily is False
+    assert GameSessionCreate.model_validate(
+        {"song_id": song_id, "speed_percent": 100, "daily": True}
+    ).daily is True
+
+
+def test_score_payload_progression_fields_are_optional():
+    """Older clients send the seven legacy fields and keep working."""
+    score = ScoreSubmit.model_validate(VALID_SCORE)
+    assert score.completion_percent == 100
+    assert score.avg_timing_error_ms is None
+    assert score.notes_total is None
+    assert score.notes_played is None
+
+
+def test_score_payload_completion_is_clamped_by_note_counters():
+    score = ScoreSubmit.model_validate(
+        {
+            **VALID_SCORE,
+            "completion_percent": 100,
+            "notes_total": 100,
+            "notes_played": 40,
+        }
+    )
+    assert score.completion_percent == pytest.approx(40.0)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"completion_percent": 100.1},
+        {"completion_percent": -1},
+        {"avg_timing_error_ms": -1},
+        {"avg_timing_error_ms": 2001},
+        {"notes_total": -1},
+        {"notes_played": 1_000_001},
+        {"notes_total": 10, "notes_played": 11},
+    ],
+)
+def test_score_payload_rejects_invalid_progression_fields(overrides):
+    with pytest.raises(ValidationError):
+        ScoreSubmit.model_validate({**VALID_SCORE, **overrides})
+
+
 @pytest.mark.parametrize("speed", [0, 49, 121, 1000])
 def test_session_payload_rejects_unsupported_speed(speed):
     with pytest.raises(ValidationError):

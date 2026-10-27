@@ -6,6 +6,14 @@ from app.models.song_midi import SongMidiAnalysis, SongMidiNote, SongMidiTempoCh
 from app.models.competition import Competition, CompetitionParticipant
 from app.models.site_content import GameBuild, LandingSettings
 from app.models.app_session import AppSession, GameLaunch
+from app.models.progression import (
+    Achievement,
+    DailyChallenge,
+    DailyResult,
+    SongBestScore,
+    UserAchievement,
+    XpAward,
+)
 
 __all__ = [
     "User", "EmailAuthCode", "Song", "SongFile", "GameSession", "Score",
@@ -13,4 +21,6 @@ __all__ = [
     "Competition", "CompetitionParticipant",
     "LandingSettings", "GameBuild",
     "AppSession", "GameLaunch",
+    "Achievement", "DailyChallenge", "DailyResult", "SongBestScore",
+    "UserAchievement", "XpAward",
 ]

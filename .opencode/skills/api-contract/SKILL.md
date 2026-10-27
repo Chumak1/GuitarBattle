@@ -40,12 +40,17 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/admin/songs/{id}/files` | Bearer admin | все версии файлов |
 | GET | `/admin/songs/{id}/files/{file_id}/download` | Bearer admin | файл |
 | POST | `/admin/songs/{id}/files/{file_id}/analyze` | Bearer admin | сохранённый анализ MIDI |
-| POST | `/games/sessions` | `song_id` (UUID), `speed_percent` | сессия |
-| POST | `/games/sessions/{id}/finish` | `score_points`, `accuracy_percent`, `max_combo`, `perfect_count`, `good_count`, `miss_count` | score |
+| POST | `/games/sessions` | `song_id` (UUID), `speed_percent`, `daily?` (bool, по умолчанию `false`) | сессия; `mode` = `normal`/`daily` |
+| POST | `/games/sessions/{id}/finish` | `score_points`, `accuracy_percent`, `max_combo`, `perfect_count`, `good_count`, `miss_count`, опционально `completion_percent`, `avg_timing_error_ms`, `notes_total`, `notes_played` | score + блок прогрессии (см. ниже) |
 | GET | `/games/history` | Bearer, `limit`, `offset` | история |
 | GET | `/games/best-scores` | Bearer | лучший счёт по каждой опубликованной песне + сумма рейтинга |
 | GET | `/leaderboard` | `song_slug?`, `limit`, `offset` | результаты |
 | GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков (сумма лучших результатов по песням) |
+| GET | `/profile/progression` | Bearer | уровень, XP, мастерство, жанры, статистика |
+| GET | `/profile/personal-bests` | Bearer, `limit` (1–100, по умолчанию 10), `offset` | личные рекорды по опубликованным песням |
+| GET | `/achievements` | Bearer | каталог достижений + прогресс/разблокировка |
+| GET | `/daily/today` | Bearer | песня дня, официальная попытка, топ-5 |
+| GET | `/daily/leaderboard` | Bearer, `date?` (YYYY-MM-DD, по умолчанию сегодня UTC) | официальные результаты дня |
 | GET | `/client-assets/manifest` | — (публичный) | `schema`, `version`, `archive_url`, `archive_size_bytes`, `archive_sha256`, `files[]`; 503, если manifest или bundle отсутствует |
 | GET/HEAD | `/client-assets/bundle.zip` | — (публичный) | zip `guitarbattle-sounds.zip`; 503, если архив отсутствует |
 | GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` для лендинга |
@@ -232,6 +237,84 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
   `version.txt` и все файлы на месте, архив не скачивается. `archive_url`
   резолвится от `serverOrigin` (`ApiClient::downloadToFile`), а не от `baseUrl`.
 
+## Прогрессия, достижения и испытание дня
+
+Реализация: `GuitarBattleServer/app/services/progression.py` (формулы и правила),
+`app/services/achievement_catalog.py` (каталог), `app/api/v1/progression.py`
+(эндпоинты), миграция `0008_progression`.
+
+### XP и уровни
+
+- `XP_REQ(L) = round(50 * L ** 1.5)` — стоимость шага `L -> L+1`; округление
+  half-up. `level_for_xp(xp)` — максимальный `L`, для которого сумма
+  `XP_REQ(1..L-1)` не превышает `xp`. `level_progress(xp)` даёт
+  `level`, `xp_total`, `xp_into_level`, `xp_for_next`, `xp_remaining`.
+- XP за попытку: `round(100 * score * difficulty * tempo * content * repeat)`,
+  clamp `[3, 600]`, `0` при completion < 50 % или исчерпанном слоте повтора.
+  - `score` = accuracy/100 (максимальный счёт песни серверу неизвестен, поэтому
+    нормализация только по точности; `score_points` для XP не используется);
+  - `difficulty`: 1→0.8, 2→1.0, 3→1.2, 4→1.35, 5→1.5, >5→min(1.8, 1.5+0.05·(d−5)), <1→0.6;
+  - `tempo` = clamp(0.90, 1.15, 0.90 + (bpm−60)/120·0.25) — не более +15 %;
+  - `content` = clamp(0.6, 1.4, sqrt(duration/90)) · completion/100;
+  - `repeat` по числу уже завершённых **обычных** попыток этой песни за текущие
+    сутки UTC: 1.0, 0.5, 0.25, 0.0 (4-я и далее — 0 XP);
+  - достижения дают фиксированный бонус и под repeat никогда не умножаются.
+- Мастерство песни: `clamp(0, 100, best_accuracy + (difficulty−1)·2)`;
+  ступени `<60 Novice`, `<75 Learner`, `<87 Guitarist`, `<95 Pro`, `≥95 Master`.
+  Жанровое мастерство — среднее по личным рекордам песен жанра.
+
+### Валидация попытки
+
+- `completion_percent` принимается 0–100, но урезается до
+  `100 * notes_played / notes_total`, если переданы оба счётчика; `notes_played >
+  notes_total` → 422. Completion никогда не повышается счётчиками.
+- Повторный `finish` той же сессии → 409, XP не начисляется (`xp_awards.session_id`
+  уникален, сессия блокируется `SELECT ... FOR UPDATE`).
+- `personal_best_updated` = создан или улучшен рекорд (больше score, при равном
+  score — выше accuracy). `attempts` растёт всегда.
+
+### Ответ `POST /games/sessions/{id}/finish`
+
+Поля score (`id`, `session_id`, `score_points`, `accuracy_percent`, `max_combo`,
+`perfect_count`, `good_count`, `miss_count`, `completion_percent`,
+`avg_timing_error_ms`, `notes_total`, `notes_played`, `created_at`) плюс плоско:
+`xp_earned`, `xp_total`, `level`, `level_up`, `xp_to_next`, `xp_remaining`,
+`personal_best_updated`, `mastery {tier, value, next_threshold}`,
+`achievements_awarded [{code, title, xp_bonus}]`.
+`xp_to_next` и `xp_remaining` — одно и то же значение (остаток до следующего
+уровня), оставлено обоими именами для совместимости.
+
+### Достижения
+
+- Каталог в БД (`achievements`, 27 записей, сидируется миграцией `0008` и
+  синхронизируется на старте приложения). Код условия — по `code`.
+- Выдаются один раз (`user_achievements` unique `(user_id, code)`), бонус
+  прибавляется к `users.xp_total` и пересчитывает `level`.
+- Достижения-исполнения (`first_notes`, `first_personal_best`, `accuracy_*`,
+  `clean_run`, `timing_40ms`, `improve_*`, `hard_80`, `songs_*`, `genres_*`,
+  `mastery_*`, `genre_master`) проверяются только на попытках с completion ≥ 50 %.
+- `timing_40ms` без `avg_timing_error_ms` остаётся заблокированным.
+- `genres_3/5/8`: эффективный порог = `min(goal, число жанров в опубликованных
+  песнях)`; при совпадении порогов выдаётся только первое достижение, остальные
+  остаются заблокированными, а в `description` добавляется пометка
+  «Недоступно: в каталоге N жанр(а/ов) из M». Жанры не выдумываются.
+- `daily_first_place` не может быть решён в момент попытки: он выдаётся при
+  следующем обращении к `/profile/progression`, `/achievements` или
+  `/daily/leaderboard`, когда день уже закончился (фонового планировщика нет).
+
+### Испытание дня
+
+- Песня дня выбирается детерминированно:
+  `sha256(date_iso) % count` по опубликованным песням, отсортированным по `slug`;
+  выбор сохраняется в `daily_challenges` и не меняется задним числом.
+- `POST /games/sessions` c `daily: true` требует именно эту песню (иначе 409) и
+  неиспользованную официальную попытку (иначе 409); сессия получает `mode=daily`.
+- `finish` такой сессии вставляет `daily_results` (unique `date+user`); вторая
+  официальная попытка → 409. Тренировки (`mode=normal`) в рейтинг дня не попадают.
+- Рейтинг дня сортируется по `score_points` desc, затем `accuracy_percent` desc.
+- Правила `/leaderboard` и `/leaderboard/global` не изменились: они по-прежнему
+  считают по `scores`, независимо от XP и режима.
+
 ## Где искать в клиенте
 
 `Source/Network/ApiClient.h` — единственное место HTTP-запросов (`get`, `post`, `getJson`,
@@ -254,6 +337,11 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
 - `refreshGlobalLeaderboard` — глобальный рейтинг.
 - `refreshOnlineCatalog` — список опубликованных песен на главном экране.
 - `refreshOnlineBestScores` — лучшие счета пользователя по каждой песне (`/games/best-scores`).
+- `refreshProgression` / `refreshAchievements` / `loadDailyChallenge` — прогрессия
+  (`/profile/progression`, `/achievements`, `/daily/today`). Ответы приходят на
+  worker-потоке, применяются в UI через `callAsync`.
+- `startOnlineGameSession` с `daily=true` — официальная попытка дня; при 409
+  показывать «официальная попытка уже использована», а не ошибку сети.
 - `startSelectedSong` / `downloadOnlineSong` — выбор строки каталога и загрузка ассетов по требованию.
 - Телеметрия активности (`/activity/heartbeat`, `/activity/game-launch`) — из
   worker-потока, без блокировки UI-потока.
@@ -285,3 +373,12 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
 - Ошибки FastAPI — `{"detail": ...}`; клиент должен это учитывать.
 - SMTP-переменные и коды никогда не логировать в production.
 - Не логировать токены и пароли.
+- `completion_percent` — проценты 0–100, не доля 0–1; `notes_played`/`notes_total`
+  только понижают completion, поэтому клиент не может «дописать» прогресс.
+- `daily: true` в `POST /games/sessions` — только для песни дня; 409 значит
+  «не та песня» или «официальная попытка уже использована».
+- Повторный `finish` (в том числе параллельный) даёт 409 и не начисляет XP —
+  это нормальный ответ, а не сбой.
+- `mastery` в ответе `finish` — объект, а `achievements_awarded` — массив объектов,
+  а не строк.
+- XP за повторные попытки падает (100/50/25/0 %), даже если рекорд растёт.
