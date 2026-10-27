@@ -371,7 +371,8 @@ public:
                             // finished.
 
                             const auto currentState =
-                                owner.gameState;
+                                owner.gameState.load(
+                                    std::memory_order_relaxed);
 
                             if (currentState
                                 != MainComponent::GameState::Playing

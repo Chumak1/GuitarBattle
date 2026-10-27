@@ -1085,3 +1085,46 @@ code {
   text-align: center;
   padding: 2.5rem 1rem !important;
 }
+
+.stats-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.stats-sort:hover,
+.stats-sort:focus-visible {
+  color: #fff;
+}
+
+.stats-sort .stats-sort-icon {
+  color: inherit;
+  font-size: 0.72rem;
+  opacity: 0.4;
+}
+
+.stats-sort.is-sorted {
+  color: var(--gb-accent);
+}
+
+.stats-sort.is-sorted .stats-sort-icon {
+  opacity: 1;
+}
+
+.stats-self {
+  color: var(--gb-accent);
+}
+
+.stats-users-table .action-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

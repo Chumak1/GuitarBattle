@@ -11,6 +11,9 @@ import pytest
 from sqlalchemy import func, select
 
 from app.models.app_session import AppSession, GameLaunch
+from app.models.email_auth_code import EmailAuthCode
+from app.models.game_session import GameSession, Score
+from app.models.user import User
 from tests import helpers
 
 pytestmark = pytest.mark.db
@@ -231,6 +234,33 @@ def _seed_user_activity(db_session, user_id: str) -> None:
     db_session.commit()
 
 
+def _seed_score(db_session, user_id: str, song_id: str, points: int, played_at: datetime):
+    """Create one finished game session holding a single score row."""
+    session = GameSession(
+        user_id=uuid.UUID(user_id),
+        song_id=uuid.UUID(song_id),
+        song_version=1,
+        speed_percent=100,
+        started_at=played_at,
+        finished_at=played_at,
+        status="finished",
+    )
+    db_session.add(session)
+    db_session.flush()
+    db_session.add(
+        Score(
+            session_id=session.id,
+            score_points=points,
+            accuracy_percent=95.0,
+            max_combo=10,
+            perfect_count=8,
+            good_count=1,
+            miss_count=0,
+        )
+    )
+    return session
+
+
 def test_users_statistics_aggregate(db_client, db_session, admin_user):
     account = helpers.register_user(db_client, display_name="Player One")
     _seed_user_activity(db_session, account["id"])
@@ -260,6 +290,8 @@ def test_users_statistics_aggregate(db_client, db_session, admin_user):
     assert admin_row["sessions_count"] == 0
     assert admin_row["last_seen_at"] is None
     assert admin_row["launches_count"] == 0
+    assert admin_row["scores_count"] == 0
+    assert admin_row["best_score"] is None
 
 
 def test_users_statistics_search_is_case_insensitive(db_client, admin_user):
@@ -330,7 +362,7 @@ def test_users_statistics_sorting_and_pagination(db_client, db_session, admin_us
 
     by_launches = db_client.get(
         f"{helpers.API}/admin/statistics/users",
-        params={"sort": "launches"},
+        params={"sort": "launches_count"},
         headers=admin_user["headers"],
     )
     assert by_launches.status_code == 200
@@ -348,10 +380,263 @@ def test_users_statistics_sorting_and_pagination(db_client, db_session, admin_us
 
     invalid_sort = db_client.get(
         f"{helpers.API}/admin/statistics/users",
-        params={"sort": "email"},
+        params={"sort": "password"},
         headers=admin_user["headers"],
     )
     assert invalid_sort.status_code == 422
+
+    invalid_order = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"sort": "username", "order": "sideways"},
+        headers=admin_user["headers"],
+    )
+    assert invalid_order.status_code == 422
+
+
+def test_users_statistics_sort_by_username_and_email(db_client, admin_user):
+    token = uuid.uuid4().hex[:6]
+    first = helpers.register_user(
+        db_client, username=f"s{token}a", email=f"zzz-{token}@example.com"
+    )
+    second = helpers.register_user(
+        db_client, username=f"s{token}b", email=f"aaa-{token}@example.com"
+    )
+
+    def usernames(**params):
+        params.setdefault("search", token)
+        params.setdefault("limit", 200)
+        response = db_client.get(
+            f"{helpers.API}/admin/statistics/users",
+            params=params,
+            headers=admin_user["headers"],
+        )
+        assert response.status_code == 200, response.text
+        return [item["username"] for item in response.json()["items"]]
+
+    assert usernames(sort="username", order="asc") == [
+        first["username"],
+        second["username"],
+    ]
+    assert usernames(sort="username", order="desc") == [
+        second["username"],
+        first["username"],
+    ]
+    # Email order is the reverse of the login order on purpose.
+    assert usernames(sort="email", order="asc") == [
+        second["username"],
+        first["username"],
+    ]
+    assert usernames(sort="email", order="desc") == [
+        first["username"],
+        second["username"],
+    ]
+    # Text columns default to ascending when ``order`` is omitted.
+    assert usernames(sort="username") == [first["username"], second["username"]]
+    assert usernames(sort="email") == [second["username"], first["username"]]
+
+
+def test_users_statistics_scores_and_sort_by_scores(
+    db_client, db_session, admin_user, published_song
+):
+    token = uuid.uuid4().hex[:6]
+    heavy = helpers.register_user(db_client, username=f"p{token}a")
+    light = helpers.register_user(db_client, username=f"p{token}b")
+    now = _utc_now()
+    _seed_score(db_session, heavy["id"], published_song["id"], 100, now - timedelta(hours=3))
+    _seed_score(db_session, heavy["id"], published_song["id"], 500, now - timedelta(hours=2))
+    _seed_score(db_session, heavy["id"], published_song["id"], 300, now - timedelta(hours=1))
+    _seed_score(db_session, light["id"], published_song["id"], 42, now - timedelta(minutes=5))
+    db_session.commit()
+
+    def rows(**params):
+        params.setdefault("search", token)
+        params.setdefault("limit", 200)
+        response = db_client.get(
+            f"{helpers.API}/admin/statistics/users",
+            params=params,
+            headers=admin_user["headers"],
+        )
+        assert response.status_code == 200, response.text
+        return response.json()["items"]
+
+    desc = rows(sort="scores_count", order="desc")
+    assert [item["username"] for item in desc] == [heavy["username"], light["username"]]
+    assert desc[0]["scores_count"] == 3
+    assert desc[0]["best_score"] == 500
+    assert desc[1]["scores_count"] == 1
+    assert desc[1]["best_score"] == 42
+
+    asc = rows(sort="scores_count", order="asc")
+    assert [item["username"] for item in asc] == [light["username"], heavy["username"]]
+
+    # Numeric columns default to descending when ``order`` is omitted.
+    assert rows(sort="scores_count")[0]["username"] == heavy["username"]
+
+    # Scores do not disturb the other aggregates: heavy has three finished
+    # sessions but no app session or game launch.
+    assert desc[0]["sessions_count"] == 0
+    assert desc[0]["launches_count"] == 0
+
+
+def test_users_statistics_sort_by_last_seen_both_directions(
+    db_client, db_session, admin_user
+):
+    token = uuid.uuid4().hex[:6]
+    recent = helpers.register_user(db_client, username=f"t{token}a")
+    older = helpers.register_user(db_client, username=f"t{token}b")
+    idle = helpers.register_user(db_client, username=f"t{token}c")
+    now = _utc_now()
+    db_session.add_all(
+        [
+            AppSession(
+                user_id=uuid.UUID(older["id"]),
+                client_session_id="older",
+                started_at=now - timedelta(hours=3),
+                last_seen_at=now - timedelta(hours=2),
+            ),
+            AppSession(
+                user_id=uuid.UUID(recent["id"]),
+                client_session_id="recent",
+                started_at=now - timedelta(minutes=10),
+                last_seen_at=now - timedelta(minutes=5),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    def usernames(**params):
+        params.setdefault("search", token)
+        params.setdefault("limit", 200)
+        response = db_client.get(
+            f"{helpers.API}/admin/statistics/users",
+            params=params,
+            headers=admin_user["headers"],
+        )
+        assert response.status_code == 200, response.text
+        return [item["username"] for item in response.json()["items"]]
+
+    assert usernames(sort="last_seen", order="desc") == [
+        recent["username"],
+        older["username"],
+        idle["username"],
+    ]
+    # Empty values stay last in both directions.
+    assert usernames(sort="last_seen", order="asc") == [
+        older["username"],
+        recent["username"],
+        idle["username"],
+    ]
+    assert usernames(sort="last_seen") == [
+        recent["username"],
+        older["username"],
+        idle["username"],
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Account deletion
+# ---------------------------------------------------------------------------
+def test_delete_user_removes_account_and_related_rows(
+    db_client, db_session, admin_user, published_song
+):
+    account = helpers.register_user(db_client)
+    user_id = uuid.UUID(account["id"])
+    now = _utc_now()
+    db_session.add(
+        AppSession(
+            user_id=user_id,
+            client_session_id="delete-me",
+            started_at=now - timedelta(minutes=30),
+            last_seen_at=now,
+        )
+    )
+    db_session.add(GameLaunch(user_id=user_id, game_key="practice", started_at=now))
+    session = _seed_score(db_session, account["id"], published_song["id"], 250, now)
+    db_session.commit()
+    session_id = session.id
+
+    response = db_client.delete(
+        f"{helpers.API}/admin/users/{account['id']}", headers=admin_user["headers"]
+    )
+    assert response.status_code == 204, response.text
+    assert response.text == ""
+
+    db_session.expire_all()
+    assert db_session.scalar(select(func.count(User.id)).where(User.id == user_id)) == 0
+    assert (
+        db_session.scalar(
+            select(func.count(AppSession.id)).where(AppSession.user_id == user_id)
+        )
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count(GameLaunch.id)).where(GameLaunch.user_id == user_id)
+        )
+        == 0
+    )
+    assert (
+        db_session.scalar(
+            select(func.count(GameSession.id)).where(GameSession.user_id == user_id)
+        )
+        == 0
+    )
+    # The only seeded score belonged to that user's session.
+    assert db_session.scalar(select(func.count(Score.id))) == 0
+    assert (
+        db_session.scalar(
+            select(func.count(Score.id)).where(Score.session_id == session_id)
+        )
+        == 0
+    )
+    # Registration created email codes; they are cascaded too.
+    assert (
+        db_session.scalar(
+            select(func.count(EmailAuthCode.id)).where(EmailAuthCode.user_id == user_id)
+        )
+        == 0
+    )
+
+    listing = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"search": account["username"]},
+        headers=admin_user["headers"],
+    ).json()
+    assert listing["total"] == 0
+    assert listing["items"] == []
+
+
+def test_delete_user_rejects_self_missing_and_non_admin(
+    db_client, admin_user, user_account
+):
+    self_delete = db_client.delete(
+        f"{helpers.API}/admin/users/{admin_user['id']}", headers=admin_user["headers"]
+    )
+    assert self_delete.status_code == 400
+    assert self_delete.json()["detail"] == "You cannot delete your own account"
+
+    missing = db_client.delete(
+        f"{helpers.API}/admin/users/{uuid.uuid4()}", headers=admin_user["headers"]
+    )
+    assert missing.status_code == 404
+
+    forbidden = db_client.delete(
+        f"{helpers.API}/admin/users/{user_account['id']}",
+        headers=user_account["headers"],
+    )
+    assert forbidden.status_code == 403
+
+    anonymous = db_client.delete(f"{helpers.API}/admin/users/{user_account['id']}")
+    assert anonymous.status_code == 401
+
+    # Rejected requests must not delete anything.
+    listing = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"search": user_account["username"]},
+        headers=admin_user["headers"],
+    ).json()
+    assert listing["total"] == 1
+    assert listing["items"][0]["user_id"] == user_account["id"]
 
 
 # ---------------------------------------------------------------------------

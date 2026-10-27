@@ -162,13 +162,25 @@ Administrator-only aggregates (`Bearer` with `is_admin`):
   `launches_total`, `launches_24h`, `generated_at`. `days` (1–365) limits sessions
   and launches; `users_total` always counts all accounts. Activity is a heartbeat
   or a launch inside the window.
-- `GET /admin/statistics/users?search=&sort=last_seen|app_seconds|launches&limit=50&offset=0`
+- `GET /admin/statistics/users?search=&sort=last_seen&order=desc&limit=50&offset=0`
   — one row per account: `user_id`, `username`, `display_name`, `email`,
   `is_active`, `created_at`, `app_seconds_total`, `sessions_count`,
-  `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`, plus
-  `total`/`limit`/`offset`. `search` is a case-insensitive substring of username,
-  display name or email. `last_seen` sorts by the newest heartbeat or launch with
-  empty values last.
+  `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`,
+  `scores_count`, `best_score`, plus `total`/`limit`/`offset`.
+  `search` is a case-insensitive substring of username, display name or email.
+  `sort` is one of `last_seen`, `username`, `display_name`, `email`, `created_at`,
+  `app_seconds`, `sessions_count`, `launches_count`, `scores_count`;
+  `order` is `asc` or `desc` and defaults to `asc` for the text columns and
+  `desc` for numbers and dates. Text sorts are case-insensitive, empty values go
+  last in both directions, and `username`/`id` break ties so paging is stable.
+  `scores_count`/`best_score` come from the `scores` rows reached through
+  `game_sessions` (`best_score` is `null` when the player has no results).
+- `DELETE /admin/users/{user_id}` — hard delete of one account (204). Answers
+  400 `"You cannot delete your own account"` for the signed-in administrator,
+  404 for an unknown id and 409 if related data ever blocks the delete. Every
+  foreign key to `users.id` is `ON DELETE CASCADE`, so game sessions and their
+  scores, app sessions, game launches, email codes and competitions are removed
+  with the account. The audit log line contains ids only.
 - `GET /admin/statistics/games?days=30&limit=100` — launches grouped by
   `game_key` with `title`, `launches`, `unique_users`, `last_launch_at`. The title
   is the song title of the newest launch that has a `song_id`; keys without a song
@@ -179,7 +191,11 @@ at zero, so a crashed client still produces usable numbers. All aggregates are
 computed in SQL (grouped subqueries joined once per request), never per row.
 
 The admin UI for these numbers is the «Статистика» tab of `/admin/`
-(`app/static/admin/admin-statistics.js`), not a standalone page.
+(`app/static/admin/admin-statistics.js`), not a standalone page. Table headers
+sort server-side (click toggles asc/desc, ▲/▼ marks the active column), the
+Scores column shows the number of results with the personal best underneath,
+and each row has a delete button (confirmation shows the login and email; the
+signed-in administrator's own row is disabled).
 
 ### Administrator song workflow
 Every `/admin/songs` route requires a Bearer token for a user whose `is_admin` flag is true:

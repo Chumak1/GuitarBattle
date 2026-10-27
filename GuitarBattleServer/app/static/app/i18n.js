@@ -398,7 +398,7 @@ window.FFI18N = (function () {
       'auth.register.displayName': 'Display name <span class="muted">(optional)</span>',
       'auth.register.displayPlaceholder': 'How you appear on the leaderboard',
       'auth.register.password': 'Password',
-      'auth.register.passwordPlaceholder': 'At least 10 characters',
+      'auth.register.passwordPlaceholder': 'At least 6 characters',
       'auth.register.submit': 'Create account',
       'auth.register.hint': 'After registration we will email you a six-digit confirmation code.',
       'auth.verify.email': 'Email',

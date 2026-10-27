@@ -1,9 +1,9 @@
 /* fretfight admin — statistics tab.
  *
- * Product analytics: app time, sessions and game launches per account plus
+ * Product analytics: app time, sessions, launches and scores per account plus
  * aggregates per game. Kept separate from admin.js (songs) and admin-site.js
  * (landing CMS, builds); it only needs the administrator JWT from sessionStorage
- * and the shared authorized-request error handling from admin.js.
+ * and the shared helpers from admin.js (login fallback, toasts, current admin).
  *
  * Public surface: window.FFAdminStatistics.show() — lazy first load, refresh on
  * every later visit; window.FFAdminStatistics.refresh() — explicit reload.
@@ -16,11 +16,28 @@
   const PAGE_SIZE = 50;
   const ONLINE_WINDOW_MS = 5 * 60 * 1000;
 
+  // Columns the API can sort by; text columns start ascending, numbers and
+  // dates descending. "Последний запуск" is display-only because the API enum
+  // has no last_launch sort key.
+  const TEXT_SORTS = ["username", "display_name", "email"];
+  const SORT_KEYS = [
+    "last_seen",
+    "username",
+    "display_name",
+    "email",
+    "created_at",
+    "app_seconds",
+    "sessions_count",
+    "launches_count",
+    "scores_count",
+  ];
+
   const state = {
     loaded: false,
     days: 30,
     search: "",
     sort: "last_seen",
+    order: "desc",
     offset: 0,
     total: 0,
     users: [],
@@ -73,12 +90,12 @@
     window.location.reload();
   }
 
-  async function api(path) {
+  async function api(path, options = {}) {
     const token = sessionStorage.getItem(TOKEN_KEY) || "";
     const headers = token ? { Authorization: "Bearer " + token } : {};
 
     const response = await fetch(API_BASE + path, {
-      method: "GET",
+      method: options.method || "GET",
       headers,
       credentials: "omit",
     });
@@ -107,6 +124,22 @@
     if (!box) return;
     box.textContent = message || "";
     box.hidden = !message;
+  }
+
+  function notify(message, variant = "success") {
+    if (window.FFAdmin && typeof window.FFAdmin.showToast === "function") {
+      window.FFAdmin.showToast(message, variant);
+      return;
+    }
+    if (variant === "danger") showAlert(message);
+  }
+
+  function currentAdminId() {
+    const me =
+      window.FFAdmin && typeof window.FFAdmin.getUser === "function"
+        ? window.FFAdmin.getUser()
+        : null;
+    return me && me.id ? String(me.id) : "";
   }
 
   /* ---------- formatting ---------- */
@@ -187,6 +220,43 @@
 
   /* ---------- users ---------- */
 
+  function updateSortIndicators() {
+    document.querySelectorAll("[data-stats-sort]").forEach((button) => {
+      const key = button.getAttribute("data-stats-sort");
+      const active = key === state.sort && SORT_KEYS.indexOf(key) >= 0;
+      button.classList.toggle("is-sorted", active);
+      const icon = button.querySelector(".stats-sort-icon");
+      if (icon) {
+        const glyph = active
+          ? state.order === "asc"
+            ? "bi-arrow-up"
+            : "bi-arrow-down"
+          : "bi-arrow-down-up";
+        icon.className = "bi " + glyph + " stats-sort-icon";
+      }
+      const header = button.closest("th");
+      if (header) {
+        header.setAttribute(
+          "aria-sort",
+          active ? (state.order === "asc" ? "ascending" : "descending") : "none",
+        );
+      }
+    });
+  }
+
+  function applySort(key) {
+    if (SORT_KEYS.indexOf(key) < 0) return;
+    if (state.sort === key) {
+      state.order = state.order === "asc" ? "desc" : "asc";
+    } else {
+      state.sort = key;
+      state.order = TEXT_SORTS.indexOf(key) >= 0 ? "asc" : "desc";
+    }
+    state.offset = 0;
+    updateSortIndicators();
+    loadUsers();
+  }
+
   function userRow(user) {
     const activity = lastActivity(user);
     const activityMs = activity ? new Date(activity).getTime() : 0;
@@ -195,11 +265,25 @@
     const nick = user.display_name
       ? escapeHtml(user.display_name)
       : '<span class="text-secondary">—</span>';
+    const isSelf = currentAdminId() === String(user.user_id);
+    const bestScore =
+      user.best_score == null
+        ? ""
+        : '<div class="stats-mono">лучший ' + formatNumber(user.best_score) + "</div>";
+    const deleteButton = isSelf
+      ? '<button type="button" class="action-btn" disabled title="Нельзя удалить свою учётную запись" aria-label="Нельзя удалить свою учётную запись">' +
+        '<i class="bi bi-trash3"></i></button>'
+      : '<button type="button" class="action-btn action-danger" data-stats-delete="' +
+        escapeHtml(user.user_id) +
+        '" title="Удалить пользователя" aria-label="Удалить пользователя">' +
+        '<i class="bi bi-trash3"></i></button>';
+
     return (
       "<tr>" +
       "<td>" +
       '<div class="stats-login">' + escapeHtml(user.username) + "</div>" +
       '<div class="stats-mono">' + escapeHtml(user.user_id) + "</div>" +
+      (isSelf ? '<div class="stats-mono stats-self">это вы</div>' : "") +
       "</td>" +
       "<td>" + nick + "</td>" +
       '<td class="d-none d-lg-table-cell">' + escapeHtml(user.email) + "</td>" +
@@ -211,6 +295,8 @@
       '<td class="d-none d-md-table-cell"><span class="text-nowrap">' +
       formatNumber(user.sessions_count) + "</span></td>" +
       "<td><span class=\"text-nowrap\">" + formatNumber(user.launches_count) + "</span></td>" +
+      "<td><span class=\"text-nowrap\">" + formatNumber(user.scores_count) + "</span>" +
+      bestScore + "</td>" +
       '<td class="d-none d-xl-table-cell">' +
       '<span class="text-nowrap small text-secondary">' + formatDateTime(user.last_launch_at) + "</span>" +
       "</td>" +
@@ -221,6 +307,7 @@
       escapeHtml(stateLabel) + "</span>" +
       "</div>" +
       "</td>" +
+      '<td class="text-end"><div class="action-group">' + deleteButton + "</div></td>" +
       "</tr>"
     );
   }
@@ -233,7 +320,7 @@
         ? "Никого не нашли по этому запросу."
         : "Пока нет ни одного игрока.";
       body.innerHTML =
-        '<tr><td colspan="8" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
+        '<tr><td colspan="10" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
     } else {
       body.innerHTML = state.users.map(userRow).join("");
     }
@@ -253,7 +340,7 @@
     });
     if (loading) {
       el("statsUsersBody").innerHTML =
-        '<tr><td colspan="8" class="table-loading">' +
+        '<tr><td colspan="10" class="table-loading">' +
         '<span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
     }
   }
@@ -264,6 +351,7 @@
     try {
       const params = new URLSearchParams({
         sort: state.sort,
+        order: state.order,
         limit: String(PAGE_SIZE),
         offset: String(state.offset),
       });
@@ -272,12 +360,51 @@
       if (requestId !== state.usersRequestId) return;
       state.users = data.items || [];
       state.total = data.total || 0;
+      updateSortIndicators();
       renderUsers();
     } catch (error) {
       if (requestId !== state.usersRequestId) return;
       if (error.status !== 401 && error.status !== 403) showAlert(errorText(error));
     } finally {
       if (requestId === state.usersRequestId) setUsersLoading(false);
+    }
+  }
+
+  async function deleteUser(userId) {
+    const user = state.users.find((item) => String(item.user_id) === String(userId));
+    if (!user || String(user.user_id) === currentAdminId()) return;
+
+    const question =
+      "Удалить пользователя " + user.username + " (" + user.email + ")?\n\n" +
+      "Аккаунт, сессии, запуски и результаты будут удалены безвозвратно.";
+    if (!window.confirm(question)) return;
+
+    const buttons = Array.prototype.slice.call(
+      document.querySelectorAll("[data-stats-delete]"),
+    );
+    buttons.forEach((button) => {
+      button.disabled = true;
+    });
+    showAlert("");
+
+    try {
+      await api("/admin/users/" + encodeURIComponent(user.user_id), { method: "DELETE" });
+      // The last row of a page may have just disappeared; step back one page
+      // instead of showing an empty list.
+      if (state.users.length === 1 && state.offset > 0) {
+        state.offset = Math.max(0, state.offset - PAGE_SIZE);
+      }
+      notify("Пользователь " + user.username + " удалён.");
+      await Promise.all([loadUsers(), loadOverview(), loadGames()]);
+    } catch (error) {
+      if (error.status !== 401 && error.status !== 403) {
+        showAlert(errorText(error));
+        notify(errorText(error), "danger");
+      }
+    } finally {
+      buttons.forEach((button) => {
+        button.disabled = false;
+      });
     }
   }
 
@@ -346,6 +473,7 @@
     // Lazy first load; later visits refresh the numbers instead of stacking
     // yet another copy of the same state.
     state.loaded = true;
+    updateSortIndicators();
     loadAll();
   }
 
@@ -361,15 +489,21 @@
     el("statsRefreshUsers")?.addEventListener("click", loadUsers);
     el("statsRefreshGames")?.addEventListener("click", loadGames);
 
+    document.querySelectorAll("[data-stats-sort]").forEach((button) => {
+      button.addEventListener("click", () => {
+        applySort(button.getAttribute("data-stats-sort"));
+      });
+    });
+
+    el("statsUsersBody")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-stats-delete]");
+      if (button) deleteUser(button.getAttribute("data-stats-delete"));
+    });
+
     el("statsPeriod")?.addEventListener("change", (event) => {
       state.days = Number(event.target.value) || 30;
       state.offset = 0;
       loadAll();
-    });
-    el("statsSort")?.addEventListener("change", (event) => {
-      state.sort = event.target.value;
-      state.offset = 0;
-      loadUsers();
     });
 
     let searchTimer = null;
@@ -391,6 +525,8 @@
       state.offset += PAGE_SIZE;
       loadUsers();
     });
+
+    updateSortIndicators();
   }
 
   if (document.readyState === "loading") {

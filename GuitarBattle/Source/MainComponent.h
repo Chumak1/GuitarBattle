@@ -61,8 +61,14 @@ public:
     {
         SongSelect,
         Tuner,
+        // Prepared screen: song loaded, no count-in yet. Playback starts only
+        // after the player presses START.
+        Ready,
         Playing,
         Paused,
+        // Managed pause while the tempo is re-rendered; playback is stopped
+        // and the overlay explains what is happening.
+        Preparing,
         Finished
     };
 
@@ -95,7 +101,10 @@ private:
     //==========================================================================
     // Game state
 
-    GameState gameState = GameState::SongSelect;
+    // Read from the audio and pitch worker threads, written by the message
+    // thread: the value must be atomic so pause/resume takes effect
+    // immediately and without a data race.
+    std::atomic<GameState> gameState{ GameState::SongSelect };
 
     GameState stateBeforePause = GameState::Playing;
 
@@ -107,6 +116,15 @@ private:
 
     // Real audio sample at the exact moment START is pressed.
     std::atomic<uint64_t> gameplayStartSample{ 0 };
+
+    // Tempo anchor: the song position stays continuous when the tempo changes
+    // mid-song. Beat 0 is at tempoAnchorSample; after a tempo change the
+    // anchor moves to the current position with the new BPM.
+    std::atomic<double> tempoAnchorBeat{ 0.0 };
+    std::atomic<uint64_t> tempoAnchorSample{ 0 };
+    double getSongBeatForSample(uint64_t sample) const;
+    uint64_t getSongSampleForBeat(double beat) const;
+    void applyTempoPercent(double percent);
 
     // Total number of audio samples spent paused.
     std::atomic<uint64_t> pausedSamples{ 0 };
@@ -323,6 +341,13 @@ private:
 
     juce::TextButton gameStartButton{ "START" };
 
+    // Shown on the Ready screen; the count-in and playback start only here.
+    juce::TextButton readyStartButton{ "START" };
+
+    // Shown on the pause card; kept above the modal overlay so it always
+    // receives the click.
+    juce::TextButton resumeOverlayButton{ "RESUME" };
+
     juce::TextButton pauseButton{ "PAUSE" };
 
     juce::TextButton menuButton{ "MAIN MENU" };
@@ -488,7 +513,7 @@ private:
     // Playback-rate multiplier for all external WAV stems; 1.0 = original speed.
     std::atomic<double> audioPlaybackRate{ 1.0 };
 
-    double speedPercent = 100.0;
+    std::atomic<double> speedPercent{ 100.0 };
 
     double baseBpm = 140.0;
 
@@ -608,6 +633,21 @@ private:
     void pauseGame();
 
     void resumeGame();
+
+    // Starts the four-beat count-in and gameplay from the Ready screen.
+    void beginGameplayCountIn();
+
+    // Managed tempo change: playback pauses while the stems are re-rendered,
+    // then continues from the same beat.
+    std::atomic<bool> tempoChangeInProgress{ false };
+    bool tempoChangeQueued = false;
+    double queuedTempoPercent = 100.0;
+    GameState tempoResumeState = GameState::Playing;
+    double pendingTempoBeat = 0.0;
+    uint64_t pendingTempoSample = 0;
+    double pendingTempoPercent = 100.0;
+    void beginManagedTempoChange(double percent);
+    void finishManagedTempoChange();
 
     void returnToSongSelect();
 

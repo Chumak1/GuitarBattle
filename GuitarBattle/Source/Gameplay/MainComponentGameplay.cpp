@@ -15,6 +15,283 @@
 // Gameplay-only implementation for MainComponent: session lifecycle, tuning,
 // MIDI targets and scoring.
 
+double MainComponent::getSongBeatForSample(uint64_t sample) const
+{
+    const double sampleRate = cachedSampleRate.load(std::memory_order_relaxed);
+    const double currentBpm = bpm.load(std::memory_order_relaxed);
+
+    if (sampleRate <= 0.0 || currentBpm <= 0.0)
+        return 0.0;
+
+    const auto anchorSample = tempoAnchorSample.load(std::memory_order_relaxed);
+    const double anchorBeat = tempoAnchorBeat.load(std::memory_order_relaxed);
+
+    // Signed difference: samples before the anchor (count-in) yield a
+    // negative beat instead of wrapping around.
+    const double deltaSamples =
+        static_cast<double>(static_cast<int64_t>(sample)
+                            - static_cast<int64_t>(anchorSample));
+
+    return anchorBeat + deltaSamples * currentBpm / (sampleRate * 60.0);
+}
+
+uint64_t MainComponent::getSongSampleForBeat(double beat) const
+{
+    const double sampleRate = cachedSampleRate.load(std::memory_order_relaxed);
+    const double currentBpm = bpm.load(std::memory_order_relaxed);
+
+    if (sampleRate <= 0.0 || currentBpm <= 0.0)
+        return tempoAnchorSample.load(std::memory_order_relaxed);
+
+    const auto anchorSample = tempoAnchorSample.load(std::memory_order_relaxed);
+    const double anchorBeat = tempoAnchorBeat.load(std::memory_order_relaxed);
+
+    const double deltaSamples = (beat - anchorBeat)
+        * sampleRate * 60.0 / currentBpm;
+
+    const auto result =
+        static_cast<int64_t>(anchorSample)
+        + static_cast<int64_t>(std::llround(deltaSamples));
+
+    return result > 0 ? static_cast<uint64_t>(result) : 0;
+}
+
+void MainComponent::applyTempoPercent(double percent)
+{
+    if (tempoChangeInProgress.load(std::memory_order_relaxed))
+    {
+        // A change is already being prepared: remember the latest request
+        // instead of silently dropping the click.
+        tempoChangeQueued = true;
+        queuedTempoPercent = percent;
+        return;
+    }
+
+    const bool countingIn = countInActive.load(std::memory_order_acquire);
+
+    const bool paused = gameState == GameState::Paused;
+
+    if ((gameState == GameState::Playing && ! countingIn) || paused)
+    {
+        beginManagedTempoChange(percent);
+        return;
+    }
+
+    // Before the song starts (or during the count-in) there is nothing to
+    // freeze: re-render the stems and apply the new tempo directly.
+    const double newBpm = baseBpm * percent / 100.0;
+
+    prepareExternalAudioForSpeed(percent);
+
+    speedPercent.store(percent, std::memory_order_relaxed);
+    bpm.store(newBpm, std::memory_order_relaxed);
+    audioPlaybackRate.store(percent / 100.0, std::memory_order_relaxed);
+
+    metronome.setBpm(newBpm);
+    gameSession.setBaseBpm(baseBpm);
+    gameSession.setSpeedPercent(percent);
+    gameSession.setBpm(newBpm);
+
+    bpmLabel.setText(juce::String(static_cast<int>(std::round(newBpm))),
+                     juce::dontSendNotification);
+    tablatureComponent.setBpm(newBpm);
+}
+
+void MainComponent::beginManagedTempoChange(double percent)
+{
+    tempoChangeInProgress.store(true, std::memory_order_relaxed);
+
+    tempoResumeState = gameState;
+    pendingTempoPercent = percent;
+
+    if (gameState == GameState::Paused)
+    {
+        // The transport is already frozen: anchor on the pause position so
+        // the normal pause/resume shift lands on the same beat later.
+        const auto pauseStart = pauseStartSample.load(std::memory_order_relaxed);
+        pendingTempoSample = pauseStart;
+        pendingTempoBeat = getSongBeatForSample(pauseStart);
+    }
+    else
+    {
+        pendingTempoSample = audioSampleCounter.load(std::memory_order_relaxed);
+        pendingTempoBeat = getSongBeatForSample(pendingTempoSample);
+    }
+
+    // Freeze the whole transport before the heavy re-render starts: the player
+    // must see a stable "preparing tempo" card, not a frozen window.
+    tablatureComponent.setPlayheadRunning(false);
+    metronome.pauseScheduler();
+    metronomeSamplesRemaining = 0;
+    metronomePlaybackPosition = 0;
+
+    gameState = GameState::Preparing;
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    juce::Thread::launch([safeThis, percent]()
+    {
+        if (auto* self = safeThis.getComponent())
+            self->prepareExternalAudioForSpeed(percent);
+
+        juce::MessageManager::callAsync([safeThis]()
+        {
+            if (auto* self = safeThis.getComponent())
+                self->finishManagedTempoChange();
+        });
+    });
+
+    resized();
+    repaint();
+}
+
+void MainComponent::finishManagedTempoChange()
+{
+    if (! tempoChangeInProgress.load(std::memory_order_relaxed))
+        return;
+
+    // The player may have left the game while the stems were rendering.
+    if (gameState != GameState::Preparing)
+    {
+        tempoChangeInProgress.store(false, std::memory_order_relaxed);
+        return;
+    }
+
+    // Playback stood still while the stems were rendered.
+    const auto now = audioSampleCounter.load(std::memory_order_relaxed);
+    const bool resumeToPlaying = tempoResumeState == GameState::Playing;
+
+    if (resumeToPlaying)
+    {
+        const auto prepDuration = now > pendingTempoSample
+            ? now - pendingTempoSample
+            : 0;
+
+        if (prepDuration > 0)
+            gameplayStartSample.fetch_add(prepDuration, std::memory_order_relaxed);
+
+        tempoAnchorBeat.store(pendingTempoBeat, std::memory_order_relaxed);
+        tempoAnchorSample.store(now, std::memory_order_relaxed);
+    }
+    else
+    {
+        // Still paused: keep the anchor on the pause position, the regular
+        // pause/resume shift will move it forward with the whole pause.
+        tempoAnchorBeat.store(pendingTempoBeat, std::memory_order_relaxed);
+        tempoAnchorSample.store(pendingTempoSample, std::memory_order_relaxed);
+    }
+
+    const double newBpm = baseBpm * pendingTempoPercent / 100.0;
+
+    speedPercent.store(pendingTempoPercent, std::memory_order_relaxed);
+    bpm.store(newBpm, std::memory_order_relaxed);
+    audioPlaybackRate.store(pendingTempoPercent / 100.0, std::memory_order_relaxed);
+
+    metronome.setBpm(newBpm);
+    gameSession.setBaseBpm(baseBpm);
+    gameSession.setSpeedPercent(pendingTempoPercent);
+    gameSession.setBpm(newBpm);
+
+    metronomeSamplesRemaining = 0;
+
+    if (resumeToPlaying)
+    {
+        // Resume on the exact fractional beat with the new tempo: the old
+        // song-start reference no longer maps to beat zero after an anchor
+        // move, which used to shift the bar accent by one beat.
+        metronome.resumeAtBeat(now, pendingTempoBeat);
+
+        tablatureComponent.setPlayheadBeat(pendingTempoBeat);
+        tablatureComponent.setPlayheadRunning(true);
+
+        gameState = GameState::Playing;
+        hitLabel.setText("READY", juce::dontSendNotification);
+    }
+    else
+    {
+        // Stay paused; metronome and tablature remain frozen.
+        gameState = GameState::Paused;
+        tablatureComponent.setPlayheadRunning(false);
+        hitLabel.setText("PAUSED", juce::dontSendNotification);
+    }
+
+    bpmLabel.setText(juce::String(static_cast<int>(std::round(newBpm))),
+                     juce::dontSendNotification);
+    tablatureComponent.setBpm(newBpm);
+
+    tempoChangeInProgress.store(false, std::memory_order_relaxed);
+
+    resized();
+    repaint();
+
+    // The player may have picked another tempo while this one was rendering.
+    if (tempoChangeQueued)
+    {
+        const double queued = queuedTempoPercent;
+        tempoChangeQueued = false;
+
+        if (! juce::approximatelyEqual(queued, pendingTempoPercent))
+            applyTempoPercent(queued);
+    }
+}
+
+void MainComponent::beginGameplayCountIn()
+{
+    if (gameState != GameState::Ready)
+        return;
+
+    // The launch is counted and the server session is opened only now: the
+    // Ready screen itself is not gameplay.
+    startOnlineGameSession();
+
+    const auto currentSample =
+        audioSampleCounter.load(
+            std::memory_order_relaxed);
+
+    const double beatLengthSamples =
+        metronome.getBeatLengthSamples();
+
+    // Three audible metronome clicks (3-2-1); the song timeline starts on
+    // the beat immediately after the last click.
+    countInRemaining.store(3, std::memory_order_relaxed);
+    countInActive.store(true, std::memory_order_release);
+    tablatureComponent.setPlayheadRunning(false);
+
+    const auto countInSamples =
+        static_cast<uint64_t>(
+            std::llround(beatLengthSamples * 3.0));
+
+    gameplayStartSample.store(
+        currentSample + countInSamples,
+        std::memory_order_relaxed);
+
+    // Beat 0 of the song timeline is the first sample after the count-in.
+    tempoAnchorBeat.store(0.0, std::memory_order_relaxed);
+    tempoAnchorSample.store(currentSample + countInSamples,
+                            std::memory_order_relaxed);
+
+    currentPlayheadBeat.store(0.0, std::memory_order_relaxed);
+    tablatureComponent.setPlayheadBeat(0.0);
+
+    metronome.resetScheduler(currentSample, 1);
+
+    metronomeSamplesRemaining = 0;
+    metronomePlaybackPosition = 0;
+
+    gameSession.setTargetNoteIndex(0);
+    setTargetFromMidiIndex(0);
+
+    gameState = GameState::Playing;
+    gameStartButton.setButtonText("START");
+    menuButton.setButtonText("MAIN MENU");
+    tunerStartButton.setEnabled(false);
+    pauseButton.setButtonText("PAUSE");
+    hitLabel.setText("COUNT-IN 3", juce::dontSendNotification);
+
+    resized();
+    repaint();
+}
+
 void MainComponent::pauseGame()
 {
     if (gameState != GameState::Playing)
@@ -36,6 +313,10 @@ void MainComponent::pauseGame()
     metronomeSamplesRemaining = 0;
     metronomePlaybackPosition = 0;
 
+    // Stop the tablature scroll: its own 60 Hz clock must not advance while
+    // the game is paused.
+    tablatureComponent.setPlayheadRunning(false);
+
     gameState =
         GameState::Paused;
 
@@ -46,6 +327,7 @@ void MainComponent::pauseGame()
         "PAUSED",
         juce::dontSendNotification);
 
+    resized();
     repaint();
 }
 
@@ -105,6 +387,12 @@ void MainComponent::resumeGame()
         gameplayStartSample.fetch_add(
             pauseDuration,
             std::memory_order_relaxed);
+
+        // The beat-mapped timeline is anchored to the audio sample counter,
+        // so it has to move forward by the pause duration as well.
+        tempoAnchorSample.fetch_add(
+            pauseDuration,
+            std::memory_order_relaxed);
     }
 
     //==========================================================================
@@ -121,11 +409,30 @@ void MainComponent::resumeGame()
         gameplayStartSample.load(
             std::memory_order_relaxed);
 
-    metronome.resumeScheduler(
-        currentSample,
-        resumeSongStart);
+    const double resumeBeat =
+        getSongBeatForSample(currentSample);
+
+    if (resumeBeat >= 0.0)
+    {
+        // Exact beat position keeps the bar accent intact across pauses.
+        metronome.resumeAtBeat(currentSample, resumeBeat);
+    }
+    else
+    {
+        // Count-in / pre-song: fall back to the grid-based resume.
+        metronome.resumeScheduler(
+            currentSample,
+            resumeSongStart);
+    }
 
     metronomeSamplesRemaining = 0;
+
+    // Resume the tablature from the same beat. During the count-in the visual
+    // timeline stays frozen until the count-in ends.
+    tablatureComponent.setPlayheadBeat(
+        currentPlayheadBeat.load(std::memory_order_relaxed));
+    tablatureComponent.setPlayheadRunning(
+        ! countInActive.load(std::memory_order_acquire));
 
     gameState =
         stateBeforePause;
@@ -137,6 +444,7 @@ void MainComponent::resumeGame()
         "READY",
         juce::dontSendNotification);
 
+    resized();
     repaint();
 }
 
@@ -173,6 +481,14 @@ void MainComponent::returnToSongSelect()
         std::memory_order_relaxed);
 
     pauseStartSample.store(
+        0,
+        std::memory_order_relaxed);
+
+    tempoAnchorBeat.store(
+        0.0,
+        std::memory_order_relaxed);
+
+    tempoAnchorSample.store(
         0,
         std::memory_order_relaxed);
 
@@ -720,35 +1036,11 @@ uint64_t MainComponent::getTargetSample(
     if (beat < 0.0)
         return 0;
 
-    const auto gameplayStart =
-        gameplayStartSample.load(
-            std::memory_order_relaxed);
+    juce::ignoreUnused(sampleRate);
 
-    // IMPORTANT:
-// MIDI startBeat remains unchanged.
-// If MIDI says beat 4, target remains beat 4.
-//
-// Target timing is calculated directly from the current
-// audio sample rate and BPM to preserve exact fractional
-// samples-per-beat timing.
-
-    const double currentBpm =
-        bpm.load(
-            std::memory_order_relaxed);
-
-    if (currentBpm <= 0.0)
-        return 0;
-
-    const double samplesPerBeat =
-        sampleRate
-        * 60.0
-        / currentBpm;
-
-    return gameplayStart
-        + static_cast<uint64_t>(
-            std::llround(
-                beat
-                * samplesPerBeat));
+    // Beat-to-sample mapping honours tempo changes: the current tempo applies
+    // from the anchor point, not retroactively from the start of the song.
+    return getSongSampleForBeat(beat);
 }
 
 void MainComponent::advanceTarget()

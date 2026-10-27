@@ -8,6 +8,7 @@ from app.api.v1.site import router as site_router
 from app.api.v1.admin_site import router as admin_site_router
 from app.api.v1.activity import router as activity_router
 from app.api.v1.admin_statistics import router as admin_statistics_router
+from app.api.v1.admin_users import router as admin_users_router
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -19,3 +20,4 @@ router.include_router(site_router)
 router.include_router(admin_site_router)
 router.include_router(activity_router)
 router.include_router(admin_statistics_router)
+router.include_router(admin_users_router)

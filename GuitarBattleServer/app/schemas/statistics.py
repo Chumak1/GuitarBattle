@@ -101,6 +101,9 @@ class StatisticsUserItem(BaseModel):
     launches_count: int
     last_launch_at: datetime | None
     games_distinct: int
+    # Game results are stored in ``scores`` and linked through ``game_sessions``.
+    scores_count: int
+    best_score: int | None
 
 
 class StatisticsUserList(BaseModel):
