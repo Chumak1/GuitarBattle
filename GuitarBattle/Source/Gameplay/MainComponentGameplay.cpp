@@ -637,29 +637,10 @@ bool MainComponent::loadSongMidi(const juce::String& songId)
     }
     const double midiBpm = juce::jlimit(30.0, 300.0, found->bpm);
 
-    // Keep the MIDI tempo unchanged (100% speed by default). To avoid loading
-    // extremely long generated phrases, keep only the first 60 seconds of notes.
-    // Instrumental stems are capped to the same 60-second window in loadExternalAudioTrack().
+    // The chart runs to the end of the MIDI file: no fixed duration cap.
+    // Instrumental stems are loaded to their full length as well.
     loadSongAudio(*found);
-    constexpr double maxSongSeconds = 60.0;
     baseBpm = midiBpm;
-    const double maxBeat = maxSongSeconds * baseBpm / 60.0;
-    const auto originalNoteCount = parsedNotes.size();
-    parsedNotes.erase(std::remove_if(parsedNotes.begin(), parsedNotes.end(),
-        [maxBeat](TabNote& note)
-        {
-            if (note.startBeat >= maxBeat)
-                return true;
-            // Trim a note that crosses the one-minute boundary.
-            note.durationBeats = juce::jmax(0.0,
-                juce::jmin(note.durationBeats, maxBeat - note.startBeat));
-            return note.durationBeats <= 0.0;
-        }), parsedNotes.end());
-    DBG("MIDI 60s limit: source BPM=" + juce::String(midiBpm, 2)
-        + ", max beat=" + juce::String(maxBeat, 2)
-        + ", notes kept=" + juce::String(static_cast<int>(parsedNotes.size()))
-        + "/" + juce::String(static_cast<int>(originalNoteCount))
-        + ", audio cap=60.00s; tempo not stretched.");
 
     const double actualBpm = baseBpm * speedPercent / 100.0;
     bpm.store(actualBpm, std::memory_order_relaxed);

@@ -789,8 +789,6 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
 
     auto& track = externalAudioTracks[index];
     const int channels = static_cast<int>(juce::jmin<uint32_t>(2, reader->numChannels));
-    constexpr double maxSongSeconds = 60.0;
-    const int64_t maxSamplesForOneMinute = static_cast<int64_t>(reader->sampleRate * maxSongSeconds);
 
     // The server's MP3 stems are raw CBR streams without a gapless
     // (Xing/LAME) header. JUCE's MP3 decoder therefore leaves the standard
@@ -844,14 +842,11 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
         }
     }
 
-    // Read enough source samples that, after removing the MP3 priming,
-    // the gameplay window is still a full 60 seconds for long songs.
-    const int64_t maxSamplesWithPriming =
-        maxSamplesForOneMinute + static_cast<int64_t>(sourceStartOffset);
-
-    const int samples = static_cast<int>(juce::jmin<int64_t>(reader->lengthInSamples,
-        juce::jmin<int64_t>(maxSamplesWithPriming,
-            static_cast<int64_t>(std::numeric_limits<int>::max()))));
+    // Load the whole stem (minus the MP3 priming): the song plays to the end
+    // of the MIDI, not to a fixed one-minute window.
+    const int samples = static_cast<int>(juce::jmin<int64_t>(
+        reader->lengthInSamples,
+        static_cast<int64_t>(std::numeric_limits<int>::max())));
 
     const int samplesToRead =
         juce::jmax(0, samples - sourceStartOffset);
@@ -872,7 +867,7 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
         + " (" + juce::String(samplesToRead) + " samples, "
         + juce::String(reader->sampleRate) + " Hz, "
         + juce::String(static_cast<double>(samplesToRead) / reader->sampleRate, 2)
-        + " seconds; capped at 60 seconds; trimmed "
+        + " seconds; full stem; trimmed "
         + juce::String(sourceStartOffset) + " MP3 priming samples)");
     return true;
 }
