@@ -29,8 +29,10 @@ from app.schemas.admin_songs import (
     AdminSongUpdate,
 )
 from app.services.daily_slots import apply_song_weekday
+from app.services.mp3_upload import has_mp3_extension, looks_like_mp3
 from app.services.song_archive import SongUsage, archive_song, restore_song, song_usage
 from app.services.song_assets import (
+    PREVIEW_ROLE,
     build_readiness,
     deactivate_role_files,
     load_active_files_by_song,
@@ -87,6 +89,7 @@ def _admin_song_detail(
             guitar=optional("guitar"),
             others=optional("others"),
         ),
+        preview=optional(PREVIEW_ROLE),
     )
     result.files = [
         _admin_file_response(song.id, stored_file) for stored_file in (all_files or [])
@@ -392,31 +395,39 @@ async def upload_song_midi(
     "/{song_id}/files/audio/{role}",
     response_model=AdminSongFileResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Upload an MP3 instrumental stem for a song",
+    summary="Upload an MP3 stem or the song preview",
 )
 async def upload_song_audio_stem(
     song_id: UUID,
     role: str,
-    file: UploadFile = File(..., description="MP3 instrumental stem (.mp3)"),
+    file: UploadFile = File(..., description="MP3 file (.mp3): a stem or the preview mix"),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> SongFile:
+    """Upload one MP3 asset of a song.
+
+    ``role`` is one of the four gameplay stems or ``preview`` — the optional
+    full mix used by non-gameplay song screens. Previews share the stem rules
+    (MP3 only, same size limit, versioning: the new upload becomes the active
+    file and the previous one stays archived), but they are excluded from
+    readiness and publication requirements.
+    """
     song = db.get(Song, song_id)
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
 
     role = role.strip().lower()
-    if role not in {"drums", "bass", "guitar", "others"}:
+    if role not in {"drums", "bass", "guitar", "others", PREVIEW_ROLE}:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-            detail="Audio role must be one of: drums, bass, guitar, others",
+            detail="Audio role must be one of: drums, bass, guitar, others, preview",
         )
 
     original_name = Path(file.filename or "").name
-    if Path(original_name).suffix.lower() != ".mp3":
+    if not has_mp3_extension(original_name):
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only .mp3 audio files are accepted for instrumental stems",
+            detail="Only .mp3 audio files are accepted for stems and previews",
         )
 
     data = await file.read(settings.max_audio_upload_bytes + 1)
@@ -425,10 +436,7 @@ async def upload_song_audio_stem(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
             detail="MP3 file exceeds the configured 100 MiB upload limit",
         )
-    # Accept common MP3 forms: an ID3 tag or an MPEG audio frame sync.
-    has_id3 = data.startswith(b"ID3")
-    has_frame_sync = len(data) >= 2 and data[0] == 0xFF and (data[1] & 0xE0) == 0xE0
-    if len(data) < 4 or not (has_id3 or has_frame_sync):
+    if not looks_like_mp3(data):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="File does not appear to contain MP3 audio",
@@ -463,9 +471,12 @@ async def upload_song_audio_stem(
     )
     deactivate_role_files(db, song_id, role, keep_file_id=file_id)
     db.add(record)
-    # Song.version is the content/cache version clients use for offline assets.
-    # Bump it in the same transaction as the new file record.
-    song.version += 1
+    # ``Song.version`` drives the client cache of *gameplay* assets (MIDI and
+    # stems). A preview is not part of that download set, so bumping the version
+    # would force every player to re-download unchanged stems. Stems and MIDI
+    # still bump it in the same transaction as their file record.
+    if role != PREVIEW_ROLE:
+        song.version += 1
     try:
         db.commit()
         db.refresh(record)
@@ -479,6 +490,56 @@ async def upload_song_audio_stem(
     finally:
         await file.close()
     return record
+
+
+@router.delete(
+    "/{song_id}/files/preview",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete the song preview",
+)
+def delete_song_preview(
+    song_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> Response:
+    """Remove every stored preview version of the song.
+
+    Idempotent: a song without a preview (or without any song at all being
+    requested twice) answers ``204`` and changes nothing. Only ``preview`` rows
+    are removed; MIDI, stems, scores, XP, ratings and results are untouched.
+    ``Song.version`` is left alone: it versions the gameplay asset set, and a
+    preview is not part of it.
+    """
+    song = db.get(Song, song_id)
+    if song is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
+
+    previews = db.scalars(
+        select(SongFile).where(
+            SongFile.song_id == song_id,
+            SongFile.role == PREVIEW_ROLE,
+        )
+    ).all()
+    if not previews:
+        return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    object_keys = [record.object_key for record in previews]
+    for record in previews:
+        db.delete(record)
+    db.commit()
+
+    # Files are removed after the transaction: a failed commit leaves the rows
+    # and their files consistent. A missing file never blocks the endpoint.
+    storage_root = settings.song_files_dir.resolve()
+    for object_key in object_keys:
+        target = (storage_root / object_key).resolve()
+        if not target.is_relative_to(storage_root):
+            continue
+        try:
+            target.unlink(missing_ok=True)
+        except OSError:
+            pass
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(
@@ -529,7 +590,10 @@ def activate_song_file(
 
     deactivate_role_files(db, song_id, record.role, keep_file_id=record.id)
     record.is_active = True
-    song.version += 1
+    # Only gameplay assets are covered by the client's version cache; switching
+    # a preview version must not force a stem re-download.
+    if record.role != PREVIEW_ROLE:
+        song.version += 1
     db.commit()
     db.refresh(record)
     return _admin_file_response(song_id, record)

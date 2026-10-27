@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     landing_media_dir: Path = Path("/data/landing_media")
     # Desktop game installers offered at /api/v1/downloads/game.
     game_builds_dir: Path = Path("/data/game_builds")
+    # Global non-gameplay audio (background music), served at
+    # /api/v1/app/background-music. Backed by the app_audio_data volume.
+    app_audio_dir: Path = Path("/data/app_audio")
     # DB-IP Lite country database used for IP-based language detection.
     geoip_db_path: Path = Path("/data/geoip/dbip-country-lite.mmdb")
     max_landing_media_bytes: int = 50 * 1024 * 1024

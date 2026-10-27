@@ -31,6 +31,7 @@ services:
       CLIENT_ASSETS_DIR: /data/client_assets
       LANDING_MEDIA_DIR: /data/landing_media
       GAME_BUILDS_DIR: /data/game_builds
+      APP_AUDIO_DIR: /data/app_audio
       GEOIP_DB_PATH: /data/geoip/dbip-country-lite.mmdb
       MAX_LANDING_MEDIA_BYTES: ${MAX_LANDING_MEDIA_BYTES:-52428800}
       MAX_GAME_BUILD_BYTES: ${MAX_GAME_BUILD_BYTES:-524288000}
@@ -51,6 +52,7 @@ services:
       - client_assets_data:/data/client_assets
       - landing_media_data:/data/landing_media
       - game_builds_data:/data/game_builds
+      - app_audio_data:/data/app_audio
       - geoip_data:/data/geoip
     ports:
       - "${API_BIND_HOST:-127.0.0.1}:8000:8000"
@@ -63,4 +65,5 @@ volumes:
   client_assets_data:
   landing_media_data:
   game_builds_data:
+  app_audio_data:
   geoip_data:

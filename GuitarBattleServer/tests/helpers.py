@@ -147,6 +147,17 @@ def daily_schedule(client, admin_headers: dict[str, str]) -> list[dict[str, Any]
     return response.json()["items"]
 
 
+def build_mp3_bytes(*, marker: int = 0, size: int = 256, id3: bool = True) -> bytes:
+    """Build a byte payload that passes the MP3 signature check.
+
+    Real audio is not needed: the server validates only the extension, the size
+    limit and the leading signature (``ID3`` or an MPEG frame sync).
+    """
+    header = b"ID3" if id3 else b"\xff\xfb"
+    body_length = max(0, size - len(header))
+    return header + bytes([marker & 0xFF]) * body_length
+
+
 def build_midi_bytes(
     *,
     bpm: int = 120,

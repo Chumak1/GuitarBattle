@@ -65,6 +65,10 @@ class SongSummaryResponse(BaseModel):
     version: int
     description: str | None
     created_at: datetime
+    #: Absolute URL of the optional full-mix preview (``role = "preview"``),
+    #: or ``None`` when the song has no preview. Additive field: the catalogue
+    #: and gameplay keep working without it.
+    preview_url: str | None = None
     readiness: SongReadinessResponse = Field(default_factory=SongReadinessResponse)
 
 

@@ -178,6 +178,43 @@
         </div>
       </div>
 
+      <section class="card content-card mb-4" id="bgMusicCard">
+        <div class="card-body">
+          <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-start">
+            <div>
+              <div class="eyebrow">Глобальный аудио-ассет</div>
+              <h2 class="h5 mb-1">Background Music</h2>
+              <p class="page-subtitle mb-2">
+                Глобальная музыка для неигровых экранов: меню, каталог, экран выбора песни.
+                Один MP3-файл на всё приложение, до 100 МБ. На игру и стемы не влияет.
+              </p>
+              <div class="d-flex align-items-center gap-2 flex-wrap">
+                <span id="bgMusicStatus" class="badge-soft badge-empty">Не загружено</span>
+                <span id="bgMusicMeta" class="file-meta">MP3 до 100 МБ</span>
+                <a id="bgMusicLink" class="small" href="#" target="_blank" rel="noopener" hidden>
+                  <i class="bi bi-box-arrow-up-right me-1"></i>Открыть файл
+                </a>
+              </div>
+            </div>
+            <div class="bg-music-actions">
+              <input id="bgMusicFile" class="form-control form-control-sm" type="file"
+                     accept=".mp3,audio/mpeg" aria-label="Выбрать MP3 для фоновой музыки">
+              <div class="d-flex gap-2">
+                <button id="bgMusicUpload" class="btn btn-warning btn-sm flex-grow-1" type="button">
+                  Загрузить
+                </button>
+                <button id="bgMusicDelete" class="btn btn-outline-danger btn-sm" type="button" hidden>
+                  Удалить
+                </button>
+              </div>
+              <div class="progress upload-progress" id="bgMusicProgressWrap" hidden>
+                <div id="bgMusicProgress" class="progress-bar" role="progressbar" style="width: 0%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section class="card content-card">
         <div class="card-body p-0">
           <div class="toolbar">
@@ -726,6 +763,7 @@
           <p class="form-hint mb-0 mt-4">
             MIDI — до 20 МБ (.mid, .midi). Аудио — только MP3, до 100 МБ на стем.
             Публикация требует MIDI и все четыре стема: drums, bass, guitar, others.
+            Preview Song — полный микс для неигровых экранов: не входит в готовность и не требуется для публикации.
           </p>
         </div>
         <div class="modal-footer">
@@ -806,7 +844,7 @@
   </noscript>
 
   <script src="./vendor/bootstrap.bundle.min.js"></script>
-  <script src="./admin.js?v=20261027-1"></script>
+  <script src="./admin.js?v=20261028-1"></script>
   <script src="/app/i18n.js"></script>
   <script src="/app/landing-i18n.js"></script>
   <script src="./admin-statistics.js?v=20261026-2"></script>

@@ -11,6 +11,7 @@
     bass: "Бас",
     guitar: "Гитара",
     others: "Другое",
+    preview: "Preview Song (полный микс)",
   };
   const ROLE_ICONS = {
     midi: "bi-file-earmark-music",
@@ -18,6 +19,7 @@
     bass: "bi-music-note",
     guitar: "bi-music-note-beamed",
     others: "bi-soundwave",
+    preview: "bi-play-circle",
   };
   const READINESS = {
     empty: { label: "Нет файлов", className: "badge-empty" },
@@ -531,6 +533,94 @@
     }
   }
 
+  function renderBackgroundMusic(data) {
+    const hasFile = Boolean(data?.url);
+    const status = el("bgMusicStatus");
+    status.textContent = hasFile ? "Загружено" : "Не загружено";
+    status.className = `badge-soft ${hasFile ? "badge-complete" : "badge-empty"}`;
+    el("bgMusicMeta").textContent = hasFile
+      ? `${formatBytes(data.size_bytes)} · ${formatDate(data.uploaded_at)}${data.original_name ? ` · ${data.original_name}` : ""}`
+      : "MP3 до 100 МБ";
+    const link = el("bgMusicLink");
+    link.hidden = !hasFile;
+    if (hasFile) {
+      link.href = data.url;
+    }
+    el("bgMusicDelete").hidden = !hasFile;
+    el("bgMusicUpload").textContent = hasFile ? "Заменить" : "Загрузить";
+  }
+
+  async function loadBackgroundMusic() {
+    try {
+      const data = await request("/admin/app/background-music");
+      renderBackgroundMusic(data);
+    } catch (error) {
+      // A failed status read must not break the songs screen; 401/403 are
+      // already handled by the shared request helper.
+      if (error.status === 401 || error.status === 403) {
+        return;
+      }
+      showToast(friendlyErrorMessage(error), "danger");
+    }
+  }
+
+  function setBackgroundMusicBusy(busy) {
+    el("bgMusicFile").disabled = busy;
+    el("bgMusicUpload").disabled = busy;
+    el("bgMusicDelete").disabled = busy;
+  }
+
+  async function uploadBackgroundMusic() {
+    const input = el("bgMusicFile");
+    const file = input?.files?.[0];
+    if (!file) {
+      showToast("Сначала выберите MP3-файл.", "warning");
+      return;
+    }
+    if (!/\.mp3$/i.test(file.name)) {
+      showToast("Для Background Music нужен MP3-файл.", "warning");
+      return;
+    }
+    if (file.size > MAX_AUDIO_BYTES) {
+      showToast("MP3 больше 100 МБ. Уменьшите файл или выберите другой.", "warning");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", file, file.name);
+    setBackgroundMusicBusy(true);
+    el("bgMusicProgressWrap").hidden = false;
+    el("bgMusicProgress").style.width = "0%";
+    try {
+      await uploadWithProgress("/admin/app/background-music", formData, (percent) => {
+        el("bgMusicProgress").style.width = `${percent}%`;
+      });
+      input.value = "";
+      showToast("Background Music сохранена.");
+      await loadBackgroundMusic();
+    } catch (error) {
+      showToast(friendlyErrorMessage(error), "danger");
+    } finally {
+      setBackgroundMusicBusy(false);
+      el("bgMusicProgressWrap").hidden = true;
+      el("bgMusicProgress").style.width = "0%";
+    }
+  }
+
+  async function deleteBackgroundMusic() {
+    setBackgroundMusicBusy(true);
+    try {
+      await request("/admin/app/background-music", { method: "DELETE" });
+      el("bgMusicFile").value = "";
+      showToast("Background Music удалена.");
+      await loadBackgroundMusic();
+    } catch (error) {
+      showToast(friendlyErrorMessage(error), "danger");
+    } finally {
+      setBackgroundMusicBusy(false);
+    }
+  }
+
   function showLogin(message = "") {
     closeAllModals();
     el("appView").hidden = true;
@@ -549,6 +639,7 @@
     el("userAvatar").textContent = displayName.trim().charAt(0).toUpperCase() || "A";
     el("userEmail").textContent = user?.email || "—";
     showLoginAlert("");
+    loadBackgroundMusic();
   }
 
   function setLoginBusy(busy) {
@@ -903,7 +994,7 @@
     `;
   }
 
-  function fileSlotHtml(kind, role, versions) {
+  function fileSlotHtml(kind, role, versions, options = {}) {
     const key = role ? `${kind}-${role}` : kind;
     const label = ROLE_LABELS[role || kind] || kind;
     const icon = ROLE_ICONS[role || kind] || "bi-file-earmark";
@@ -913,6 +1004,12 @@
     const rows = files.length
       ? files.map((file) => fileVersionHtml(kind, file)).join("")
       : '<div class="file-meta">Файл не загружен</div>';
+    const deleteButton = options.deleteButton
+      ? `<button type="button" class="btn btn-sm btn-outline-danger" data-delete-preview
+                 title="Удалить Preview Song" aria-label="Удалить Preview Song" ${files.length ? "" : "hidden"}>
+           <i class="bi bi-trash3"></i>
+         </button>`
+      : "";
     return `
       <div class="file-slot" data-key="${escapeHtml(key)}">
         <div class="file-slot-head">
@@ -923,6 +1020,7 @@
               <div class="file-meta">${files.length > 1 ? `Версий: ${files.length}` : ""}</div>
             </div>
           </div>
+          ${deleteButton ? `<div class="file-slot-actions">${deleteButton}</div>` : ""}
         </div>
         <div class="file-versions">${rows}</div>
         <div class="file-slot-upload">
@@ -1038,6 +1136,9 @@
     body.querySelectorAll("[data-activate]").forEach((button) => {
       button.addEventListener("click", () => activateFile(button));
     });
+    body.querySelectorAll("[data-delete-preview]").forEach((button) => {
+      button.addEventListener("click", () => deletePreview(button));
+    });
   }
 
   function versionsByRole(detail) {
@@ -1068,6 +1169,15 @@
       <div class="file-list">
         ${fileSlotHtml("midi", "", byRole.midi)}
         ${AUDIO_ROLES.map((role) => fileSlotHtml("audio", role, byRole[role])).join("")}
+      </div>
+      <div class="mt-4">
+        <div class="file-list">
+          ${fileSlotHtml("preview", "preview", byRole.preview, { deleteButton: true })}
+        </div>
+        <p class="form-hint mb-0 mt-2">
+          Preview Song — полный микс песни для неигровых экранов. Не влияет на готовность,
+          публикацию и игровые стемы.
+        </p>
       </div>
     `;
     bindFileActions();
@@ -1175,7 +1285,10 @@
       }
     } else {
       if (!/\.mp3$/i.test(file.name)) {
-        showToast("Для стема нужен MP3-файл.", "warning");
+        showToast(
+          kind === "preview" ? "Для Preview Song нужен MP3-файл." : "Для стема нужен MP3-файл.",
+          "warning",
+        );
         return;
       }
       if (file.size > MAX_AUDIO_BYTES) {
@@ -1220,6 +1333,22 @@
       });
       showToast("Версия файла активирована.");
       state.analysis = null;
+      await refreshCurrentSong();
+    } catch (error) {
+      showToast(friendlyErrorMessage(error), "danger");
+      setSlotBusy(button, false);
+    }
+  }
+
+  async function deletePreview(button) {
+    const song = state.currentSong;
+    if (!song) {
+      return;
+    }
+    setSlotBusy(button, true);
+    try {
+      await request(`/admin/songs/${song.id}/files/preview`, { method: "DELETE" });
+      showToast("Preview Song удалён.");
       await refreshCurrentSong();
     } catch (error) {
       showToast(friendlyErrorMessage(error), "danger");
@@ -1321,6 +1450,8 @@
     el("filesRefreshButton").addEventListener("click", () => {
       refreshCurrentSong().catch((error) => showToast(friendlyErrorMessage(error), "danger"));
     });
+    el("bgMusicUpload").addEventListener("click", uploadBackgroundMusic);
+    el("bgMusicDelete").addEventListener("click", deleteBackgroundMusic);
 
     let searchTimer = null;
     el("searchInput").addEventListener("input", (event) => {

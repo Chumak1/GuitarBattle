@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -18,6 +18,8 @@ from app.schemas.songs import (
 )
 from app.services.song_assets import (
     ASSET_ROLES,
+    PREVIEW_ROLE,
+    PUBLIC_DOWNLOAD_ROLES,
     build_readiness,
     load_active_files_by_song,
 )
@@ -34,9 +36,30 @@ def _public_file_response(song: Song, stored_file: SongFile) -> SongFileResponse
         sha256=stored_file.sha256,
         download_url=(
             f"{settings.api_v1_prefix}/songs/{song.slug}/files/{stored_file.id}/download"
-            if stored_file.role in ASSET_ROLES
+            if stored_file.role in PUBLIC_DOWNLOAD_ROLES
             else None
         ),
+    )
+
+
+def _preview_url(
+    request: Request, song: Song, files_by_role: dict[str, SongFile]
+) -> str | None:
+    """Absolute URL of the active preview, or ``None`` when it is not uploaded.
+
+    ``request.url_for`` honours uvicorn's ``--proxy-headers``, so behind Caddy
+    the client receives the public ``https://fretfight.online/...`` address
+    rather than the internal container host.
+    """
+    preview = files_by_role.get(PREVIEW_ROLE)
+    if preview is None:
+        return None
+    return str(
+        request.url_for(
+            "download_published_song_file",
+            slug=song.slug,
+            file_id=str(preview.id),
+        )
     )
 
 
@@ -56,14 +79,18 @@ def _public_assets(song: Song, files_by_role: dict[str, SongFile]) -> SongAssets
     )
 
 
-def _public_summary(song: Song, files_by_role: dict[str, SongFile]) -> SongSummaryResponse:
+def _public_summary(
+    song: Song, files_by_role: dict[str, SongFile], request: Request
+) -> SongSummaryResponse:
     result = SongSummaryResponse.model_validate(song)
+    result.preview_url = _preview_url(request, song, files_by_role)
     result.readiness = build_readiness(files_by_role)
     return result
 
 
 @router.get("", response_model=SongListResponse, summary="List published songs")
 def list_songs(
+    request: Request,
     search: str | None = Query(default=None, min_length=1, max_length=100, description="Search title, artist, or slug"),
     genre: str | None = Query(default=None, min_length=1, max_length=80),
     difficulty: int | None = Query(default=None, ge=1, le=10),
@@ -101,12 +128,15 @@ def list_songs(
         .offset(offset)
     ).all()
     files_by_song = load_active_files_by_song(db, (song.id for song in songs))
-    items = [_public_summary(song, files_by_song.get(song.id, {})) for song in songs]
+    items = [
+        _public_summary(song, files_by_song.get(song.id, {}), request)
+        for song in songs
+    ]
     return SongListResponse(items=items, total=total, limit=limit, offset=offset)
 
 
 @router.get("/{slug}", response_model=SongDetailResponse, summary="Get a published song")
-def get_song(slug: str, db: Session = Depends(get_db)) -> SongDetailResponse:
+def get_song(slug: str, request: Request, db: Session = Depends(get_db)) -> SongDetailResponse:
     # A daily-challenge song is hidden from the catalogue list but must stay
     # resolvable here: the client calls this endpoint (without a token) to get
     # the asset URLs of the song of the day. An archived song is not public at
@@ -127,6 +157,7 @@ def get_song(slug: str, db: Session = Depends(get_db)) -> SongDetailResponse:
     files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
 
     result = SongDetailResponse.model_validate(song)
+    result.preview_url = _preview_url(request, song, files_by_role)
     result.readiness = build_readiness(files_by_role)
     result.files = [
         _public_file_response(song, files_by_role[role])
@@ -160,7 +191,7 @@ def download_published_song_file(
         select(SongFile).where(
             SongFile.id == file_id,
             SongFile.song_id == song.id,
-            SongFile.role.in_(["midi", "drums", "bass", "guitar", "others"]),
+            SongFile.role.in_(PUBLIC_DOWNLOAD_ROLES),
         )
     )
     if record is None:
@@ -169,7 +200,7 @@ def download_published_song_file(
     storage_root = settings.song_files_dir.resolve()
     target = (storage_root / record.object_key).resolve()
     if not target.is_relative_to(storage_root) or not target.is_file():
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored MIDI file not found")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored song file not found")
 
     return FileResponse(
         path=target,

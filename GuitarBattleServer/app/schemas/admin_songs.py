@@ -118,6 +118,9 @@ class AdminSongStemsResponse(BaseModel):
 class AdminSongAssetsResponse(BaseModel):
     midi: AdminSongFileResponse | None = None
     stems: AdminSongStemsResponse = Field(default_factory=AdminSongStemsResponse)
+    #: Optional full-mix preview. Shown in the admin file manager with its own
+    #: upload/replace/delete actions; not part of readiness or publication.
+    preview: AdminSongFileResponse | None = None
 
 
 class AdminSongDetailResponse(AdminSongResponse):

@@ -23,6 +23,12 @@ from app.schemas.songs import SongReadinessResponse
 # Order is part of the API: clients and admins see roles in this order.
 ASSET_ROLES = ("midi", "drums", "bass", "guitar", "others")
 AUDIO_STEM_ROLES = ("drums", "bass", "guitar", "others")
+#: Optional per-song preview (the full mix). It lives in ``song_files`` like a
+#: stem, but is deliberately outside ``ASSET_ROLES``: it never counts towards
+#: readiness, publish requirements, scoring or the asset version list.
+PREVIEW_ROLE = "preview"
+#: Roles whose files are downloadable from the public song download route.
+PUBLIC_DOWNLOAD_ROLES = (*ASSET_ROLES, PREVIEW_ROLE)
 
 
 def load_active_files_by_song(
