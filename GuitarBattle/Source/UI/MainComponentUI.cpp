@@ -4764,7 +4764,7 @@ void MainComponent::initialiseUi()
     leaderboardTable.setModel(leaderboardModel.get());
     leaderboardTable.setRowHeight(28);
     leaderboardTable.getHeader().addColumn("#", 1, 44, 36, 60);
-    leaderboardTable.getHeader().addColumn("PLAYER", 2, -1, 120, -1);
+    leaderboardTable.getHeader().addColumn("PLAYER", 2, 180, 120, -1);
     leaderboardTable.getHeader().addColumn("LEVEL", 3, 74, 60, 110);
     leaderboardTable.getHeader().addColumn("RATING", 4, 86, 60, 140);
     leaderboardTable.setColour(juce::ListBox::backgroundColourId,
