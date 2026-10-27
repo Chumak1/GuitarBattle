@@ -317,6 +317,9 @@ private:
     void logoutCurrentUser();
     void startOnlineGameSession();
     void submitOnlineGameResult();
+    // Debug helper: writes stem/MIDI loading details to
+    // %APPDATA%/GuitarBattle/audio-debug.log. Never called from the audio thread.
+    void appendAudioDebugLog(const juce::String& line) const;
     // Legacy song buttons are retained in the class for minimal UI churn, but hidden.
     juce::TextButton songMistButton{ "" };
     juce::TextButton songChordsButton{ "" };

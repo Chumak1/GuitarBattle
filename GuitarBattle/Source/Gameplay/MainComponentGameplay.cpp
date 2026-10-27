@@ -244,6 +244,23 @@ void MainComponent::beginGameplayCountIn()
     lastProgressionValid = false;
     lastAchievementsText.clear();
 
+    {
+        juce::String stemState;
+
+        for (size_t i = 0; i < externalAudioTracks.size(); ++i)
+        {
+            const auto& track = externalAudioTracks[i];
+            auto playback = std::atomic_load(&track.playbackAudio);
+            stemState << " [" << static_cast<int>(i)
+                      << " loaded=" << (track.loaded.load() ? 1 : 0)
+                      << " samples=" << track.audio.getNumSamples()
+                      << " playback=" << (playback != nullptr ? playback->getNumSamples() : -1)
+                      << "]";
+        }
+
+        appendAudioDebugLog("gameplay start:" + stemState);
+    }
+
     // The launch is counted and the server session is opened only now: the
     // Ready screen itself is not gameplay.
     startOnlineGameSession();
@@ -581,11 +598,24 @@ bool MainComponent::loadSongAudio(const SongEntry& song)
         track.sourceSampleRate = 44100.0;
     }
     // Mixer audio index order: 0 drums, 1 bass, 2 rhythm guitar, 3 others.
+    appendAudioDebugLog("loadSongAudio " + song.title
+                        + " drums=" + song.drums.getFullPathName()
+                        + " bass=" + song.bass.getFullPathName()
+                        + " guitar=" + song.rhythmGuitar.getFullPathName()
+                        + " others=" + song.others.getFullPathName());
+
     if (song.drums.existsAsFile()) loadExternalAudioTrack(0, song.drums);
     if (song.bass.existsAsFile()) loadExternalAudioTrack(1, song.bass);
     if (song.rhythmGuitar.existsAsFile()) loadExternalAudioTrack(2, song.rhythmGuitar);
     if (song.others.existsAsFile()) loadExternalAudioTrack(3, song.others);
     prepareExternalAudioForSpeed(speedPercent);
+
+    int loadedTracks = 0;
+    for (const auto& track : externalAudioTracks)
+        if (track.loaded.load(std::memory_order_acquire))
+            ++loadedTracks;
+
+    appendAudioDebugLog("loadSongAudio done: loaded tracks=" + juce::String(loadedTracks));
     return true;
 }
 
@@ -600,11 +630,17 @@ bool MainComponent::loadSongMidi(const juce::String& songId)
     }
 
     std::vector<TabNote> parsedNotes;
+    appendAudioDebugLog("loadSongMidi " + songId
+                        + " midi=" + found->soloMidi.getFullPathName()
+                        + " size=" + juce::String(found->soloMidi.getSize())
+                        + " slug=" + found->slug);
     if (!MidiParser::loadMidi(found->soloMidi, parsedNotes) || parsedNotes.empty())
     {
+        appendAudioDebugLog("MIDI LOAD FAILED " + found->soloMidi.getFullPathName());
         DBG("MIDI load failed: " + found->soloMidi.getFullPathName());
         return false;
     }
+    appendAudioDebugLog("MIDI OK notes=" + juce::String(static_cast<int>(parsedNotes.size())));
 
     selectedSong = *found;
     if (found->slug.isEmpty())

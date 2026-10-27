@@ -173,6 +173,18 @@ void MainComponent::prepareExternalAudioForSpeed(double speedPercentToUse)
         + "% (WSOLA; pitch preserved approximately)");
 }
 
+void MainComponent::appendAudioDebugLog(const juce::String& line) const
+{
+    const auto directory = juce::File::getSpecialLocation(
+        juce::File::userApplicationDataDirectory).getChildFile("GuitarBattle");
+
+    directory.createDirectory();
+
+    directory.getChildFile("audio-debug.log")
+        .appendText(juce::Time::getCurrentTime().toString(true, true)
+                    + "  " + line + "\n");
+}
+
 void MainComponent::loadGuitarSampleBank(const juce::File& assetsRoot)
 {
     guitarSamplesLoaded.store(false, std::memory_order_relaxed);
@@ -776,6 +788,8 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
 
     if (!file.existsAsFile())
     {
+        appendAudioDebugLog("STEM[" + juce::String(index)
+                            + "] MISSING " + file.getFullPathName());
         DBG("External audio track not found: " + file.getFullPathName());
         return false;
     }
@@ -783,12 +797,22 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
     std::unique_ptr<juce::AudioFormatReader> reader(audioFormatManager.createReaderFor(file));
     if (reader == nullptr || reader->lengthInSamples <= 0 || reader->numChannels <= 0)
     {
+        appendAudioDebugLog("STEM[" + juce::String(index)
+                            + "] DECODE FAILED " + file.getFileName()
+                            + " bytes=" + juce::String(file.getSize()));
         DBG("Could not decode external audio track: " + file.getFullPathName());
         return false;
     }
 
     auto& track = externalAudioTracks[index];
     const int channels = static_cast<int>(juce::jmin<uint32_t>(2, reader->numChannels));
+
+    appendAudioDebugLog("STEM[" + juce::String(index) + "] "
+                        + file.getFileName()
+                        + " bytes=" + juce::String(file.getSize())
+                        + " len=" + juce::String(reader->lengthInSamples)
+                        + " rate=" + juce::String(reader->sampleRate)
+                        + " ch=" + juce::String(reader->numChannels));
 
     // The server's MP3 stems are raw CBR streams without a gapless
     // (Xing/LAME) header. JUCE's MP3 decoder therefore leaves the standard
@@ -858,11 +882,16 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
         || !reader->read(&track.audio, 0, samplesToRead, sourceStartOffset, true, true))
     {
         track.audio.setSize(0, 0);
+        appendAudioDebugLog("STEM[" + juce::String(index) + "] READ FAILED read="
+                            + juce::String(samplesToRead)
+                            + " offset=" + juce::String(sourceStartOffset));
         DBG("Failed reading external audio track: " + file.getFullPathName());
         return false;
     }
     track.sourceSampleRate = reader->sampleRate;
     track.loaded.store(true, std::memory_order_release);
+    appendAudioDebugLog("STEM[" + juce::String(index) + "] OK samples="
+                        + juce::String(samplesToRead));
     DBG("Loaded external audio track: " + file.getFullPathName()
         + " (" + juce::String(samplesToRead) + " samples, "
         + juce::String(reader->sampleRate) + " Hz, "
