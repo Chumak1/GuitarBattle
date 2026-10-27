@@ -60,6 +60,8 @@ removed after the session.
   analysis and public download.
 - `test_games.py` — sessions, score submission, history, leaderboards.
 - `test_midi_parser.py` — generated MIDI files and malformed input.
+- `test_achievement_catalog.py` — achievement display texts are English/ASCII,
+  codes, `goal`, `xp_bonus` and `category` stay pinned.
 
 Tests marked `db` require the disposable database. Run only unit tests with:
 

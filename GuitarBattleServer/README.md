@@ -240,7 +240,7 @@ Admin schedule (`is_admin` required):
 
 Known limitations:
 
-- No background scheduler: `daily_first_place` ("На вершине дня") is granted on the
+- No background scheduler: `daily_first_place` ("Daily Champion") is granted on the
   next `/profile/progression`, `/achievements` or `/daily/leaderboard` call after
   the day has ended, not at midnight.
 - The genre achievements adapt to the real catalog: the effective threshold is

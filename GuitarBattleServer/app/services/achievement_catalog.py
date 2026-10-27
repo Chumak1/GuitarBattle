@@ -4,6 +4,10 @@ The catalog is static reference data. It is seeded by migration
 ``0008_progression`` (which imports this module, so the migration and the app can
 never disagree) and re-synced on startup by :func:`sync_achievement_catalog`.
 
+Displayed texts (``title``/``description``) are English only: the API is
+language-neutral and the clients render them verbatim, so every string here must
+stay ASCII (see ``tests/test_achievement_icons.py``).
+
 Only metadata lives here. The unlock rule for every ``code`` is implemented in
 :mod:`app.services.progression`; adding an achievement means adding a row here
 *and* a branch in ``evaluate_achievement``.
@@ -18,7 +22,8 @@ from sqlalchemy.orm import Session
 
 from app.models.progression import Achievement
 
-# Categories group achievements in the client UI.
+# Categories group achievements in the client UI. These are stable identifiers,
+# not display names: translate them in the UI, never in the database.
 CATEGORY_PROGRESS = "progress"
 CATEGORY_SONGS = "songs"
 CATEGORY_ACCURACY = "accuracy"
@@ -35,8 +40,8 @@ CATEGORY_DAILY = "daily"
 ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     {
         "code": "first_notes",
-        "title": "Первые ноты",
-        "description": "Завершить первую попытку с прогрессом не ниже 50%.",
+        "title": "First Notes",
+        "description": "Finish at least 50% of a song for the first time.",
         "category": CATEGORY_PROGRESS,
         "xp_bonus": 20,
         "goal": None,
@@ -45,8 +50,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "first_personal_best",
-        "title": "Первая победа над собой",
-        "description": "Первый личный рекорд на любой песне.",
+        "title": "First Personal Best",
+        "description": "Beat your own score on any song for the first time.",
         "category": CATEGORY_PROGRESS,
         "xp_bonus": 20,
         "goal": None,
@@ -55,8 +60,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "songs_5",
-        "title": "Пять песен",
-        "description": "Пять разных песен с личным рекордом.",
+        "title": "Music Goes On",
+        "description": "Set personal bests on 5 different songs.",
         "category": CATEGORY_SONGS,
         "xp_bonus": 30,
         "goal": 5,
@@ -65,8 +70,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "songs_10",
-        "title": "Десять песен",
-        "description": "Десять разных песен с личным рекордом.",
+        "title": "Finding the Rhythm",
+        "description": "Set personal bests on 10 different songs.",
         "category": CATEGORY_SONGS,
         "xp_bonus": 50,
         "goal": 10,
@@ -75,8 +80,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "songs_25",
-        "title": "Двадцать пять песен",
-        "description": "Двадцать пять разных песен с личным рекордом.",
+        "title": "Regular Player",
+        "description": "Set personal bests on 25 different songs.",
         "category": CATEGORY_SONGS,
         "xp_bonus": 100,
         "goal": 25,
@@ -85,8 +90,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "songs_50",
-        "title": "Пятьдесят песен",
-        "description": "Пятьдесят разных песен с личным рекордом.",
+        "title": "Collector",
+        "description": "Set personal bests on 50 different songs.",
         "category": CATEGORY_SONGS,
         "xp_bonus": 150,
         "goal": 50,
@@ -95,8 +100,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "accuracy_80",
-        "title": "Точность 80%",
-        "description": "Завершить попытку с точностью не ниже 80%.",
+        "title": "Accurate Strike",
+        "description": "Score 80% accuracy or higher in a run.",
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 25,
         "goal": 80,
@@ -105,8 +110,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "accuracy_90",
-        "title": "Точность 90%",
-        "description": "Завершить попытку с точностью не ниже 90%.",
+        "title": "Almost Perfect",
+        "description": "Score 90% accuracy or higher in a run.",
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 50,
         "goal": 90,
@@ -115,8 +120,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "accuracy_95",
-        "title": "Точность 95%",
-        "description": "Завершить попытку с точностью не ниже 95%.",
+        "title": "Flawless Performance",
+        "description": "Score 95% accuracy or higher in a run.",
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 100,
         "goal": 95,
@@ -125,8 +130,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "clean_run",
-        "title": "Чистое исполнение",
-        "description": "Пройти песню без единого промаха при прогрессе не ниже 50%.",
+        "title": "Clean Performance",
+        "description": "Finish a song with no misses and at least 50% progress.",
         "category": CATEGORY_PROGRESS,
         "xp_bonus": 75,
         "goal": None,
@@ -135,8 +140,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "timing_40ms",
-        "title": "Чувство ритма",
-        "description": "Средняя ошибка по времени не больше 40 мс.",
+        "title": "Sense of Rhythm",
+        "description": "Keep the average timing error at 40 ms or less.",
         "category": CATEGORY_RHYTHM,
         "xp_bonus": 40,
         "goal": 40,
@@ -145,8 +150,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "improve_10pp",
-        "title": "Становится лучше",
-        "description": "Улучшить личную точность на 10 процентных пунктов.",
+        "title": "Getting Better",
+        "description": "Improve your personal accuracy by 10 percentage points.",
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 30,
         "goal": 10,
@@ -155,8 +160,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "improve_5pp",
-        "title": "Новый рекорд",
-        "description": "Улучшить личную точность на 5 процентных пунктов.",
+        "title": "New Record",
+        "description": "Improve your personal accuracy by 5 percentage points.",
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 20,
         "goal": 5,
@@ -165,8 +170,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "genres_3",
-        "title": "Три жанра",
-        "description": "Личные рекорды в трёх разных жанрах.",
+        "title": "Variety Seeker",
+        "description": "Set personal bests in 3 different genres.",
         "category": CATEGORY_GENRES,
         "xp_bonus": 40,
         "goal": 3,
@@ -175,8 +180,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "genres_5",
-        "title": "Пять жанров",
-        "description": "Личные рекорды в пяти разных жанрах.",
+        "title": "Musical Explorer",
+        "description": "Set personal bests in 5 different genres.",
         "category": CATEGORY_GENRES,
         "xp_bonus": 75,
         "goal": 5,
@@ -185,8 +190,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "genres_8",
-        "title": "Восемь жанров",
-        "description": "Личные рекорды в восьми разных жанрах.",
+        "title": "Genre Adventurer",
+        "description": "Set personal bests in 8 different genres.",
         "category": CATEGORY_GENRES,
         "xp_bonus": 150,
         "goal": 8,
@@ -195,8 +200,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "genre_master",
-        "title": "Покоритель жанра",
-        "description": "Достичь ступени Pro (87) в мастерстве любого жанра.",
+        "title": "Genre Specialist",
+        "description": "Reach Pro mastery in any genre.",
         "category": CATEGORY_GENRES,
         "xp_bonus": 60,
         "goal": None,
@@ -205,8 +210,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "mastery_2",
-        "title": "Ученик",
-        "description": "Достичь ступени Learner на любой песне.",
+        "title": "Learning the Song",
+        "description": "Reach the Learner tier on any song.",
         "category": CATEGORY_MASTERY,
         "xp_bonus": 25,
         "goal": 2,
@@ -215,8 +220,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "mastery_3",
-        "title": "Гитарист",
-        "description": "Достичь ступени Guitarist на любой песне.",
+        "title": "Confident Performer",
+        "description": "Reach the Guitarist tier on any song.",
         "category": CATEGORY_MASTERY,
         "xp_bonus": 50,
         "goal": 3,
@@ -225,8 +230,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "mastery_4",
-        "title": "Профессионал",
-        "description": "Достичь ступени Pro на любой песне.",
+        "title": "Professional Approach",
+        "description": "Reach the Pro tier on any song.",
         "category": CATEGORY_MASTERY,
         "xp_bonus": 100,
         "goal": 4,
@@ -235,8 +240,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "mastery_5",
-        "title": "Мастер",
-        "description": "Достичь ступени Master на любой песне.",
+        "title": "Song Master",
+        "description": "Reach the Master tier on any song.",
         "category": CATEGORY_MASTERY,
         "xp_bonus": 150,
         "goal": 5,
@@ -245,8 +250,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "hard_80",
-        "title": "Сложная задача",
-        "description": "Точность не ниже 80% на песне сложности 4 или выше.",
+        "title": "Challenge Accepted",
+        "description": "Score 80% accuracy on a song of difficulty 4 or higher.",
         "category": CATEGORY_ACCURACY,
         "xp_bonus": 75,
         "goal": 80,
@@ -255,8 +260,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "daily_first",
-        "title": "Я принимаю вызов",
-        "description": "Первая официальная попытка в испытании дня.",
+        "title": "Taking the Challenge",
+        "description": "Play your first official Daily Challenge attempt.",
         "category": CATEGORY_DAILY,
         "xp_bonus": 30,
         "goal": None,
@@ -265,8 +270,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "daily_streak_3",
-        "title": "Три дня подряд",
-        "description": "Официальный результат испытания дня три дня подряд.",
+        "title": "Three-Day Streak",
+        "description": "Submit an official Daily result 3 days in a row.",
         "category": CATEGORY_DAILY,
         "xp_bonus": 50,
         "goal": 3,
@@ -275,8 +280,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "daily_streak_7",
-        "title": "Неделя вызовов",
-        "description": "Официальный результат испытания дня семь дней подряд.",
+        "title": "Seven-Day Streak",
+        "description": "Submit an official Daily result 7 days in a row.",
         "category": CATEGORY_DAILY,
         "xp_bonus": 100,
         "goal": 7,
@@ -285,8 +290,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "daily_score_70",
-        "title": "Лучший результат дня",
-        "description": "Точность официальной попытки дня не ниже 70%.",
+        "title": "Daily High Score",
+        "description": "Score at least 70% accuracy in an official Daily attempt.",
         "category": CATEGORY_DAILY,
         "xp_bonus": 50,
         "goal": 70,
@@ -295,8 +300,8 @@ ACHIEVEMENT_CATALOG: list[dict[str, Any]] = [
     },
     {
         "code": "daily_first_place",
-        "title": "На вершине дня",
-        "description": "Первое место в рейтинге завершившегося дня испытаний.",
+        "title": "Daily Champion",
+        "description": "Finish first in an official Daily Challenge leaderboard.",
         "category": CATEGORY_DAILY,
         "xp_bonus": 100,
         "goal": None,

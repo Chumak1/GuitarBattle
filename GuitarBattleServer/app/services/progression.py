@@ -69,7 +69,7 @@ MASTERY_TIERS: tuple[tuple[str, float], ...] = (
 )
 MASTERY_TIER_INDEX = {name: index + 1 for index, (name, _) in enumerate(MASTERY_TIERS)}
 
-#: Genre mastery value required for the "Покоритель жанра" achievement.
+#: Genre mastery value required for the "Genre Specialist" achievement.
 GENRE_MASTER_THRESHOLD = 87.0
 
 
@@ -835,9 +835,10 @@ def genre_achievement_note(
         return None
     if total_published_genres >= int(goal):
         return None
+    noun = "genre" if total_published_genres == 1 else "genres"
     return (
-        f" Недоступно: в каталоге {total_published_genres} жанр(а/ов) "
-        f"из {int(goal)}."
+        f" Unavailable: catalogue has {total_published_genres} {noun} "
+        f"of {int(goal)} required."
     )
 
 
@@ -1015,7 +1016,7 @@ def _award_achievement(
 
 
 def award_deferred_daily_first_place(db: Session, user: User) -> list[dict[str, Any]]:
-    """Grant "На вершине дня" once the winning day is over.
+    """Grant "Daily Champion" once the winning day is over.
 
     There is no background scheduler in this deployment, so the award happens on
     the next progression/achievements/leaderboard read. It is idempotent.

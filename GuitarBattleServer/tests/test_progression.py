@@ -515,8 +515,8 @@ def test_genre_achievements_never_invent_genres(db_client, user_account, publish
     by_code = {item["code"]: item for item in catalog["items"]}
     assert by_code["genres_3"]["unlocked"] is True
     assert by_code["genres_5"]["unlocked"] is False
-    assert "Недоступно" in by_code["genres_5"]["description"]
-    assert "Недоступно" in by_code["genres_8"]["description"]
+    assert "Unavailable" in by_code["genres_5"]["description"]
+    assert "Unavailable" in by_code["genres_8"]["description"]
     # The full catalog is always listed, active only.
     assert catalog["total"] == len(catalog["items"]) >= 27
 
