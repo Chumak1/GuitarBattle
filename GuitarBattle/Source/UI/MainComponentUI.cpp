@@ -555,8 +555,14 @@ void MainComponent::updateSongBestScoreLabels()
     songListBox.repaint();
 }
 
-void MainComponent::paint(juce::Graphics& g)
+// Width of the shared GuitarInputMonitor card shown on the song screen. Kept
+// in one place so paint and layout always agree.
+static int inputMonitorCardWidth(int windowWidth)
 {
+    return juce::jlimit(340, 470, windowWidth * 28 / 100);
+}
+
+void MainComponent::paint(juce::Graphics& g){
     const auto area = getLocalBounds().toFloat();
     g.fillAll(UiColors::background);
 
@@ -699,9 +705,11 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                        juce::Justification::centredLeft, false);
         }
 
-        const float contentY = 228.0f;
+        const float contentY = 250.0f;
         const float availableH = juce::jmax(320.0f, height - 68.0f - 20.0f - contentY);
-        const float contentH = juce::jmin(560.0f, availableH);
+        // Fill the window instead of capping the content height: on large
+        // displays the old 560 px cap left the lower third of the screen empty.
+        const float contentH = availableH;
         const float footerY = contentY + contentH + 20.0f;
         const float contentW = width - 96.0f;
         const float gap = 20.0f;
@@ -709,71 +717,104 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         const float rightX = 48.0f + leftW + gap;
         const float rightW = contentW - leftW - gap;
 
-        GameUi::drawEyebrow(g, "SONG LIBRARY",
-                            juce::Rectangle<float>(48.0f, 112.0f, 360.0f, 16.0f));
-        g.setColour(UiColors::muted);
-        g.setFont(GameUi::font(13.0f));
-        g.drawText("Pick a track, tune up and make every note count.",
-                   juce::Rectangle<float>(48.0f, 196.0f, width - 96.0f, 24.0f),
-                   juce::Justification::centredLeft, false);
-
-        // Progression summary cards, styled like the account-window cards.
+        // Level panel: current level, XP earned inside the level, the cost of
+        // the next level, what is left and an animated progress bar. Every
+        // number comes from the server-side progression payload; the bar is a
+        // clamped view of the same ratio, so text and fill never disagree.
         {
-            const float statY = 132.0f;
-            const float statH = 52.0f;
-            const float statGap = 12.0f;
-            const float statW = (width - 96.0f - statGap * 3.0f) / 4.0f;
+            const juce::Rectangle<float> panel(
+                48.0f, 108.0f,
+                width - 96.0f - inputMonitorCardWidth(juce::roundToInt(width)) - 14.0f,
+                124.0f);
+            GameUi::drawCard(g, panel, 18.0f, true);
 
-            struct StatCard
+            const auto inner = panel.reduced(24.0f, 16.0f);
+
+            const int xpForNext = juce::jmax(1, progressionXpForNext);
+            const int xpRemaining = juce::jmax(0, progressionXpRemaining);
+            const int xpIntoLevel =
+                juce::jlimit(0, xpForNext, xpForNext - xpRemaining);
+            const float ratio = juce::jlimit(0.0f, 1.0f, levelBarShown);
+
+            // Left column: identity of the block.
+            const float leftColumnW =
+                juce::jmin(320.0f, inner.getWidth() * 0.42f);
+
+            g.setColour(UiColors::accent);
+            g.setFont(GameUi::eyebrow(10.0f));
+            g.drawText("PLAYER LEVEL",
+                       juce::Rectangle<float>(inner.getX(), inner.getY(),
+                                              leftColumnW, 14.0f),
+                       juce::Justification::centredLeft, false);
+
+            g.setColour(UiColors::text);
+            g.setFont(GameUi::heading(30.0f));
+            g.drawText("LEVEL " + juce::String(progressionLevel),
+                       juce::Rectangle<float>(inner.getX(), inner.getY() + 14.0f,
+                                              leftColumnW, 38.0f),
+                       juce::Justification::centredLeft, false);
+
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::font(12.5f));
+            g.drawFittedText("Current XP: " + juce::String(xpIntoLevel)
+                                 + "   |   Total XP: " + juce::String(progressionXp),
+                             juce::Rectangle<int>(static_cast<int>(inner.getX()),
+                                                  static_cast<int>(inner.getY() + 54.0f),
+                                                  static_cast<int>(leftColumnW), 18),
+                             juce::Justification::centredLeft, 1);
+
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::font(12.5f));
+            g.drawFittedText("Rating " + juce::String(ratingPoints)
+                                 + "   |   Achievements "
+                                 + juce::String(progressionAchievements) + "/"
+                                 + juce::String(progressionAchievementsTotal),
+                             juce::Rectangle<int>(static_cast<int>(inner.getX()),
+                                                  static_cast<int>(inner.getY() + 74.0f),
+                                                  static_cast<int>(leftColumnW), 18),
+                             juce::Justification::centredLeft, 1);
+
+            // Right column: numbers above a wide bar.
+            const float barX = inner.getX() + leftColumnW + 24.0f;
+            const float barW = inner.getRight() - barX;
+            const float barY = inner.getY() + 48.0f;
+            const float barH = 30.0f;
+
+            if (barW > 120.0f)
             {
-                const char* label;
-                juce::String value;
-                juce::String note;
-            };
-
-            const StatCard cards[4] =
-            {
-                { "LEVEL", juce::String(progressionLevel),
-                  juce::String(progressionXp) + " XP" },
-                { "XP", juce::String(progressionXp),
-                  juce::String(progressionAchievements) + "/"
-                      + juce::String(progressionAchievementsTotal) + " achievements" },
-                { "RATING", juce::String(ratingPoints), "best score per song" },
-                { "ACHIEVEMENTS",
-                  juce::String(progressionAchievements) + "/"
-                      + juce::String(progressionAchievementsTotal),
-                  "unlocked" }
-            };
-
-            for (int i = 0; i < 4; ++i)
-            {
-                const juce::Rectangle<float> card(
-                    48.0f + static_cast<float>(i) * (statW + statGap),
-                    statY, statW, statH);
-
-                GameUi::drawCard(g, card, 14.0f, false);
-
-                g.setColour(UiColors::accent);
-                g.setFont(GameUi::eyebrow(8.5f));
-                g.drawText(cards[i].label,
-                           card.reduced(14.0f, 0.0f).withHeight(14.0f)
-                               .translated(0.0f, 7.0f),
-                           juce::Justification::centredLeft, false);
+                const juce::String progressText =
+                    juce::String(xpIntoLevel) + " / " + juce::String(xpForNext) + " XP";
 
                 g.setColour(UiColors::text);
-                g.setFont(GameUi::heading(21.0f));
-                g.drawText(cards[i].value,
-                           card.reduced(14.0f, 0.0f)
-                               .withTrimmedTop(20.0f)
-                               .withHeight(22.0f),
+                g.setFont(GameUi::font(15.0f, true));
+                g.drawText(progressText,
+                           juce::Rectangle<float>(barX, inner.getY() + 16.0f,
+                                                  barW, 24.0f),
                            juce::Justification::centredLeft, false);
 
+                const float progressWidth = juce::GlyphArrangement::getStringWidth(
+                    g.getCurrentFont(), progressText);
+
                 g.setColour(UiColors::muted);
-                g.setFont(GameUi::font(8.5f));
-                g.drawText(cards[i].note,
-                           card.reduced(14.0f, 0.0f).withHeight(12.0f)
-                               .translated(0.0f, 38.0f),
-                           juce::Justification::centredLeft, true);
+                g.setFont(GameUi::font(12.5f));
+                g.drawText(juce::String(xpRemaining) + " XP TO NEXT LEVEL   |   "
+                               + juce::String(juce::roundToInt(ratio * 100.0f)) + "%",
+                           juce::Rectangle<float>(barX + progressWidth + 28.0f,
+                                                  inner.getY() + 16.0f,
+                                                  juce::jmax(120.0f, barW - progressWidth - 28.0f),
+                                                  24.0f),
+                           juce::Justification::centredLeft, false);
+
+                g.setColour(UiColors::border);
+                g.fillRoundedRectangle(barX, barY, barW, barH, barH * 0.5f);
+
+                const float filled = ratio * barW;
+
+                if (filled > 1.0f)
+                {
+                    g.setColour(UiColors::accent);
+                    g.fillRoundedRectangle(barX, barY, filled, barH, barH * 0.5f);
+                }
             }
         }
 
@@ -813,19 +854,27 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             : juce::String("SERVER CATALOG");
         const double headerBpm = headerSong != nullptr ? headerSong->bpm : baseBpm;
 
+        g.setColour(UiColors::accent);
+        g.setFont(GameUi::eyebrow(10.0f));
+        g.drawText("CHOOSE YOUR NEXT CHALLENGE",
+                   juce::Rectangle<float>(art.getRight() + 20.0f,
+                                          leftCard.getY() + 22.0f,
+                                          leftW - 170.0f, 16.0f),
+                   juce::Justification::centredLeft, false);
+
         g.setColour(UiColors::muted);
-        g.setFont(GameUi::font(8.5f, true));
+        g.setFont(GameUi::font(10.0f, true));
         g.drawText(headerKind + "  /  " + juce::String(juce::roundToInt(headerBpm)) + " BPM",
                    juce::Rectangle<float>(art.getRight() + 20.0f,
-                                          leftCard.getY() + 28.0f,
+                                          leftCard.getY() + 42.0f,
                                           leftW - 170.0f, 16.0f),
                    juce::Justification::centredLeft, false);
         g.setColour(UiColors::text);
-        g.setFont(GameUi::heading(26.0f));
+        g.setFont(GameUi::heading(30.0f));
         g.drawText(headerTitle,
                    juce::Rectangle<float>(art.getRight() + 20.0f,
-                                          leftCard.getY() + 44.0f,
-                                          leftW - 170.0f, 34.0f),
+                                          leftCard.getY() + 58.0f,
+                                          leftW - 170.0f, 40.0f),
                    juce::Justification::centredLeft, true);
 
         GameUi::drawDivider(g, leftCard.getX() + 24.0f,
@@ -1010,42 +1059,6 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                        juce::Justification::centred, false);
         }
 
-        if (panelH > 470.0f)
-        {
-            GameUi::drawDivider(g, leftPanel.getX() + 24.0f,
-                                leftPanel.getRight() - 24.0f,
-                                leftPanel.getY() + 352.0f);
-            GameUi::drawEyebrow(g, "REFERENCE PITCH",
-                                juce::Rectangle<float>(leftPanel.getX() + 24.0f,
-                                                       leftPanel.getY() + 368.0f,
-                                                       leftW - 48.0f, 14.0f),
-                                UiColors::muted);
-
-            const char* references[6]
-            {
-                "6   E2   82.4 Hz", "5   A2  110.0 Hz", "4   D3  146.8 Hz",
-                "3   G3  196.0 Hz", "2   B3  246.9 Hz", "1   E4  329.6 Hz"
-            };
-            const float refGap = 10.0f;
-            const float refW = (leftW - 48.0f - refGap * 2.0f) / 3.0f;
-
-            for (int i = 0; i < 6; ++i)
-            {
-                const int column = i % 3;
-                const int row = i / 3;
-                const float x = leftPanel.getX() + 24.0f
-                    + static_cast<float>(column) * (refW + refGap);
-                const float y = leftPanel.getY() + 396.0f
-                    + static_cast<float>(row) * 24.0f;
-                g.setColour(UiColors::accent.withAlpha(0.72f));
-                g.fillEllipse(x, y + 5.0f, 4.0f, 4.0f);
-                g.setColour(UiColors::muted);
-                g.setFont(GameUi::font(10.5f));
-                g.drawText(references[i],
-                           juce::Rectangle<float>(x + 10.0f, y, refW - 10.0f, 16.0f),
-                           juce::Justification::centredLeft, false);
-            }
-        }
 
         if (panelH > 520.0f)
         {
@@ -1880,7 +1893,7 @@ void MainComponent::resized()
     // Visibility
     //==========================================================================
 
-    songTitleLabel.setVisible(songSelect);
+    songTitleLabel.setVisible(false);
     loginScreenTitleLabel.setVisible(authScreen);
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
     // Signing out is available only from the profile window; the main screen
@@ -1926,8 +1939,14 @@ void MainComponent::resized()
     tunerStatusLabel.setVisible(tunerScreen);
     tunerStartButton.setVisible(tunerScreen);
     tunerSkipButton.setVisible(tunerScreen);
-    guitarInputLabel.setVisible(tunerScreen);
-    guitarInputCombo.setVisible(tunerScreen);
+
+    // One shared input monitor: full size on the song screen and in the tuner,
+    // compact in the gameplay HUD.
+    if (inputMonitor != nullptr)
+    {
+        inputMonitor->setVisible(songSelect || tunerScreen || showGame || readyScreen);
+        inputMonitor->setCompact(showGame || readyScreen);
+    }
 
     pitchLabel.setVisible(showGame);
     comboLabel.setVisible(showGame);
@@ -2032,9 +2051,10 @@ void MainComponent::resized()
         quitButton.setBounds(exitX, 42, accountButtonW, accountButtonH);
         songTitleLabel.setBounds(48, 140, width - 96, 44);
 
-        const int contentY = 228;
+        const int contentY = 250;
         const int availableH = juce::jmax(320, height - 68 - 20 - contentY);
-        const int contentH = juce::jmin(560, availableH);
+        // Must match paintOverlay(): the cards fill the window height.
+        const int contentH = availableH;
         const int footerY = contentY + contentH + 20;
         const int contentW = width - 96;
         const int gap = 20;
@@ -2075,6 +2095,14 @@ void MainComponent::resized()
         progressionSummaryLabel.setBounds(48, 78, juce::jmax(200, width - 96), 22);
 
         accountStatusLabel.setBounds(24 + 34, footerY + 7, width - 48 - 58, 30);
+
+        // Shared input monitor: top-right of the song screen, level panel on
+        // its left.
+        if (inputMonitor != nullptr)
+        {
+            const int monitorW = inputMonitorCardWidth(width);
+            inputMonitor->setBounds(width - 48 - monitorW, 108, monitorW, 124);
+        }
     }
 
     //==========================================================================
@@ -2092,9 +2120,6 @@ void MainComponent::resized()
         const int rightW = width - margin - rightX;
 
         tunerTitleLabel.setBounds(rightX + 24, panelY + 24, rightW - 48, 20);
-        guitarInputLabel.setBounds(rightX + 24, panelY + 58, 100, 22);
-        guitarInputCombo.setBounds(rightX + 126, panelY + 54,
-                                   juce::jmax(120, rightW - 150), 30);
         tunerNoteLabel.setBounds(rightX + 24, panelY + 142, rightW - 48, 96);
         tunerFrequencyLabel.setBounds(rightX + 24, panelY + 242, rightW - 48, 26);
         tunerStringLabel.setBounds(rightX + rightW - 180, panelY + 278, 160, 30);
@@ -2103,6 +2128,15 @@ void MainComponent::resized()
         tunerCentsLabel.setJustificationType(juce::Justification::centredRight);
         tunerStatusLabel.setBounds(rightX + 40, panelY + 368, rightW - 80, 40);
         tunerStatusLabel.setJustificationType(juce::Justification::centred);
+
+        // The input monitor takes the free space at the bottom of the strings
+        // panel, where the static reference-pitch list used to be.
+        if (inputMonitor != nullptr)
+        {
+            const int monitorH = juce::jlimit(84, 124, panelH - 340 - 24);
+            inputMonitor->setBounds(margin + 24, panelY + 340,
+                                    juce::jmax(260, leftW - 48), monitorH);
+        }
 
         // Quick access to the input/device settings from the tuner. The button
         // sits immediately to the left of the tuning-status pill, so the rest
@@ -2152,6 +2186,14 @@ void MainComponent::resized()
         // The modal overlay paints the card above regular controls; keep the
         // button on top so it is both visible and clickable.
         readyStartButton.toFront(false);
+
+        if (inputMonitor != nullptr)
+        {
+            const int readyStatsW =
+                juce::jmax(180, width - 24 - 190 - 12 - 386);
+            inputMonitor->setBounds(386, hudY + 6,
+                                    juce::jmin(520, readyStatsW), 86);
+        }
     }
 
     // Pause card: a real RESUME button above the score summary.
@@ -2217,10 +2259,10 @@ void MainComponent::resized()
         barBeatLabel.setBounds(132 + 40, 83, 28, 22);
         bpmLabel.setBounds(212 + 42, 83, 44, 22);
 
-        speed50Button.setBounds(310, 82, 44, 24);
-        speed75Button.setBounds(358, 82, 44, 24);
-        speed100Button.setBounds(406, 82, 48, 24);
-        speed120Button.setBounds(458, 82, 48, 24);
+        speed50Button.setBounds(310, 72, 68, 36);
+        speed75Button.setBounds(386, 72, 68, 36);
+        speed100Button.setBounds(462, 72, 68, 36);
+        speed120Button.setBounds(538, 72, 68, 36);
 
         const int hudGap = 12;
         const int comboW = 124;
@@ -2231,6 +2273,12 @@ void MainComponent::resized()
         const int targetX = width - 24 - targetW;
         const int statsX = pitchX + pitchW + hudGap;
         const int statsW = juce::jmax(180, targetX - hudGap - statsX);
+
+        // Compact input monitor fills the free HUD slot between the detected
+        // pitch and the target note.
+        if (inputMonitor != nullptr)
+            inputMonitor->setBounds(statsX, hudY + 6,
+                                    juce::jmin(520, statsW), 86);
         juce::ignoreUnused(statsW);
 
         comboLabel.setBounds(comboX + 8, hudY + 32, comboW - 16, 46);
@@ -2843,40 +2891,58 @@ public:
         drawCardHeader(accountCard, "ACCOUNT", {});
 
         const auto accountInner = accountCard.reduced(20);
+        constexpr int accountInfoW = 340;
+
         g.setColour(UiColors::muted);
         g.setFont(GameUi::eyebrow(9.0f));
         g.drawText("EMAIL",
                    juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 28,
-                                        accountInner.getWidth(), 13).toFloat(),
+                                        accountInfoW, 13).toFloat(),
                    juce::Justification::centredLeft, false);
         g.setColour(UiColors::text);
         g.setFont(GameUi::font(12.0f));
         g.drawText(meEmail.isNotEmpty() ? meEmail : "-",
                    juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 42,
-                                        accountInner.getWidth(), 18).toFloat(),
+                                        accountInfoW, 18).toFloat(),
                    juce::Justification::centredLeft, true);
 
         g.setColour(UiColors::muted);
         g.setFont(GameUi::eyebrow(9.0f));
         g.drawText("MEMBER SINCE",
                    juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 70,
-                                        accountInner.getWidth(), 13).toFloat(),
+                                        accountInfoW, 13).toFloat(),
                    juce::Justification::centredLeft, false);
         g.setColour(UiColors::text);
         g.setFont(GameUi::font(12.0f));
         g.drawText(AccountWindowDetail::formatDate(meCreatedAt),
                    juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 84,
-                                        accountInner.getWidth(), 18).toFloat(),
+                                        accountInfoW, 18).toFloat(),
                    juce::Justification::centredLeft, true);
 
-        // Genre mastery radar. The catalogue currently has only a couple of
-        // genres, so empty axes are shown as "—" instead of invented data.
+        // Account icon: a large yellow user glyph in the card's top-right.
+        {
+            const float iconSize = 56.0f;
+            const auto iconArea = juce::Rectangle<float>(
+                accountInner.getRight() - iconSize, accountInner.getY() + 18.0f,
+                iconSize, iconSize);
+
+            g.setColour(UiColors::accent);
+            g.fillEllipse(iconArea.getX() + iconSize * 0.30f,
+                          iconArea.getY() + iconSize * 0.10f,
+                          iconSize * 0.40f, iconSize * 0.40f);
+            g.fillRoundedRectangle(iconArea.getX() + iconSize * 0.10f,
+                                   iconArea.getY() + iconSize * 0.56f,
+                                   iconSize * 0.80f, iconSize * 0.36f,
+                                   iconSize * 0.18f);
+        }
+
+        // Genre mastery radar, kept compact next to the account details.
         if (! genreNames.isEmpty())
         {
             auto radarArea = juce::Rectangle<int>(
-                accountInner.getX(), accountInner.getY() + 116,
-                accountInner.getWidth(),
-                juce::jmax(60, accountInner.getHeight() - 250));
+                accountInner.getX() + accountInner.getWidth() - 320,
+                accountInner.getY() + 4,
+                320, 120);
 
             g.setColour(UiColors::muted);
             g.setFont(GameUi::eyebrow(9.0f));
@@ -2972,66 +3038,129 @@ public:
 
         if (achievementsTotalCount > 0)
         {
-            const int rowY = accountInner.getBottom() - 96;
+            const int gridX = accountInner.getX();
+            const int gridY = accountInner.getY() + 146;
+            const int gridW = accountInner.getWidth();
+            const int cellGap = 8;
+            const int cellW = (gridW - cellGap) / 2;
+            const int cellH = juce::jmax(
+                72, juce::jmin(78, (accountInner.getBottom() - gridY - cellGap) / 2));
 
             g.setColour(UiColors::muted);
-            g.setFont(GameUi::eyebrow(8.5f));
+            g.setFont(GameUi::eyebrow(9.5f));
             g.drawText("ACHIEVEMENTS "
                            + juce::String(achievementsUnlockedCount) + "/"
                            + juce::String(achievementsTotalCount),
-                       juce::Rectangle<int>(accountInner.getX(), rowY - 16,
-                                            accountInner.getWidth(), 12).toFloat(),
+                       juce::Rectangle<int>(gridX, gridY - 18, gridW, 14).toFloat(),
                        juce::Justification::centredLeft, false);
 
             int shown = 0;
-            constexpr int maxIcons = 5;
-            constexpr int cellWidth = 62;
-            constexpr int iconSize = 30;
 
             for (const auto& card : achievementCards)
             {
-                if (! card.unlocked || shown >= maxIcons)
-                    continue;
+                if (shown >= 4)
+                    break;
 
-                const int x = accountInner.getX() + shown * cellWidth;
+                const int column = shown % 2;
+                const int row = shown / 2;
+                const juce::Rectangle<int> tile(gridX + column * (cellW + cellGap),
+                                                gridY + row * (cellH + cellGap),
+                                                cellW, cellH);
+
+                g.setColour(card.unlocked ? UiColors::surface2.withAlpha(0.92f)
+                                          : UiColors::surface2.withAlpha(0.45f));
+                g.fillRoundedRectangle(tile.toFloat(), 12.0f);
+                g.setColour(card.unlocked ? UiColors::accent.withAlpha(0.55f)
+                                          : UiColors::border);
+                g.drawRoundedRectangle(tile.toFloat(), 12.0f, 1.0f);
+
+                const int iconSize = 34;
+                const int iconX = tile.getX() + 10;
+                const int iconY = tile.getY() + 10;
+
+                if (! card.unlocked)
+                {
+                    g.setColour(UiColors::background.withAlpha(0.45f));
+                    g.fillRoundedRectangle(tile.toFloat(), 12.0f);
+                }
+
+                // The glyph is drawn after the dim overlay so locked
+                // achievements stay recognisable instead of disappearing.
                 const auto iconIt = achievementIcons.find(card.code);
 
                 if (iconIt != achievementIcons.end())
                 {
                     g.drawImage(iconIt->second,
-                                juce::Rectangle<float>(static_cast<float>(x),
-                                                       static_cast<float>(rowY),
-                                                       iconSize, iconSize),
+                                juce::Rectangle<float>(static_cast<float>(iconX),
+                                                       static_cast<float>(iconY),
+                                                       static_cast<float>(iconSize),
+                                                       static_cast<float>(iconSize)),
                                 juce::RectanglePlacement::centred);
                 }
                 else
                 {
                     g.setColour(UiColors::accent.withAlpha(0.18f));
-                    g.fillEllipse(static_cast<float>(x), static_cast<float>(rowY),
-                                  iconSize, iconSize);
+                    g.fillEllipse(static_cast<float>(iconX), static_cast<float>(iconY),
+                                  static_cast<float>(iconSize),
+                                  static_cast<float>(iconSize));
                     g.setColour(UiColors::accent);
-                    g.drawEllipse(static_cast<float>(x), static_cast<float>(rowY),
-                                  iconSize, iconSize, 1.0f);
+                    g.drawEllipse(static_cast<float>(iconX), static_cast<float>(iconY),
+                                  static_cast<float>(iconSize),
+                                  static_cast<float>(iconSize), 1.0f);
                 }
 
-                g.setColour(UiColors::muted);
-                g.setFont(GameUi::font(7.0f));
+                if (! card.unlocked)
+                {
+                    g.setColour(UiColors::background.withAlpha(0.45f));
+                    g.fillRoundedRectangle(tile.toFloat(), 12.0f);
+                }
+
+                const int textX = iconX + iconSize + 8;
+                const int textW = tile.getRight() - textX - 10;
+
+                g.setColour(card.unlocked ? UiColors::text : UiColors::muted);
+                g.setFont(GameUi::font(11.5f, true));
                 g.drawFittedText(card.title,
-                                 juce::Rectangle<int>(x - 2, rowY + iconSize + 1,
-                                                      cellWidth - 4, 22),
-                                 juce::Justification::centredTop, 2);
+                                 juce::Rectangle<int>(textX, tile.getY() + 7,
+                                                      textW, 17),
+                                 juce::Justification::centredLeft, 1);
 
-                ++shown;
-            }
-
-            if (shown == 0)
-            {
                 g.setColour(UiColors::muted);
                 g.setFont(GameUi::font(9.0f));
-                g.drawText("None yet - play a song to start",
-                           juce::Rectangle<int>(accountInner.getX(), rowY + 6,
-                                                accountInner.getWidth(), 18),
-                           juce::Justification::centredLeft, false);
+                g.drawFittedText(card.description,
+                                 juce::Rectangle<int>(textX, tile.getY() + 25,
+                                                      textW, 28),
+                                 juce::Justification::topLeft, 2);
+
+                juce::String status;
+
+                if (card.unlocked)
+                {
+                    status = "Unlocked";
+
+                    if (card.awardedAt.isNotEmpty())
+                        status << "  " << card.awardedAt.substring(0, 10);
+
+                    status << "   +" << card.xpBonus << " XP";
+                }
+                else
+                {
+                    status = "Locked";
+
+                    if (card.goal > 0)
+                        status << "   " << card.progress << "/" << card.goal;
+
+                    status << "   +" << card.xpBonus << " XP";
+                }
+
+                g.setColour(card.unlocked ? UiColors::green : UiColors::muted);
+                g.setFont(GameUi::font(8.5f, true));
+                g.drawFittedText(status,
+                                 juce::Rectangle<int>(textX, tile.getBottom() - 17,
+                                                      textW, 13),
+                                 juce::Justification::centredLeft, 1);
+
+                ++shown;
             }
         }
     }
@@ -3060,21 +3189,21 @@ public:
         const int ratingHeight = juce::jmax(220, contentHeight * 42 / 100);
         ratingCard = { mainColumn.getX(), mainColumn.getY(),
                        mainColumn.getWidth(), ratingHeight };
-        historyCard = { mainColumn.getX(), mainColumn.getY() + ratingHeight + gap,
+        accountCard = { mainColumn.getX(), mainColumn.getY() + ratingHeight + gap,
                         mainColumn.getWidth(), contentHeight - ratingHeight - gap };
 
         constexpr int profileHeight = 184;
         constexpr int passwordHeight = 184;
-        const int accountHeight = juce::jmax(176, contentHeight - profileHeight
+        const int historyHeight = juce::jmax(200, contentHeight - profileHeight
                                                         - passwordHeight - 2 * gap);
 
         profileCard = { sideColumn.getX(), sideColumn.getY(),
                         sideColumn.getWidth(), profileHeight };
         passwordCard = { sideColumn.getX(), sideColumn.getY() + profileHeight + gap,
                          sideColumn.getWidth(), passwordHeight };
-        accountCard = { sideColumn.getX(),
+        historyCard = { sideColumn.getX(),
                         sideColumn.getY() + profileHeight + passwordHeight + 2 * gap,
-                        sideColumn.getWidth(), accountHeight };
+                        sideColumn.getWidth(), historyHeight };
 
         const auto ratingInner = ratingCard.reduced(20);
         ratingTable.setBounds(ratingInner.getX(), ratingInner.getY() + 56,
@@ -3118,8 +3247,9 @@ public:
         changePasswordButton.setBounds(changePasswordButtonArea);
 
         const auto accountInner = accountCard.reduced(20);
-        accountLogoutButton.setBounds(accountInner.getX(), accountInner.getBottom() - 30,
-                                      accountInner.getWidth(), 30);
+        accountLogoutButton.setBounds(accountInner.getRight() - 220,
+                                      accountInner.getBottom() - 34,
+                                      220, 34);
 
         alertLabel.setBounds(margin, getHeight() - 40,
                              getWidth() - margin * 2, 24);
@@ -3487,22 +3617,39 @@ private:
                     AchievementCard card;
                     card.code = item.getProperty("code", juce::var()).toString();
                     card.title = item.getProperty("title", juce::var()).toString();
+                    card.description =
+                        item.getProperty("description", juce::var()).toString();
                     card.iconUrl =
                         item.getProperty("icon_url", juce::var()).toString();
+                    card.awardedAt =
+                        item.getProperty("awarded_at", juce::var()).toString();
+                    card.xpBonus =
+                        static_cast<int>(item.getProperty("xp_bonus", 0));
+                    card.progress =
+                        static_cast<int>(item.getProperty("progress", 0));
+                    card.goal =
+                        static_cast<int>(item.getProperty("goal", 0));
                     card.unlocked =
                         static_cast<int>(item.getProperty("unlocked", 0)) != 0;
 
                     if (card.unlocked)
-                    {
                         ++self->achievementsUnlockedCount;
 
-                        if (card.iconUrl.isNotEmpty()
-                            && iconJobs.size() < 12)
-                            iconJobs.push_back({ card.code, card.iconUrl });
-                    }
+                    if (card.iconUrl.isNotEmpty() && iconJobs.size() < 12)
+                        iconJobs.push_back({ card.code, card.iconUrl });
 
                     self->achievementCards.push_back(card);
                 }
+
+                // Unlocked first, then the server order, so the compact grid in
+                // the account card always shows the most relevant cards.
+                std::stable_sort(self->achievementCards.begin(),
+                                 self->achievementCards.end(),
+                                 [](const AchievementCard& a,
+                                    const AchievementCard& b)
+                                 {
+                                     return a.unlocked && ! b.unlocked;
+                                 });
 
                 if (iconJobs.empty())
                 {
@@ -4189,7 +4336,12 @@ private:
     {
         juce::String code;
         juce::String title;
+        juce::String description;
         juce::String iconUrl;
+        juce::String awardedAt;
+        int xpBonus = 0;
+        int progress = 0;
+        int goal = 0;
         bool unlocked = false;
     };
 
@@ -4314,9 +4466,10 @@ void MainComponent::openAccountWindow()
 
 void MainComponent::rebuildGuitarInputChoices()
 {
-    populateInputChannelCombo(
-        guitarInputCombo,
-        deviceManager,
+    if (inputMonitor == nullptr)
+        return;
+
+    inputMonitor->refreshDevices(
         preferredInputChannel.load(std::memory_order_relaxed));
 }
 
@@ -4421,51 +4574,12 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(tunerCentsLabel);
     addAndMakeVisible(tunerStatusLabel);
 
-    // Compact input selector available on the tuner screen. The guitar may be
+    // Compact input selector shown on the tuner screen. The guitar may be
     // connected to any interface input, so the player can switch the capture
     // channel without entering a song and opening the full audio settings.
-    guitarInputLabel.setText(
-        "GUITAR INPUT",
-        juce::dontSendNotification);
-
-    guitarInputLabel.setFont(
-        GameUi::eyebrow(10.0f));
-
-    guitarInputLabel.setColour(
-        juce::Label::textColourId,
-        UiColors::muted);
-
-    guitarInputLabel.setJustificationType(
-        juce::Justification::centredLeft);
-
-    guitarInputCombo.setColour(
-        juce::ComboBox::backgroundColourId,
-        UiColors::surface2);
-
-    guitarInputCombo.setColour(
-        juce::ComboBox::textColourId,
-        UiColors::text);
-
-    guitarInputCombo.setColour(
-        juce::ComboBox::outlineColourId,
-        UiColors::borderStrong);
-
-    guitarInputCombo.setColour(
-        juce::ComboBox::arrowColourId,
-        UiColors::accent);
-
-    guitarInputCombo.onChange =
-        [this]
-        {
-            const int selectedId =
-                guitarInputCombo.getSelectedId();
-
-            if (selectedId > 0)
-                setPreferredInputChannel(selectedId - 2);
-        };
-
-    addAndMakeVisible(guitarInputLabel);
-    addAndMakeVisible(guitarInputCombo);
+    // The selector itself now lives inside the shared GuitarInputMonitor,
+    // which is visible on the song screen, in the tuner and during gameplay.
+    addAndMakeVisible(*inputMonitor);
 
     tunerStartButton.setEnabled(false);
     tunerStartButton.setColour(juce::TextButton::buttonColourId, UiColors::accent);

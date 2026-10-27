@@ -39,9 +39,26 @@ MainComponent::MainComponent()
     appProperties.setStorageParameters(options);
 
     if (auto* settings = appProperties.getUserSettings())
+    {
         preferredInputChannel.store(
             settings->getIntValue("InputChannel", -1),
             std::memory_order_relaxed);
+
+        // Neutral default (0.5) keeps the original detector thresholds.
+        inputSensitivity.store(
+            juce::jlimit(0.0f, 1.0f,
+                         static_cast<float>(
+                             settings->getDoubleValue("InputSensitivity", 0.5))),
+            std::memory_order_relaxed);
+    }
+
+    inputMonitor = std::make_unique<GuitarInputMonitor>(deviceManager);
+    inputMonitor->setSensitivityChangedCallback(
+        [this](float normalised) { setInputSensitivity(normalised); });
+    inputMonitor->setChannelSelectedCallback(
+        [this](int hardwareChannel) { setPreferredInputChannel(hardwareChannel); });
+    inputMonitor->setSensitivityNormalised(
+        inputSensitivity.load(std::memory_order_relaxed));
 
     setSize(
         1000,
@@ -84,6 +101,10 @@ void MainComponent::timerCallback()
 
     updateHitFeedbackAnimation();
 
+    // Input monitor: read the audio-thread atomics and advance the meter
+    // smoothing / peak hold. Message thread only.
+    updateInputMonitor();
+
     // Activity heartbeat: every 30 seconds at 30 Hz while signed in. The
     // counter must advance regardless of game state, so it stays above the
     // early return below. The HTTP request runs on a worker thread.
@@ -93,6 +114,31 @@ void MainComponent::timerCallback()
 
         if (onlineAccessToken.isNotEmpty())
             sendActivityHeartbeat(false);
+    }
+
+    // Smoothly animate the level bar toward the server-side progress. Runs in
+    // every state so the bar is already settled when the player returns to the
+    // main screen.
+    {
+        const int xpIntoLevel =
+            juce::jmax(0, progressionXpForNext - progressionXpRemaining);
+
+        const float target = progressionXpForNext > 0
+            ? juce::jlimit(0.0f, 1.0f,
+                           static_cast<float>(xpIntoLevel)
+                               / static_cast<float>(progressionXpForNext))
+            : 0.0f;
+
+        if (std::abs(target - levelBarShown) > 0.0005f)
+        {
+            levelBarShown += (target - levelBarShown) * 0.16f;
+            overlayComponent.repaint();
+        }
+        else if (! juce::approximatelyEqual(levelBarShown, target))
+        {
+            levelBarShown = target;
+            overlayComponent.repaint();
+        }
     }
 
     if (gameState != GameState::Playing)

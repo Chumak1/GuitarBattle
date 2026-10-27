@@ -33,6 +33,25 @@ namespace UiColors
 
 namespace GameUi
 {
+    // Shared layout grid derived from the player-facing web cabinet
+    // (app/static/app/styles.css). Every screen uses these values instead of
+    // ad-hoc numbers so the desktop client and the site stay one product.
+    namespace Metrics
+    {
+        constexpr float radiusCard = 16.0f;     // --radius
+        constexpr float radiusControl = 10.0f;  // inputs, combos, buttons
+        constexpr float radiusSmall = 9.0f;     // tabs, chips
+        constexpr float cardPadding = 24.0f;    // .section padding
+        constexpr float screenMargin = 24.0f;   // shell gutter
+        constexpr float cardGap = 14.0f;        // .grid gap
+        constexpr float buttonHeight = 44.0f;   // .btn
+        constexpr float controlHeight = 32.0f;  // inputs
+    }
+
+    constexpr float screenMargin = Metrics::screenMargin;
+    constexpr float cardGap = Metrics::cardGap;
+    constexpr float cardPadding = Metrics::cardPadding;
+
     juce::Font font(float height, bool bold = false, float tracking = 0.0f);
     juce::Font heading(float height);
     juce::Font eyebrow(float height = 11.0f);
@@ -40,7 +59,7 @@ namespace GameUi
     // Layered, rounded surface with a thin highlight and soft drop shadow.
     void drawCard(juce::Graphics& g,
                   juce::Rectangle<float> area,
-                  float radius = 18.0f,
+                  float radius = Metrics::radiusCard,
                   bool glow = false);
 
     void drawPill(juce::Graphics& g,

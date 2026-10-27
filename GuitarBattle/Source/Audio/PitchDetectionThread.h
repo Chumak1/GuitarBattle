@@ -142,11 +142,27 @@ public:
 
 
 
-                    constexpr double silenceThreshold = 0.0035;
-                    constexpr double onsetThreshold = 0.0080;
+                    // Detector sensitivity scales the thresholds around the
+                    // historical defaults (0.5 = neutral, factor 1.0):
+                    // 100% halves them, 0% doubles them. Only the detector is
+                    // affected; the input meter always shows the real level.
+                    const double sensitivity = juce::jlimit(
+                        0.0,
+                        1.0,
+                        static_cast<double>(
+                            owner.inputSensitivity.load(std::memory_order_relaxed)));
+
+                    const double thresholdScale =
+                        std::pow(2.0, (0.5 - sensitivity) * 2.0);
+
+                    const double silenceThreshold = 0.0035 * thresholdScale;
+                    const double onsetThreshold = 0.0080 * thresholdScale;
+                    const double noteRmsGate = 0.005 * std::sqrt(thresholdScale);
 
                     const uint64_t minimumOnsetSamples =
-                        static_cast<uint64_t>(sampleRate * 0.060);
+                        static_cast<uint64_t>(
+                            sampleRate * 0.060
+                            * juce::jlimit(0.5, 2.0, thresholdScale));
 
                     // Сравниваем громкость с предыдущим анализируемым блоком.
                     const double previousRms = owner.previousRmsValue;
@@ -216,7 +232,7 @@ public:
 
                     if (pitch > 20.0
                         && pitch < 1000.0
-                        && rms >= 0.005
+                        && rms >= noteRmsGate
                         && (onset || owner.tunerActive.load(std::memory_order_relaxed)))
                     {
                         owner.lastPitch = pitch;
@@ -862,7 +878,18 @@ public:
 
                     owner.previousRmsValue2 = rms;
 
-                    if (rms < 0.005)
+                    const double displayNoteGate =
+                        0.005 * std::sqrt(std::pow(
+                            2.0,
+                            (0.5 - juce::jlimit(
+                                 0.0,
+                                 1.0,
+                                 static_cast<double>(
+                                     owner.inputSensitivity.load(
+                                         std::memory_order_relaxed))))
+                                * 2.0));
+
+                    if (rms < displayNoteGate)
                     {
                         juce::MessageManager::callAsync(
                             [this]
@@ -874,14 +901,14 @@ public:
                     }
 
                     const bool onset =
-                        rms > 0.005
+                        rms > displayNoteGate
                         && rms > previousRms * 1.02;
 
                     juce::ignoreUnused(onset);
 
                     if (pitch > 20.0
                         && pitch < 1000.0
-                        && rms >= 0.005)
+                        && rms >= displayNoteGate)
                     {
                         const auto detectedNote =
                             owner.pitchDetector.frequencyToNote(

@@ -1011,6 +1011,9 @@ void MainComponent::refreshProgressionSummary()
             self->progressionXp = xp;
             self->progressionAchievements = unlocked;
             self->progressionAchievementsTotal = total;
+            self->progressionXpForNext = xpForNext;
+            self->progressionXpRemaining =
+                static_cast<int>(json.getProperty("xp_remaining", 0));
 
             juce::String text;
             text << "LEVEL " << level

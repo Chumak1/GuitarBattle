@@ -901,6 +901,9 @@
     <ClCompile Include="..\..\Source\UI\MainComponentUI.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\UI\GuitarInputMonitor.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\Midi\MidiParser.cpp">
       <Filter>GuitarBattle\Source\Midi</Filter>
     </ClCompile>
@@ -4204,6 +4207,9 @@
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\TunerComponent.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\GuitarInputMonitor.h">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Midi\MidiParser.h">

@@ -157,6 +157,7 @@
     <ClCompile Include="..\..\Source\UI\SelectComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\TunerComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\MainComponentUI.cpp"/>
+    <ClCompile Include="..\..\Source\UI\GuitarInputMonitor.cpp"/>
     <ClCompile Include="..\..\Source\Midi\MidiParser.cpp"/>
     <ClCompile Include="..\..\Source\Midi\TablatureComponent.cpp"/>
     <ClCompile Include="..\..\Source\Audio\AudioEngine.cpp"/>
@@ -3223,6 +3224,7 @@
     <ClInclude Include="..\..\Source\UI\GameStyle.h"/>
     <ClInclude Include="..\..\Source\UI\SelectComponent.h"/>
     <ClInclude Include="..\..\Source\UI\TunerComponent.h"/>
+    <ClInclude Include="..\..\Source\UI\GuitarInputMonitor.h"/>
     <ClInclude Include="..\..\Source\Midi\MidiParser.h"/>
     <ClInclude Include="..\..\Source\Midi\TablatureComponent.h"/>
     <ClInclude Include="..\..\Source\Midi\TabMapper.h"/>

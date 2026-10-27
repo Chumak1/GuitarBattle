@@ -6,10 +6,12 @@ namespace UiColors
     const juce::Colour background = juce::Colour::fromString("FF070B10");
     const juce::Colour bgSoft = juce::Colour::fromString("FF0B1119");
     const juce::Colour surface = juce::Colour::fromString("FF101821");
-    const juce::Colour surface2 = juce::Colour::fromString("FF141E29");
+    const juce::Colour surface2 = juce::Colour::fromString("FF0D141D");
     const juce::Colour card = surface;
-    const juce::Colour border = juce::Colour::fromString("1AFFFFFF");
-    const juce::Colour borderStrong = juce::Colour::fromString("2EFFFFFF");
+    // Borders use the site's translucent slate rather than plain white, so
+    // panels read as the same material across web and desktop.
+    const juce::Colour border = juce::Colour::fromString("298D9CAB");
+    const juce::Colour borderStrong = juce::Colour::fromString("478D9CAB");
     const juce::Colour text = juce::Colour::fromString("FFE9EFF6");
     const juce::Colour secondaryText = juce::Colour::fromString("FF8D9CAB");
     const juce::Colour muted = secondaryText;
@@ -18,8 +20,8 @@ namespace UiColors
     const juce::Colour blueLight = surface2;
     const juce::Colour orange = juce::Colour::fromString("FFFFB703");
     const juce::Colour orangeLight = juce::Colour::fromString("FF1B2430");
-    const juce::Colour green = juce::Colour::fromString("FF42D392");
-    const juce::Colour red = juce::Colour::fromString("FFFF7272");
+    const juce::Colour green = juce::Colour::fromString("FF6EE7A8");
+    const juce::Colour red = juce::Colour::fromString("FFFF7A7A");
     const juce::Colour info = juce::Colour::fromString("FF6DB7FF");
     const juce::Colour accent = juce::Colour::fromString("FFF3C451");
     const juce::Colour accentStrong = juce::Colour::fromString("FFFFB703");
@@ -34,7 +36,9 @@ namespace GameUi
 
     // Global typography scale. The application now opens full-screen, so every
     // label can be a little larger without losing the compact desktop layout.
-    static constexpr float fontScale = 1.15f;
+    // Global type scale. All GameUi fonts pass through this multiplier, so the
+    // whole client grows together with the layout constants below.
+    static constexpr float fontScale = 1.28f;
 
     juce::Font font(float height, bool bold, float tracking)
     {
@@ -72,9 +76,11 @@ namespace GameUi
         g.setColour(juce::Colours::black.withAlpha(0.28f));
         g.fillRoundedRectangle(area.translated(0.0f, 3.0f), radius);
 
+        // Same material as the web cabinet: a soft top-lit surface fading into
+        // the page background, with a hairline slate border.
         juce::ColourGradient fill(
-            UiColors::surface2.withAlpha(0.98f), area.getX(), area.getY(),
-            UiColors::surface.withAlpha(0.98f), area.getX(), area.getBottom(),
+            UiColors::surface.withAlpha(0.96f), area.getX(), area.getY(),
+            UiColors::background.withAlpha(0.96f), area.getX(), area.getBottom(),
             false);
         g.setGradientFill(fill);
         g.fillRoundedRectangle(area, radius);

@@ -42,6 +42,43 @@ void MainComponent::setPreferredInputChannel(int channel)
         });
 }
 
+void MainComponent::setInputSensitivity(float normalised)
+{
+    normalised = juce::jlimit(0.0f, 1.0f, normalised);
+    inputSensitivity.store(normalised, std::memory_order_relaxed);
+
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        settings->setValue("InputSensitivity", static_cast<double>(normalised));
+        settings->saveIfNeeded();
+    }
+
+    if (inputMonitor != nullptr)
+        inputMonitor->setSensitivityNormalised(normalised);
+}
+
+void MainComponent::updateInputMonitor()
+{
+    if (inputMonitor == nullptr)
+        return;
+
+    const float rms = inputMeterRms.load(std::memory_order_relaxed);
+    const float peak = inputMeterPeak.load(std::memory_order_relaxed);
+    const int clips = inputClipEvents.load(std::memory_order_relaxed);
+
+    const bool noteActive = noteOn.load(std::memory_order_relaxed)
+        && lastPitch > 20.0 && lastPitch < 1000.0;
+
+    juce::String noteName;
+
+    if (noteActive)
+        noteName = pitchDetector.frequencyToNote(lastPitch);
+
+    inputMonitor->updateMeter(rms, peak, clips, noteActive, noteName,
+                              noteActive ? lastPitch : 0.0);
+    inputMonitor->tick();
+}
+
 bool MainComponent::ensureInputChannelEnabled(int hardwareChannel)
 {
     if (hardwareChannel < 0
@@ -1211,6 +1248,53 @@ void MainComponent::getNextAudioBlock(
               inputChannel,
               bufferToFill.startSample)
         : nullptr;
+
+    //==========================================================================
+    // Input level metering
+    //
+    // Realtime-safe: plain arithmetic over the current block plus relaxed
+    // atomic stores. The message thread reads these values at 30 Hz, applies
+    // smoothing and paints the meter; nothing is allocated or locked here.
+
+    if (samples != nullptr && bufferToFill.numSamples > 0)
+    {
+        double sum = 0.0;
+        float peak = 0.0f;
+
+        for (int i = 0; i < bufferToFill.numSamples; ++i)
+        {
+            const float value = samples[i];
+            sum += static_cast<double>(value) * value;
+            peak = juce::jmax(peak, std::abs(value));
+        }
+
+        const float rms = static_cast<float>(
+            std::sqrt(sum / static_cast<double>(bufferToFill.numSamples)));
+
+        inputMeterRms.store(rms, std::memory_order_relaxed);
+        inputMeterPeak.store(peak, std::memory_order_relaxed);
+
+        // A sample at or above full scale is the only clipping the client can
+        // prove: an analogue overload of the interface is not observable here.
+        if (peak >= 0.999f)
+            inputClipEvents.fetch_add(1, std::memory_order_relaxed);
+
+        const int mappedCount = juce::jmin(
+            inputChannelCount,
+            static_cast<int>(activeInputHardwareChannels.size()));
+
+        inputMeterHardwareChannel.store(
+            inputChannel < mappedCount
+                ? activeInputHardwareChannels[static_cast<size_t>(inputChannel)]
+                : -1,
+            std::memory_order_relaxed);
+    }
+    else
+    {
+        inputMeterRms.store(0.0f, std::memory_order_relaxed);
+        inputMeterPeak.store(0.0f, std::memory_order_relaxed);
+        inputMeterHardwareChannel.store(-1, std::memory_order_relaxed);
+    }
 
     //==========================================================================
     // Mono guitar -> stereo monitoring

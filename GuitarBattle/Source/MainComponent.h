@@ -19,6 +19,7 @@
 #include "Network/ApiClient.h"
 #include "Network/ClientAssets.h"
 #include "UI/GameStyle.h"
+#include "UI/GuitarInputMonitor.h"
 
 class MainComponent;
 class PitchDetectionThread;
@@ -254,6 +255,9 @@ private:
     int progressionXp = 0;
     int progressionAchievements = 0;
     int progressionAchievementsTotal = 0;
+    int progressionXpForNext = 0;
+    int progressionXpRemaining = 0;
+    float levelBarShown = 0.0f;
     juce::TextButton dailyChallengeButton{ "DAILY CHALLENGE" };
     juce::Label dailyChallengeStatusLabel;
     juce::String dailyChallengeSongSlug;
@@ -576,10 +580,24 @@ private:
     // the device manager from the realtime thread.
     std::atomic<double> cachedSampleRate{ 0.0 };
 
-    // Compact input selector shown on the tuner screen so the player can
-    // choose any available hardware input without opening gameplay.
-    juce::Label guitarInputLabel;
-    juce::ComboBox guitarInputCombo;
+    //==========================================================================
+    // Input monitor
+    //
+    // The audio callback only writes these atomics; the message thread reads
+    // them at the UI tick rate. No locks, no allocation, no UI calls from the
+    // audio thread.
+    std::atomic<float> inputMeterRms{ 0.0f };
+    std::atomic<float> inputMeterPeak{ 0.0f };
+    std::atomic<int> inputClipEvents{ 0 };
+    // Hardware channel actually captured by the last audio block (-1 = none).
+    std::atomic<int> inputMeterHardwareChannel{ -1 };
+    // Detector sensitivity, 0..1, 0.5 = original thresholds.
+    std::atomic<float> inputSensitivity{ 0.5f };
+
+    std::unique_ptr<GuitarInputMonitor> inputMonitor;
+
+    void setInputSensitivity(float normalised);
+    void updateInputMonitor();
 
     void setPreferredInputChannel(int channel);
     bool ensureInputChannelEnabled(int hardwareChannel);

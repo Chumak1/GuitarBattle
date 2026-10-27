@@ -42,6 +42,10 @@
               file="Source/UI/MainComponentUI.cpp"/>
         <FILE id="McUiInc" name="MainComponentUi.inc" compile="0" resource="0"
               file="Source/UI/MainComponentUi.inc"/>
+        <FILE id="gIm01a" name="GuitarInputMonitor.cpp" compile="1" resource="0"
+              file="Source/UI/GuitarInputMonitor.cpp"/>
+        <FILE id="gIm02b" name="GuitarInputMonitor.h" compile="0" resource="0"
+              file="Source/UI/GuitarInputMonitor.h"/>
       </GROUP>
       <GROUP id="{A35EFB33-1A02-30F8-880B-74B0F642A9AB}" name="Game"/>
       <GROUP id="{D979068A-8FDE-55FB-384B-D6AEAAF8B1A2}" name="Midi">
