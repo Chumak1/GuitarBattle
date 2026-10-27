@@ -14,6 +14,8 @@ from app.models.progression import Achievement, SongBestScore, UserAchievement
 from app.models.song import Song
 from app.models.user import User
 from app.schemas.progression import (
+    PublicAchievementItem,
+    PublicProfileResponse,
     AchievementCatalogResponse,
     AchievementItem,
     DailyLeaderboardEntry,
@@ -32,6 +34,64 @@ from app.services import progression
 from app.services.achievement_catalog import catalog_rows
 
 router = APIRouter(tags=["progression"])
+
+
+@router.get(
+    "/profile/users/{user_id}",
+    response_model=PublicProfileResponse,
+    summary="Public player card: level, XP and achievements",
+)
+def public_profile(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> PublicProfileResponse:
+    target = db.scalar(
+        select(User).where(User.id == user_id, User.is_active.is_(True))
+    )
+    if target is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    rows = db.execute(
+        select(
+            Achievement.code,
+            Achievement.title,
+            Achievement.description,
+            Achievement.category,
+            Achievement.xp_bonus,
+            UserAchievement.awarded_at,
+        )
+        .join(UserAchievement, UserAchievement.achievement_code == Achievement.code)
+        .where(UserAchievement.user_id == user_id)
+        .order_by(UserAchievement.awarded_at.desc())
+    ).all()
+
+    songs_mastered = db.scalar(
+        select(func.count()).select_from(SongBestScore).where(
+            SongBestScore.user_id == user_id
+        )
+    ) or 0
+
+    return PublicProfileResponse(
+        user_id=target.id,
+        username=target.username,
+        display_name=target.display_name or target.username,
+        level=target.level,
+        xp_total=target.xp_total,
+        songs_mastered=int(songs_mastered),
+        achievements_unlocked=len(rows),
+        achievements=[
+            PublicAchievementItem(
+                code=row.code,
+                title=row.title,
+                description=row.description,
+                category=row.category,
+                xp_bonus=row.xp_bonus,
+                awarded_at=row.awarded_at,
+            )
+            for row in rows
+        ],
+    )
 
 
 def _personal_best_payload(best: SongBestScore, song: Song) -> PersonalBestItem:

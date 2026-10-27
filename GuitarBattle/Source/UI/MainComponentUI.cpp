@@ -1833,6 +1833,8 @@ void MainComponent::resized()
     onlineCatalogButton.setVisible(songSelect);
     onlineCatalogStatusLabel.setVisible(songSelect);
     leaderboardTitleLabel.setVisible(songSelect);
+    leaderboardTable.setVisible(songSelect);
+    progressionSummaryLabel.setVisible(songSelect);
     leaderboardLabel.setVisible(songSelect);
     refreshLeaderboardButton.setVisible(songSelect);
     accountStatusLabel.setVisible(songSelect || authScreen);
@@ -1997,8 +1999,13 @@ void MainComponent::resized()
         leaderboardTitleLabel.setBounds(rightX + 24, contentY + 38, rightW - 48, 30);
         refreshLeaderboardButton.setBounds(rightX + rightW - 142, contentY + 68,
                                            118, 32);
-        leaderboardLabel.setBounds(rightX + 24, contentY + 118,
-                                   rightW - 48, contentH - 142);
+        leaderboardLabel.setBounds(rightX + 24, contentY + 106,
+                                   rightW - 48, 20);
+        leaderboardTable.setBounds(rightX + 24, contentY + 130,
+                                   rightW - 48,
+                                   juce::jmax(120, contentH - 152));
+
+        progressionSummaryLabel.setBounds(48, 78, juce::jmax(200, width - 96), 22);
 
         accountStatusLabel.setBounds(24 + 34, footerY + 7, width - 48 - 58, 30);
     }
@@ -4724,11 +4731,37 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(leaderboardTitleLabel);
 
     leaderboardLabel.setText({}, juce::dontSendNotification);
-    leaderboardLabel.setFont(GameUi::font(13.0f));
+    leaderboardLabel.setFont(GameUi::font(11.0f));
     leaderboardLabel.setColour(juce::Label::textColourId, UiColors::muted);
     leaderboardLabel.setJustificationType(juce::Justification::topLeft);
     leaderboardLabel.setMinimumHorizontalScale(0.8f);
     addAndMakeVisible(leaderboardLabel);
+
+    // Global rating table: columns are rank, player, level and rating points.
+    // Clicking a row opens that player's public card.
+    leaderboardModel = std::make_unique<MainLeaderboardModel>();
+    leaderboardTable.setModel(leaderboardModel.get());
+    leaderboardTable.setRowHeight(28);
+    leaderboardTable.getHeader().addColumn("#", 1, 44, 36, 60);
+    leaderboardTable.getHeader().addColumn("PLAYER", 2, -1, 120, -1);
+    leaderboardTable.getHeader().addColumn("LEVEL", 3, 74, 60, 110);
+    leaderboardTable.getHeader().addColumn("RATING", 4, 86, 60, 140);
+    leaderboardTable.setColour(juce::ListBox::backgroundColourId,
+                               juce::Colours::transparentBlack);
+    leaderboardTable.setColour(juce::ListBox::outlineColourId, UiColors::border);
+    leaderboardTable.setOutlineThickness(1);
+    leaderboardTable.getViewport()->setScrollBarsShown(true, false);
+    leaderboardModel->onRowClicked = [this](const juce::String& userId)
+    {
+        openPublicProfile(userId);
+    };
+    addAndMakeVisible(leaderboardTable);
+
+    progressionSummaryLabel.setText("", juce::dontSendNotification);
+    progressionSummaryLabel.setFont(GameUi::font(12.0f, true));
+    progressionSummaryLabel.setColour(juce::Label::textColourId, UiColors::accent);
+    progressionSummaryLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(progressionSummaryLabel);
 
     refreshLeaderboardButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
     refreshLeaderboardButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);

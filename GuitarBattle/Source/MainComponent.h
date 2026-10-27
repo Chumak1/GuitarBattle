@@ -51,6 +51,91 @@ private:
     MainComponent& owner;
 };
 
+// Table model for the global rating shown on the song-select screen. Lives in
+// this header so both the UI and the network module can fill it. Rows are
+// clickable: the owner opens the public player card for the selected user.
+class MainLeaderboardModel final : public juce::TableListBoxModel
+{
+public:
+    struct Row
+    {
+        juce::String userId;
+        juce::String username;
+        juce::String displayName;
+        int rank = 0;
+        int level = 1;
+        int rating = 0;
+    };
+
+    std::function<void(const juce::String&)> onRowClicked;
+
+    void setRows(std::vector<Row> newRows)
+    {
+        rows = std::move(newRows);
+    }
+
+    int getNumRows() override
+    {
+        return static_cast<int>(rows.size());
+    }
+
+    void paintRowBackground(juce::Graphics& g, int rowNumber, int width,
+                            int height, bool rowIsSelected) override
+    {
+        juce::ignoreUnused(rowNumber);
+
+        g.setColour(rowIsSelected ? juce::Colour(0xFF2A3140)
+                                  : juce::Colour(0xFF161B24).withAlpha(0.55f));
+        g.fillRect(0, 0, width, height);
+    }
+
+    void paintCell(juce::Graphics& g, int rowNumber, int columnId,
+                   int width, int height, bool) override
+    {
+        if (! juce::isPositiveAndBelow(rowNumber,
+                                       static_cast<int>(rows.size())))
+            return;
+
+        const auto& row = rows[static_cast<size_t>(rowNumber)];
+
+        juce::String text;
+
+        switch (columnId)
+        {
+        case 1: text = juce::String(row.rank); break;
+        case 2: text = row.displayName.isNotEmpty()
+                        ? row.displayName
+                        : row.username; break;
+        case 3: text = "LVL " + juce::String(row.level); break;
+        case 4: text = juce::String(row.rating); break;
+        default: break;
+        }
+
+        g.setColour(juce::Colour(0xFFE8ECF4));
+        g.setFont(juce::Font(juce::FontOptions().withHeight(columnId == 3 ? 11.0f : 12.0f)));
+        g.drawText(text, 8, 0, width - 12, height,
+                   columnId == 1 || columnId == 4
+                       ? juce::Justification::centredRight
+                       : juce::Justification::centredLeft,
+                   true);
+    }
+
+    void cellClicked(int rowNumber, int, const juce::MouseEvent&) override
+    {
+        if (! juce::isPositiveAndBelow(rowNumber,
+                                       static_cast<int>(rows.size())))
+            return;
+
+        const auto& row = rows[static_cast<size_t>(rowNumber)];
+
+        if (row.userId.isNotEmpty() && onRowClicked != nullptr)
+            onRowClicked(row.userId);
+    }
+
+private:
+    std::vector<Row> rows;
+};
+
 class MainComponent : public juce::AudioAppComponent,
     private juce::Timer,
     private juce::ChangeListener
@@ -162,6 +247,12 @@ private:
     juce::Label onlineCatalogStatusLabel;
     juce::Label leaderboardTitleLabel;
     juce::Label leaderboardLabel;
+    juce::TableListBox leaderboardTable{ "Global rating", nullptr };
+    std::unique_ptr<MainLeaderboardModel> leaderboardModel;
+    juce::Label progressionSummaryLabel;
+    int ratingPoints = 0;
+    void refreshProgressionSummary();
+    void openPublicProfile(const juce::String& userId);
     juce::TextButton refreshLeaderboardButton{ "REFRESH RATING" };
     juce::TextButton accountLoginButton{ "LOGIN" };
     juce::TextButton accountRegisterButton{ "REGISTER" };

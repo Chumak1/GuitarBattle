@@ -718,19 +718,31 @@ void MainComponent::refreshGlobalLeaderboard()
                 return;
             }
 
-            juce::String text;
+            std::vector<MainLeaderboardModel::Row> rows;
+            rows.reserve(static_cast<size_t>(items->size()));
+
             for (const auto& item : *items)
             {
-                const auto rank = item.getProperty("rank", juce::var()).toString();
-                auto name = item.getProperty("display_name", juce::var()).toString();
-                if (name.trim().isEmpty())
-                    name = item.getProperty("username", juce::var()).toString();
-                const auto points = item.getProperty("rating_points", juce::var()).toString();
-                const auto games = item.getProperty("games_played", juce::var()).toString();
-                text << rank << ".  " << name << "   -   " << points << " pts"
-                     << "   (" << games << " games)" << juce::newLine;
+                MainLeaderboardModel::Row row;
+                row.userId = item.getProperty("user_id", juce::var()).toString();
+                row.username = item.getProperty("username", juce::var()).toString();
+                row.displayName =
+                    item.getProperty("display_name", juce::var()).toString();
+                row.rank = static_cast<int>(item.getProperty("rank", 0));
+                row.level = static_cast<int>(item.getProperty("level", 1));
+                row.rating =
+                    static_cast<int>(item.getProperty("rating_points", 0));
+                rows.push_back(row);
             }
-            self->leaderboardLabel.setText(text, juce::dontSendNotification);
+
+            if (self->leaderboardModel != nullptr)
+                self->leaderboardModel->setRows(std::move(rows));
+
+            self->leaderboardTable.updateContent();
+            self->leaderboardTable.repaint();
+            self->leaderboardLabel.setText(
+                "Click a player to open their card.",
+                juce::dontSendNotification);
         });
 }
 
@@ -908,6 +920,9 @@ void MainComponent::refreshOnlineBestScores()
             if (!response.transportOk || !response.json.isObject())
                 return;
 
+            self->ratingPoints = static_cast<int>(
+                response.json.getProperty("rating_points", 0));
+
             const auto itemsValue = response.json.getProperty("items", juce::var());
             const auto* items = itemsValue.getArray();
             if (items == nullptr)
@@ -926,6 +941,106 @@ void MainComponent::refreshOnlineBestScores()
 
             self->updateCatalogRows();
             self->repaint();
+            self->refreshProgressionSummary();
+        });
+}
+
+void MainComponent::refreshProgressionSummary()
+{
+    if (onlineAccessToken.isEmpty())
+    {
+        progressionSummaryLabel.setText({}, juce::dontSendNotification);
+        return;
+    }
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    apiClient.getJson("/profile/progression", onlineAccessToken, 5000,
+        [safeThis](ApiClient::Response response)
+        {
+            auto* self = safeThis.getComponent();
+            if (self == nullptr || !response.transportOk
+                || !response.json.isObject())
+                return;
+
+            const auto& json = response.json;
+            const int level = static_cast<int>(json.getProperty("level", 1));
+            const int xp = static_cast<int>(json.getProperty("xp_total", 0));
+            const int xpForNext =
+                static_cast<int>(json.getProperty("xp_for_next", 0));
+            const int unlocked =
+                static_cast<int>(json.getProperty("achievements_unlocked", 0));
+            const int total =
+                static_cast<int>(json.getProperty("achievements_total", 0));
+
+            juce::String text;
+            text << "LEVEL " << level
+                 << "   ·   " << xp << " XP"
+                 << "   ·   " << xpForNext << " XP TO NEXT"
+                 << "   ·   " << unlocked << "/" << total << " ACHIEVEMENTS"
+                 << "   ·   RATING " << self->ratingPoints;
+
+            self->progressionSummaryLabel.setText(text,
+                                                  juce::dontSendNotification);
+        });
+}
+
+void MainComponent::openPublicProfile(const juce::String& userId)
+{
+    if (userId.isEmpty() || onlineAccessToken.isEmpty())
+        return;
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    apiClient.getJson("/profile/users/" + userId, onlineAccessToken, 5000,
+        [safeThis](ApiClient::Response response)
+        {
+            auto* self = safeThis.getComponent();
+            if (self == nullptr)
+                return;
+
+            if (! response.transportOk)
+            {
+                self->accountStatusLabel.setText(
+                    "Could not load the player card.", juce::dontSendNotification);
+                return;
+            }
+
+            const auto& json = response.json;
+            auto name = json.getProperty("display_name", juce::var()).toString();
+
+            if (name.isEmpty())
+                name = json.getProperty("username", juce::var()).toString();
+
+            juce::String text;
+            text << "Level: " << static_cast<int>(json.getProperty("level", 1))
+                 << "\nXP: " << static_cast<int>(json.getProperty("xp_total", 0))
+                 << "\nSongs mastered: "
+                 << static_cast<int>(json.getProperty("songs_mastered", 0))
+                 << "\n\n";
+
+            const auto* achievements =
+                json.getProperty("achievements", juce::var()).getArray();
+            const int unlocked = achievements != nullptr
+                ? achievements->size()
+                : static_cast<int>(json.getProperty("achievements_unlocked", 0));
+
+            text << "Achievements (" << unlocked << "):\n";
+
+            if (achievements != nullptr)
+            {
+                for (const auto& item : *achievements)
+                    text << "• "
+                         << item.getProperty("title", juce::var()).toString()
+                         << "  (+"
+                         << static_cast<int>(item.getProperty("xp_bonus", 0))
+                         << " XP)\n";
+            }
+
+            juce::AlertWindow::showMessageBoxAsync(
+                juce::MessageBoxIconType::NoIcon,
+                name.isNotEmpty() ? name : juce::String("Player"),
+                text, "OK", self);
         });
 }
 

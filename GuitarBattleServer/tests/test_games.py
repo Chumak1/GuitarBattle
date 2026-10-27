@@ -203,6 +203,10 @@ def test_global_and_song_leaderboards(
     assert body["items"][0]["rating_points"] == 2000
     assert body["items"][0]["games_played"] == 1
     assert body["items"][0]["rank"] == 1
+    assert body["items"][0]["user_id"] == user_account["id"]
+    assert body["items"][0]["level"] >= 1
+    assert body["items"][0]["xp_total"] >= 0
+    assert body["items"][0]["achievements_unlocked"] >= 0
 
     song_board = db_client.get(
         f"{helpers.API}/leaderboard", params={"song_slug": published_song["slug"]}

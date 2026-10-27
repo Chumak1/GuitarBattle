@@ -21,6 +21,28 @@ class AchievementAwardPayload(BaseModel):
     xp_bonus: int
 
 
+class PublicAchievementItem(BaseModel):
+    code: str
+    title: str
+    description: str
+    category: str
+    xp_bonus: int
+    awarded_at: datetime
+
+
+class PublicProfileResponse(BaseModel):
+    """Public card shown when an admin/user opens a leaderboard row."""
+
+    user_id: UUID
+    username: str
+    display_name: str
+    level: int
+    xp_total: int
+    songs_mastered: int
+    achievements_unlocked: int
+    achievements: list[PublicAchievementItem] = []
+
+
 class ProgressionPayload(BaseModel):
     """The ``progression`` block returned by ``POST /games/sessions/{id}/finish``."""
 

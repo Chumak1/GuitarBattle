@@ -824,3 +824,32 @@ def test_global_leaderboard_still_ignores_progression(
     ]
     assert board["items"][0]["rating_points"] == 1500
     assert board["items"][0]["games_played"] == 1
+
+
+def test_public_profile_exposes_level_xp_and_achievements(db_client, db_session):
+    from sqlalchemy import update
+
+    from app.models.user import User
+
+    player = helpers.register_user(db_client)
+    db_session.execute(
+        update(User)
+        .where(User.id == uuid.UUID(player["id"]))
+        .values(xp_total=1500, level=7)
+    )
+    db_session.commit()
+
+    response = db_client.get(
+        f"{helpers.API}/profile/users/{player['id']}", headers=player["headers"]
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["username"] == player["username"]
+    assert body["level"] == 7
+    assert body["xp_total"] == 1500
+    assert body["achievements_unlocked"] == len(body["achievements"])
+
+    missing = db_client.get(
+        f"{helpers.API}/profile/users/{uuid.uuid4()}", headers=player["headers"]
+    )
+    assert missing.status_code == 404

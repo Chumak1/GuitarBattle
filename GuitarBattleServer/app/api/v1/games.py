@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_user
 from app.database import get_db
 from app.models.game_session import GameSession, Score
+from app.models.progression import UserAchievement
 from app.models.progression import DailyResult
 from app.models.song import Song
 from app.models.user import User
@@ -278,6 +279,14 @@ def global_leaderboard(limit: int = Query(default=10, ge=1, le=100),
     the songs that contributed a best score, not the raw number of attempts.
     """
     best_scores = _best_score_per_song_subquery()
+    achievements = (
+        select(
+            UserAchievement.user_id.label("user_id"),
+            func.count(UserAchievement.id).label("achievements_unlocked"),
+        )
+        .group_by(UserAchievement.user_id)
+        .subquery()
+    )
     rating_points = func.coalesce(func.sum(best_scores.c.best_score), 0).label(
         "rating_points"
     )
@@ -288,17 +297,30 @@ def global_leaderboard(limit: int = Query(default=10, ge=1, le=100),
             User.id.label("user_id"),
             User.username,
             User.display_name,
+            User.level,
+            User.xp_total,
             rating_points,
             songs_counted,
             func.max(best_scores.c.best_accuracy).label("best_accuracy"),
+            func.coalesce(achievements.c.achievements_unlocked, 0).label(
+                "achievements_unlocked"
+            ),
         )
         .join(best_scores, best_scores.c.user_id == User.id)
+        .outerjoin(achievements, achievements.c.user_id == User.id)
         .join(Song, Song.id == best_scores.c.song_id)
         .where(
             User.is_active.is_(True),
             Song.is_published.is_(True),
         )
-        .group_by(User.id, User.username, User.display_name)
+        .group_by(
+            User.id,
+            User.username,
+            User.display_name,
+            User.level,
+            User.xp_total,
+            achievements.c.achievements_unlocked,
+        )
         .order_by(rating_points.desc(),
                   songs_counted.desc(),
                   User.username.asc())
@@ -310,8 +332,12 @@ def global_leaderboard(limit: int = Query(default=10, ge=1, le=100),
         "items": [
             {
                 "rank": offset + index + 1,
+                "user_id": str(row.user_id),
                 "username": row.username,
                 "display_name": row.display_name,
+                "level": int(row.level or 1),
+                "xp_total": int(row.xp_total or 0),
+                "achievements_unlocked": int(row.achievements_unlocked or 0),
                 "rating_points": int(row.rating_points or 0),
                 "games_played": int(row.games_played or 0),
                 "best_accuracy": float(row.best_accuracy or 0),
