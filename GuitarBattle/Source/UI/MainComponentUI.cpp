@@ -709,12 +709,72 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         const float rightW = contentW - leftW - gap;
 
         GameUi::drawEyebrow(g, "SONG LIBRARY",
-                            juce::Rectangle<float>(48.0f, 121.0f, 360.0f, 16.0f));
+                            juce::Rectangle<float>(48.0f, 112.0f, 360.0f, 16.0f));
         g.setColour(UiColors::muted);
         g.setFont(GameUi::font(13.0f));
         g.drawText("Pick a track, tune up and make every note count.",
-                   juce::Rectangle<float>(48.0f, 188.0f, width - 96.0f, 24.0f),
+                   juce::Rectangle<float>(48.0f, 196.0f, width - 96.0f, 24.0f),
                    juce::Justification::centredLeft, false);
+
+        // Progression summary cards, styled like the account-window cards.
+        {
+            const float statY = 132.0f;
+            const float statH = 52.0f;
+            const float statGap = 12.0f;
+            const float statW = (width - 96.0f - statGap * 3.0f) / 4.0f;
+
+            struct StatCard
+            {
+                const char* label;
+                juce::String value;
+                juce::String note;
+            };
+
+            const StatCard cards[4] =
+            {
+                { "LEVEL", juce::String(progressionLevel),
+                  juce::String(progressionXp) + " XP" },
+                { "XP", juce::String(progressionXp),
+                  juce::String(progressionAchievements) + "/"
+                      + juce::String(progressionAchievementsTotal) + " achievements" },
+                { "RATING", juce::String(ratingPoints), "best score per song" },
+                { "ACHIEVEMENTS",
+                  juce::String(progressionAchievements) + "/"
+                      + juce::String(progressionAchievementsTotal),
+                  "unlocked" }
+            };
+
+            for (int i = 0; i < 4; ++i)
+            {
+                const juce::Rectangle<float> card(
+                    48.0f + static_cast<float>(i) * (statW + statGap),
+                    statY, statW, statH);
+
+                GameUi::drawCard(g, card, 14.0f, false);
+
+                g.setColour(UiColors::accent);
+                g.setFont(GameUi::eyebrow(8.5f));
+                g.drawText(cards[i].label,
+                           card.reduced(14.0f, 0.0f).withHeight(14.0f)
+                               .translated(0.0f, 7.0f),
+                           juce::Justification::centredLeft, false);
+
+                g.setColour(UiColors::text);
+                g.setFont(GameUi::heading(21.0f));
+                g.drawText(cards[i].value,
+                           card.reduced(14.0f, 0.0f)
+                               .withTrimmedTop(20.0f)
+                               .withHeight(22.0f),
+                           juce::Justification::centredLeft, false);
+
+                g.setColour(UiColors::muted);
+                g.setFont(GameUi::font(8.5f));
+                g.drawText(cards[i].note,
+                           card.reduced(14.0f, 0.0f).withHeight(12.0f)
+                               .translated(0.0f, 38.0f),
+                           juce::Justification::centredLeft, true);
+            }
+        }
 
         const juce::Rectangle<float> leftCard(48.0f, contentY, leftW, contentH);
         const juce::Rectangle<float> rightCard(rightX, contentY, rightW, contentH);
@@ -1836,7 +1896,7 @@ void MainComponent::resized()
     onlineCatalogStatusLabel.setVisible(songSelect);
     leaderboardTitleLabel.setVisible(songSelect);
     leaderboardTable.setVisible(songSelect);
-    progressionSummaryLabel.setVisible(songSelect);
+    progressionSummaryLabel.setVisible(false);
     leaderboardLabel.setVisible(songSelect);
     refreshLeaderboardButton.setVisible(songSelect);
     accountStatusLabel.setVisible(songSelect || authScreen);
@@ -1992,12 +2052,12 @@ void MainComponent::resized()
         onlineCatalogButton.setBounds(48 + 24 + startW + 12, buttonY, onlineW, 42);
         onlineCatalogStatusLabel.setBounds(48 + 24, buttonY - 30, leftW - 48, 22);
 
-        dailyChallengeButton.setBounds(48 + 24, contentY + 108, leftW - 48, 42);
-        dailyChallengeStatusLabel.setBounds(48 + 24, contentY + 154,
-                                            leftW - 48, 20);
+        dailyChallengeButton.setBounds(48 + 24, contentY + 186, leftW - 48, 44);
+        dailyChallengeStatusLabel.setBounds(48 + 24, contentY + 232,
+                                            leftW - 48, 14);
 
-        // Catalogue list between the header block and the action buttons.
-        const int listTop = contentY + 186;
+        // Catalogue list between the daily card and the action buttons.
+        const int listTop = contentY + 252;
         const int listBottom = buttonY - 38;
         songListBox.setBounds(48 + 18, listTop, leftW - 36,
                               juce::jmax(56, listBottom - listTop));
@@ -2807,6 +2867,131 @@ public:
                    juce::Rectangle<int>(accountInner.getX(), accountInner.getY() + 84,
                                         accountInner.getWidth(), 18).toFloat(),
                    juce::Justification::centredLeft, true);
+
+        // Genre mastery radar. The catalogue currently has only a couple of
+        // genres, so empty axes are shown as "—" instead of invented data.
+        if (! genreNames.isEmpty())
+        {
+            auto radarArea = juce::Rectangle<int>(
+                accountInner.getX(), accountInner.getY() + 116,
+                accountInner.getWidth(),
+                juce::jmax(80, accountInner.getHeight() - 190));
+
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::eyebrow(9.0f));
+            g.drawText("GENRE MASTERY",
+                       radarArea.removeFromTop(14).toFloat(),
+                       juce::Justification::centredLeft, false);
+
+            const float radius = juce::jmin(
+                static_cast<float>(radarArea.getWidth()) * 0.30f,
+                static_cast<float>(radarArea.getHeight()) * 0.38f);
+
+            if (radius > 20.0f)
+            {
+                const auto centre = radarArea.toFloat().getCentre();
+                const int axes = 8;
+
+                auto axisPoint = [centre, radius, axes](int index, float scale)
+                {
+                    const float angle = -juce::MathConstants<float>::halfPi
+                        + juce::MathConstants<float>::twoPi
+                            * static_cast<float>(index)
+                            / static_cast<float>(axes);
+                    return juce::Point<float>(
+                        centre.x + std::cos(angle) * radius * scale,
+                        centre.y + std::sin(angle) * radius * scale);
+                };
+
+                for (int ring = 1; ring <= 3; ++ring)
+                {
+                    juce::Path ringPath;
+                    const float scale = static_cast<float>(ring) / 3.0f;
+
+                    for (int i = 0; i < axes; ++i)
+                    {
+                        const auto p = axisPoint(i, scale);
+
+                        if (i == 0)
+                            ringPath.startNewSubPath(p);
+                        else
+                            ringPath.lineTo(p);
+                    }
+
+                    ringPath.closeSubPath();
+                    g.setColour(UiColors::border.withAlpha(0.7f));
+                    g.strokePath(ringPath, juce::PathStrokeType(1.0f));
+                }
+
+                for (int i = 0; i < axes; ++i)
+                {
+                    const auto outer = axisPoint(i, 1.0f);
+                    g.setColour(UiColors::border.withAlpha(0.55f));
+                    g.drawLine(juce::Line<float>(centre, outer), 1.0f);
+
+                    const juce::String label =
+                        i < genreNames.size()
+                            ? genreNames[i].substring(0, 10)
+                            : juce::String("-");
+
+                    const auto labelPoint = axisPoint(i, 1.22f);
+                    g.setColour(i < genreNames.size()
+                                    ? UiColors::muted
+                                    : UiColors::borderStrong);
+                    g.setFont(GameUi::font(7.5f));
+                    g.drawText(label,
+                               juce::Rectangle<float>(labelPoint.x - 30.0f,
+                                                      labelPoint.y - 7.0f,
+                                                      60.0f, 14.0f),
+                               juce::Justification::centred, false);
+                }
+
+                juce::Path shape;
+
+                for (int i = 0; i < axes; ++i)
+                {
+                    const float value = i < genreValues.size()
+                        ? juce::jlimit(0.0f, 100.0f, genreValues[i]) / 100.0f
+                        : 0.0f;
+                    const auto p = axisPoint(i, value);
+
+                    if (i == 0)
+                        shape.startNewSubPath(p);
+                    else
+                        shape.lineTo(p);
+                }
+
+                shape.closeSubPath();
+                g.setColour(UiColors::accent.withAlpha(0.22f));
+                g.fillPath(shape);
+                g.setColour(UiColors::accent);
+                g.strokePath(shape, juce::PathStrokeType(1.6f));
+            }
+        }
+
+        if (achievementsTotalCount > 0)
+        {
+            const auto strip = juce::Rectangle<int>(
+                accountInner.getX(), accountInner.getBottom() - 58,
+                accountInner.getWidth(), 24);
+
+            g.setColour(UiColors::muted);
+            g.setFont(GameUi::eyebrow(8.5f));
+            g.drawText("ACHIEVEMENTS "
+                           + juce::String(achievementsUnlockedCount) + "/"
+                           + juce::String(achievementsTotalCount),
+                       strip.withHeight(12).toFloat(),
+                       juce::Justification::centredLeft, false);
+
+            g.setColour(UiColors::green);
+            g.setFont(GameUi::font(8.5f));
+            g.drawFittedText(
+                unlockedAchievementNames.isEmpty()
+                    ? juce::String("None yet - play a song to start")
+                    : unlockedAchievementNames.joinIntoString("  ·  "),
+                strip.translated(0, 11),
+                juce::Justification::centredLeft, 2);
+        }
     }
 
     void resized() override
@@ -3223,6 +3408,55 @@ private:
         loadRating();
         loadHistory(true);
         loadProgression();
+        loadAchievements();
+    }
+
+    // Unlocked achievements shown in the account card.
+    void loadAchievements()
+    {
+        const int requestId = ++achievementsRequestId;
+        juce::Component::SafePointer<AccountWindow> safeThis(this);
+
+        api.getJson("/achievements", token, 5000,
+            [safeThis, requestId](ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+
+                if (self == nullptr || requestId != self->achievementsRequestId)
+                    return;
+
+                if (! response.transportOk || ! response.json.isObject())
+                    return;
+
+                const auto* items =
+                    response.json.getProperty("items", juce::var()).getArray();
+
+                if (items == nullptr)
+                    return;
+
+                self->unlockedAchievementNames.clear();
+                self->achievementsUnlockedCount = 0;
+                self->achievementsTotalCount = items->size();
+
+                for (const auto& item : *items)
+                {
+                    if (! static_cast<bool>(
+                            static_cast<int>(
+                                item.getProperty("unlocked", 0))))
+                        continue;
+
+                    ++self->achievementsUnlockedCount;
+
+                    const auto title =
+                        item.getProperty("title", juce::var()).toString();
+
+                    if (title.isNotEmpty()
+                        && self->unlockedAchievementNames.size() < 6)
+                        self->unlockedAchievementNames.add(title);
+                }
+
+                self->repaint();
+            });
     }
 
     // Server-authoritative progression: level, total XP and the last-100
@@ -3273,6 +3507,27 @@ private:
                     self->timingValue =
                         juce::String(juce::roundToInt(
                             static_cast<double>(timing))) + "%";
+
+                self->genreNames.clear();
+                self->genreValues.clear();
+
+                if (auto* genres =
+                        json.getProperty("genre_mastery", juce::var()).getArray())
+                {
+                    for (const auto& item : *genres)
+                    {
+                        const auto name =
+                            item.getProperty("genre", juce::var()).toString();
+
+                        if (name.isEmpty())
+                            continue;
+
+                        self->genreNames.add(name);
+                        self->genreValues.add(static_cast<float>(
+                            static_cast<double>(
+                                item.getProperty("value", 0))));
+                    }
+                }
 
                 self->repaint();
             });
@@ -3824,6 +4079,12 @@ private:
     juce::String xpNote = "total experience";
     juce::String accuracyValue = "-";
     juce::String timingValue = "-";
+    juce::StringArray genreNames;
+    juce::Array<float> genreValues;
+    juce::StringArray unlockedAchievementNames;
+    int achievementsUnlockedCount = 0;
+    int achievementsTotalCount = 0;
+    int achievementsRequestId = 0;
     int progressionRequestId = 0;
 
     std::vector<RatingRow> ratingRows;
@@ -4500,14 +4761,14 @@ void MainComponent::initialiseUi()
     // Daily challenge: the song is chosen by the server for today's weekday.
     dailyChallengeButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
     dailyChallengeButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
-    dailyChallengeButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    dailyChallengeButton.setColour(juce::TextButton::textColourOffId, UiColors::muted);
     dailyChallengeButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
     dailyChallengeButton.onClick = [this] { onDailyChallengeClicked(); };
     addAndMakeVisible(dailyChallengeButton);
 
     dailyChallengeStatusLabel.setText("Loading daily challenge...",
                                       juce::dontSendNotification);
-    dailyChallengeStatusLabel.setFont(GameUi::font(11.0f));
+    dailyChallengeStatusLabel.setFont(GameUi::font(9.0f));
     dailyChallengeStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
     dailyChallengeStatusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(dailyChallengeStatusLabel);
@@ -4783,6 +5044,7 @@ void MainComponent::initialiseUi()
     progressionSummaryLabel.setColour(juce::Label::textColourId, UiColors::accent);
     progressionSummaryLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(progressionSummaryLabel);
+    progressionSummaryLabel.setVisible(false);
 
     refreshLeaderboardButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
     refreshLeaderboardButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);

@@ -1007,6 +1007,11 @@ void MainComponent::refreshProgressionSummary()
             const int total =
                 static_cast<int>(json.getProperty("achievements_total", 0));
 
+            self->progressionLevel = level;
+            self->progressionXp = xp;
+            self->progressionAchievements = unlocked;
+            self->progressionAchievementsTotal = total;
+
             juce::String text;
             text << "LEVEL " << level
                  << "   ·   " << xp << " XP"
@@ -1016,6 +1021,8 @@ void MainComponent::refreshProgressionSummary()
 
             self->progressionSummaryLabel.setText(text,
                                                   juce::dontSendNotification);
+            self->overlayComponent.repaint();
+            self->repaint();
         });
 }
 
@@ -1067,9 +1074,14 @@ void MainComponent::refreshDailyChallenge()
                 self->dailyChallengeSongId.clear();
                 self->dailyOfficialUsed = false;
                 self->dailyChallengeButton.setButtonText("DAILY CHALLENGE");
+                self->dailyChallengeButton.setColour(
+                    juce::TextButton::buttonColourId, UiColors::surface2);
+                self->dailyChallengeButton.setColour(
+                    juce::TextButton::textColourOffId, UiColors::muted);
                 self->dailyChallengeStatusLabel.setText(
                     "No challenge scheduled for " + dayName + ".",
                     juce::dontSendNotification);
+                self->repaint();
                 return;
             }
 
@@ -1085,7 +1097,12 @@ void MainComponent::refreshDailyChallenge()
                 song.getProperty("title", juce::var()).toString();
 
             self->dailyChallengeButton.setButtonText(
-                "DAILY: " + (title.isNotEmpty() ? title : dayName));
+                "DAILY  ·  " + (title.isNotEmpty() ? title : dayName));
+
+            self->dailyChallengeButton.setColour(
+                juce::TextButton::buttonColourId, UiColors::accent);
+            self->dailyChallengeButton.setColour(
+                juce::TextButton::textColourOffId, UiColors::onAccent);
 
             if (self->dailyOfficialUsed)
             {
