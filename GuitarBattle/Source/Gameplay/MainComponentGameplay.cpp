@@ -541,6 +541,9 @@ int MainComponent::getBestScoreForSong(const juce::String& slug, const juce::Str
 
 void MainComponent::startSelectedSong()
 {
+    // A catalog pick is always a normal session, never an official daily one.
+    currentSessionIsDaily = false;
+
     if (catalogSongs.empty())
     {
         onlineCatalogStatusLabel.setText(

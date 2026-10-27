@@ -443,6 +443,7 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             self->refreshGlobalLeaderboard();
             // Personal best scores require the freshly obtained token.
             self->refreshOnlineBestScores();
+            self->refreshDailyChallenge();
             // Start a new activity session for this sign-in and report it.
             self->telemetryClientSessionId = juce::Uuid().toString();
             self->telemetryTickCounter = 0;
@@ -464,6 +465,12 @@ void MainComponent::logoutCurrentUser()
     telemetryClientSessionId.clear();
     onlineAccessToken.clear();
     onlineGameSessionUuid.clear();
+    currentSessionIsDaily = false;
+    dailyChallengeSongSlug.clear();
+    dailyChallengeSongId.clear();
+    dailyOfficialUsed = false;
+    dailyChallengeButton.setButtonText("DAILY CHALLENGE");
+    dailyChallengeStatusLabel.setText({}, juce::dontSendNotification);
     currentUsername.clear();
     currentUserLabel.setText(juce::String(), juce::dontSendNotification);
     accountStatusLabel.setText(juce::String(), juce::dontSendNotification);
@@ -542,6 +549,7 @@ void MainComponent::startOnlineGameSession()
                          juce::jlimit(50, 120,
                                       juce::roundToInt(
                                           static_cast<double>(speedPercent))));
+    payload->setProperty("daily", currentSessionIsDaily);
 
     juce::Component::SafePointer<MainComponent> safeThis(this);
     apiClient.postJson("/games/sessions", juce::var(payload.get()), onlineAccessToken, 4000,
@@ -559,6 +567,11 @@ void MainComponent::startOnlineGameSession()
             }
 
             self->onlineGameSessionUuid = response.json.getProperty("id", juce::var()).toString();
+
+            // The daily flag applies to exactly this session; a replay starts
+            // a normal session unless the daily button is used again.
+            self->currentSessionIsDaily = false;
+
             if (self->onlineGameSessionUuid.isEmpty())
                 self->accountStatusLabel.setText("Server did not create a session; score will stay local.",
                                                  juce::dontSendNotification);
@@ -670,6 +683,8 @@ void MainComponent::submitOnlineGameResult()
                 self->refreshGlobalLeaderboard();
                 // Pick up the new personal best for this song right away.
                 self->refreshOnlineBestScores();
+                // The official daily attempt is now used; update the button.
+                self->refreshDailyChallenge();
             }
             else
             {
@@ -983,6 +998,114 @@ void MainComponent::refreshProgressionSummary()
             self->progressionSummaryLabel.setText(text,
                                                   juce::dontSendNotification);
         });
+}
+
+void MainComponent::refreshDailyChallenge()
+{
+    if (onlineAccessToken.isEmpty())
+    {
+        dailyChallengeSongSlug.clear();
+        dailyChallengeSongId.clear();
+        dailyChallengeStatusLabel.setText({}, juce::dontSendNotification);
+        return;
+    }
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    apiClient.getJson("/daily/today", onlineAccessToken, 5000,
+        [safeThis](ApiClient::Response response)
+        {
+            auto* self = safeThis.getComponent();
+            if (self == nullptr)
+                return;
+
+            if (! response.transportOk || ! response.json.isObject())
+            {
+                self->dailyChallengeStatusLabel.setText(
+                    "Daily challenge is unavailable right now.",
+                    juce::dontSendNotification);
+                return;
+            }
+
+            const auto& json = response.json;
+            const int weekday =
+                static_cast<int>(json.getProperty("weekday", 0));
+
+            static const char* dayNames[] =
+            {
+                "Monday", "Tuesday", "Wednesday", "Thursday",
+                "Friday", "Saturday", "Sunday"
+            };
+
+            const auto dayName = juce::String(
+                dayNames[juce::jlimit(0, 6, weekday)]);
+
+            const auto song = json.getProperty("song", juce::var());
+
+            if (! song.isObject())
+            {
+                self->dailyChallengeSongSlug.clear();
+                self->dailyChallengeSongId.clear();
+                self->dailyOfficialUsed = false;
+                self->dailyChallengeButton.setButtonText("DAILY CHALLENGE");
+                self->dailyChallengeStatusLabel.setText(
+                    "No challenge scheduled for " + dayName + ".",
+                    juce::dontSendNotification);
+                return;
+            }
+
+            self->dailyChallengeSongSlug =
+                song.getProperty("slug", juce::var()).toString();
+            self->dailyChallengeSongId =
+                song.getProperty("id", juce::var()).toString();
+            self->dailyOfficialUsed =
+                static_cast<int>(
+                    json.getProperty("official_attempt_used", 0)) != 0;
+
+            const auto title =
+                song.getProperty("title", juce::var()).toString();
+
+            self->dailyChallengeButton.setButtonText(
+                "DAILY: " + (title.isNotEmpty() ? title : dayName));
+
+            if (self->dailyOfficialUsed)
+            {
+                self->dailyChallengeStatusLabel.setText(
+                    "Official attempt used. Replays are practice only.",
+                    juce::dontSendNotification);
+            }
+            else
+            {
+                self->dailyChallengeStatusLabel.setText(
+                    dayName + " challenge - one official attempt.",
+                    juce::dontSendNotification);
+            }
+        });
+}
+
+void MainComponent::onDailyChallengeClicked()
+{
+    if (onlineAccessToken.isEmpty())
+        return;
+
+    if (dailyChallengeSongSlug.isEmpty())
+    {
+        dailyChallengeStatusLabel.setText(
+            "No challenge is scheduled for today.", juce::dontSendNotification);
+        return;
+    }
+
+    // One official attempt per day; after it is used the same song can still
+    // be played as a normal practice session.
+    currentSessionIsDaily = ! dailyOfficialUsed;
+
+    dailyChallengeStatusLabel.setText(
+        currentSessionIsDaily
+            ? "Loading the official daily challenge..."
+            : "Loading today's challenge in practice mode...",
+        juce::dontSendNotification);
+
+    downloadOnlineSong(dailyChallengeSongSlug, dailyChallengeSongId, true);
 }
 
 void MainComponent::openPublicProfile(const juce::String& userId)

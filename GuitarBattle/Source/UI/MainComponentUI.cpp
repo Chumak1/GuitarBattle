@@ -1830,6 +1830,8 @@ void MainComponent::resized()
     gameSongTitleLabel.setVisible(showGame || readyScreen);
 
     songPridumayButton.setVisible(songSelect);
+    dailyChallengeButton.setVisible(songSelect);
+    dailyChallengeStatusLabel.setVisible(songSelect);
     onlineCatalogButton.setVisible(songSelect);
     onlineCatalogStatusLabel.setVisible(songSelect);
     leaderboardTitleLabel.setVisible(songSelect);
@@ -1989,6 +1991,10 @@ void MainComponent::resized()
         songPridumayButton.setBounds(48 + 24, buttonY, startW, 42);
         onlineCatalogButton.setBounds(48 + 24 + startW + 12, buttonY, onlineW, 42);
         onlineCatalogStatusLabel.setBounds(48 + 24, buttonY - 30, leftW - 48, 22);
+
+        dailyChallengeButton.setBounds(48 + 24, contentY + 108, leftW - 48, 42);
+        dailyChallengeStatusLabel.setBounds(48 + 24, contentY + 154,
+                                            leftW - 48, 20);
 
         // Catalogue list between the header block and the action buttons.
         const int listTop = contentY + 186;
@@ -4490,6 +4496,21 @@ void MainComponent::initialiseUi()
     // The catalogue is server-only. Local Songs/ folders are intentionally
     // ignored; published songs arrive asynchronously from refreshOnlineCatalog().
     songPridumayButton.setButtonText("START SONG");
+
+    // Daily challenge: the song is chosen by the server for today's weekday.
+    dailyChallengeButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    dailyChallengeButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
+    dailyChallengeButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    dailyChallengeButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    dailyChallengeButton.onClick = [this] { onDailyChallengeClicked(); };
+    addAndMakeVisible(dailyChallengeButton);
+
+    dailyChallengeStatusLabel.setText("Loading daily challenge...",
+                                      juce::dontSendNotification);
+    dailyChallengeStatusLabel.setFont(GameUi::font(11.0f));
+    dailyChallengeStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
+    dailyChallengeStatusLabel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(dailyChallengeStatusLabel);
     rebuildCatalogRows(juce::var());
 
     //==========================================================================

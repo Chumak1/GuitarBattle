@@ -250,6 +250,14 @@ private:
     juce::TableListBox leaderboardTable{ "Global rating", nullptr };
     std::unique_ptr<MainLeaderboardModel> leaderboardModel;
     juce::Label progressionSummaryLabel;
+    juce::TextButton dailyChallengeButton{ "DAILY CHALLENGE" };
+    juce::Label dailyChallengeStatusLabel;
+    juce::String dailyChallengeSongSlug;
+    juce::String dailyChallengeSongId;
+    bool currentSessionIsDaily = false;
+    bool dailyOfficialUsed = false;
+    void refreshDailyChallenge();
+    void onDailyChallengeClicked();
     int ratingPoints = 0;
     void refreshProgressionSummary();
     void openPublicProfile(const juce::String& userId);
