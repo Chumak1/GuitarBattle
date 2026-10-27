@@ -1436,21 +1436,45 @@ void MainComponent::getNextAudioBlock(
         {
             const double samplesPerBeat = sr * 60.0 / currentBpm;
             const int channels = outputChannelCount;
-            for (int i = 0; i < bufferToFill.numSamples; ++i)
+            const int blockSamples = bufferToFill.numSamples;
+            const double blockStart = static_cast<double>(currentSample);
+            const double blockEnd = blockStart + static_cast<double>(blockSamples);
+
+            // Iterate notes, not samples: only notes that overlap this block
+            // are rendered. The previous sample-outer loop walked the whole
+            // song for every sample, which stalled the audio thread (and the
+            // UI) while sustained notes were sounding.
+            for (const auto& note : notes)
             {
-                const uint64_t absoluteSample = currentSample + static_cast<uint64_t>(i);
-                if (absoluteSample < songStart)
-                    continue; // keep the four-beat count-in free of melody notes
-                const double absoluteBeat = getSongBeatForSample(absoluteSample);
-                if (absoluteBeat < 0.0)
+                const double noteStartSample =
+                    static_cast<double>(getSongSampleForBeat(note.startBeat));
+                const double noteLength =
+                    juce::jmax(0.08, note.durationBeats * samplesPerBeat);
+                const double noteEndSample = noteStartSample + noteLength;
+
+                if (noteStartSample < static_cast<double>(songStart))
+                    continue; // keep the count-in free of melody notes
+
+                if (noteEndSample <= blockStart || noteStartSample >= blockEnd)
                     continue;
-                float sample = 0.0f;
-                for (const auto& note : notes)
+
+                const int first = juce::jmax(
+                    0, static_cast<int>(std::ceil(noteStartSample - blockStart)));
+                const int last = juce::jmin(
+                    blockSamples,
+                    static_cast<int>(std::ceil(noteEndSample - blockStart)));
+
+                if (last <= first)
+                    continue;
+
+                for (int i = first; i < last; ++i)
                 {
-                    const double noteElapsedSamples = (absoluteBeat - note.startBeat) * samplesPerBeat;
-                    const double noteLength = juce::jmax(0.08, note.durationBeats * samplesPerBeat);
+                    const double noteElapsedSamples =
+                        (blockStart + static_cast<double>(i)) - noteStartSample;
+
                     if (noteElapsedSamples < 0.0 || noteElapsedSamples >= noteLength)
                         continue;
+
                     const double t = noteElapsedSamples / sr;
                     const double releaseStart = noteLength * 0.82;
                     const double release = noteElapsedSamples > releaseStart
@@ -1475,11 +1499,15 @@ void MainComponent::getNextAudioBlock(
                         noteSample = static_cast<float>((fundamental * 0.70 + second * 0.20 + third * 0.10)
                                                        * attack * decay);
                     }
-                    sample += noteSample * static_cast<float>(release);
+
+                    const float sample =
+                        juce::jlimit(-1.0f, 1.0f,
+                                     noteSample * static_cast<float>(release) * backingVolume);
+
+                    for (int channel = 0; channel < channels; ++channel)
+                        bufferToFill.buffer->addSample(
+                            channel, bufferToFill.startSample + i, sample);
                 }
-                sample = juce::jlimit(-1.0f, 1.0f, sample * backingVolume);
-                for (int channel = 0; channel < channels; ++channel)
-                    bufferToFill.buffer->addSample(channel, bufferToFill.startSample + i, sample);
             }
         }
     }
