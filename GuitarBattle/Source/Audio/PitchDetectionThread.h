@@ -446,13 +446,7 @@ public:
                                 if (detectedOnsetSample <= targetSample + lateWindowSamples)
                                     break;
 
-                                DBG("CATCH-UP MISS"
-                                    << " target=" << currentTargetIndex
-                                    << " onsetSample=" << detectedOnsetSample
-                                    << " targetSample=" << targetSample
-                                    << " lateByMs="
-                                    << ((detectedOnsetSample - targetSample)
-                                        * 1000.0 / sampleRate));
+
 
                                 if (!owner.gameSession.resolveTarget(currentTargetIndex))
                                     break;
@@ -470,8 +464,7 @@ public:
                                     owner.gameSession.getTargetNoteIndex();
                             }
 
-                            DBG("TARGET INDEX = "
-                                << currentTargetIndex);
+
 
                             if (currentTargetIndex >= 0
                                 && currentTargetIndex
@@ -498,13 +491,7 @@ public:
 
                                 if (staleOnset)
                                 {
-                                    DBG("IGNORED STALE ONSET"
-                                        << " target=" << currentTargetIndex
-                                        << " onsetSample=" << detectedOnsetSample
-                                        << " targetSample=" << targetSampleForGuard
-                                        << " earlyByMs="
-                                        << ((targetSampleForGuard - detectedOnsetSample)
-                                            * 1000.0 / sampleRate));
+
                                 }
                                 else
                                 {
@@ -527,17 +514,6 @@ public:
                                             owner.pitchAnalysisBuffer.getNumSamples(),
                                             sampleRate,
                                             6);
-
-                                        DBG("CHORD CHECK: target notes=" << chordCount
-                                            << " detected notes=" << static_cast<int>(chordDetectedNotes.size()));
-                                        juce::String detectedChordText = "CHORD: ";
-                                        for (size_t detectedIndex = 0; detectedIndex < chordDetectedNotes.size(); ++detectedIndex)
-                                        {
-                                            if (detectedIndex > 0)
-                                                detectedChordText += ", ";
-                                            detectedChordText += juce::String(chordDetectedNotes[detectedIndex]);
-                                        }
-                                        DBG(detectedChordText);
 
                                         const auto chordTargetSample = owner.getTargetSample(currentTargetIndex, sampleRate);
                                         const double chordTimingErrorMs =
@@ -562,13 +538,14 @@ public:
                                                     owner.difficulty, owner.speedPercent);
                                                 const int newScore = owner.gameplayStats.recordHit(
                                                     evaluation.scoringResult.score, evaluation.scoringResult.note.quality);
+                                                owner.gameplayStats.recordTiming(chordTimingErrorMs);
                                                 owner.gameSession.setLastHitSample(detectedOnsetSample);
                                                 juce::MessageManager::callAsync([this, newScore]
                                                 {
                                                     owner.gameSessionLabel.setText(juce::String(newScore), juce::dontSendNotification);
                                                     owner.showHitFeedback("CHORD NOTE HIT", 2);
                                                 });
-                                                DBG("CHORD TONE HIT midi=" << targetMidi << " score=" << evaluation.scoringResult.score);
+
                                             }
                                             else
                                             {
@@ -577,9 +554,7 @@ public:
                                                 {
                                                     owner.showHitFeedback("PARTIAL CHORD", 4);
                                                 });
-                                                DBG("CHORD TONE MISS midi=" << targetMidi
-                                                    << " detected=" << (noteWasDetected ? "YES" : "NO")
-                                                    << " timingOK=" << (chordInsideTimingWindow ? "YES" : "NO"));
+
                                             }
 
                                             owner.gameSession.setTargetHit(true);
@@ -640,44 +615,28 @@ public:
                                     const bool insideTimingWindow =
                                         noteEvaluation.insideTimingWindow;
 
-                                    DBG("========== NOTE CHECK ==========");
-                                    DBG("TARGET INDEX = "
-                                        << currentTargetIndex);
 
-                                    DBG("TARGET MIDI = "
-                                        << targetMidi);
 
-                                    DBG("DETECTED MIDI = "
-                                        << detectedMidi);
 
-                                    DBG("PITCH = "
-                                        << juce::String(pitch, 2)
-                                        << " Hz");
 
-                                    DBG("TARGET SAMPLE = "
-                                        << juce::String(
-                                            static_cast<double>(targetStartSample)));
 
-                                    DBG("HIT SAMPLE = "
-                                        << juce::String(
-                                            static_cast<double>(hitSample)));
 
-                                    DBG("TIMING ERROR = "
-                                        << juce::String(timingErrorMs, 2)
-                                        << " ms");
 
-                                    DBG("CORRECT PITCH = "
-                                        << (correctPitch ? "YES" : "NO"));
 
-                                    DBG("INSIDE TIMING WINDOW = "
-                                        << (insideTimingWindow ? "YES" : "NO"));
 
-                                    DBG("RESULT = "
-                                        << ((correctPitch && insideTimingWindow)
-                                            ? "HIT"
-                                            : "MISS"));
 
-                                    DBG("================================");
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
@@ -724,6 +683,9 @@ public:
                                                 owner.gameplayStats.recordHit(
                                                     scoreToAdd,
                                                     scoringResult.note.quality);
+
+                                            owner.gameplayStats.recordTiming(
+                                                timingErrorMs);
 
                                             //==============================================
                                             // Successful hit state

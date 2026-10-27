@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <cmath>
 #include "ScoringSystem.h"
 
 // Runtime counters for one gameplay session. Thread-safe because note detection
@@ -19,6 +20,22 @@ public:
         combo.store(0, std::memory_order_relaxed);
         maxCombo.store(0, std::memory_order_relaxed);
         comboBonusPoints.store(0, std::memory_order_relaxed);
+        timingAbsMicros.store(0, std::memory_order_relaxed);
+        timingSamples.store(0, std::memory_order_relaxed);
+    }
+
+    // Absolute timing error of a successfully played note (milliseconds).
+    // The server uses the average as the player's timing metric.
+    void recordTiming(double timingErrorMs)
+    {
+        if (! std::isfinite(timingErrorMs))
+            return;
+
+        const auto micros = static_cast<juce::int64>(
+            std::llround(std::abs(timingErrorMs) * 1000.0));
+
+        timingAbsMicros.fetch_add(micros, std::memory_order_relaxed);
+        timingSamples.fetch_add(1, std::memory_order_relaxed);
     }
 
     int recordHit(int points, HitQuality quality)
@@ -64,6 +81,20 @@ public:
     int getMaxCombo() const { return maxCombo.load(std::memory_order_relaxed); }
     int getComboBonusPoints() const { return comboBonusPoints.load(std::memory_order_relaxed); }
 
+    // Average absolute timing error in milliseconds, or -1 when no timing
+    // samples were recorded.
+    double getAverageTimingErrorMs() const
+    {
+        const auto samples = timingSamples.load(std::memory_order_relaxed);
+
+        if (samples <= 0)
+            return -1.0;
+
+        const auto micros = timingAbsMicros.load(std::memory_order_relaxed);
+        return (static_cast<double>(micros) / 1000.0)
+            / static_cast<double>(samples);
+    }
+
 private:
     std::atomic<int> score{ 0 };
     std::atomic<int> hitCount{ 0 };
@@ -74,4 +105,6 @@ private:
     std::atomic<int> combo{ 0 };
     std::atomic<int> maxCombo{ 0 };
     std::atomic<int> comboBonusPoints{ 0 };
+    std::atomic<juce::int64> timingAbsMicros{ 0 };
+    std::atomic<int> timingSamples{ 0 };
 };

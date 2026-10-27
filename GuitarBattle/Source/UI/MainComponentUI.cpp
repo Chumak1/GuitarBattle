@@ -1263,6 +1263,39 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                          UiColors::green,
                          false);
 
+        // Progression earned by this attempt (server-authoritative).
+        if (lastProgressionValid && card.getHeight() > 640.0f)
+        {
+            GameUi::drawPill(g,
+                             juce::Rectangle<float>(card.getX() + 32.0f,
+                                                    card.getY() + 590.0f,
+                                                    250.0f, 30.0f),
+                             "LEVEL " + juce::String(lastLevel)
+                                 + "   +" + juce::String(lastXpEarned) + " XP",
+                             UiColors::accent,
+                             true);
+            GameUi::drawPill(g,
+                             juce::Rectangle<float>(card.getX() + 294.0f,
+                                                    card.getY() + 590.0f,
+                                                    270.0f, 30.0f),
+                             juce::String(lastXpForNext) + " XP TO NEXT LEVEL",
+                             UiColors::surface2,
+                             false);
+
+            if (lastAchievementsText.isNotEmpty())
+            {
+                g.setColour(UiColors::green);
+                g.setFont(GameUi::font(11.0f, true));
+                g.drawFittedText("ACHIEVEMENT  " + lastAchievementsText,
+                                 juce::Rectangle<int>(
+                                     static_cast<int>(card.getX() + 32.0f),
+                                     static_cast<int>(card.getY() + 630.0f),
+                                     static_cast<int>(card.getWidth() - 64.0f),
+                                     20),
+                                 juce::Justification::centredLeft, 1);
+            }
+        }
+
         if (card.getHeight() > 720.0f)
         {
             const int perfect = gameplayStats.getPerfectCount();
@@ -2633,13 +2666,17 @@ public:
                    juce::Justification::centredLeft, true);
 
         // Rating summary cards.
-        const juce::String statLabels[] = { "RATING", "RANK", "SONGS", "ATTEMPTS" };
-        const juce::String statValues[] = { ratingValue, rankValue, songsValue, attemptsValue };
+        const juce::String statLabels[] = { "RATING", "RANK", "SONGS", "ATTEMPTS",
+                                            "LEVEL", "XP", "ACCURACY", "TIMING" };
+        const juce::String statValues[] = { ratingValue, rankValue, songsValue, attemptsValue,
+                                            levelValue, xpValue, accuracyValue, timingValue };
         const juce::String statNotes[] = { "best result per song", rankNote,
-                                           "songs with an attempt", "total attempts" };
+                                           "songs with an attempt", "total attempts",
+                                           xpNote, "total experience",
+                                           "last 100 attempts", "avg timing error" };
 
-        const int statWidth = (statsArea.getWidth() - 3 * 12) / 4;
-        for (int i = 0; i < 4; ++i)
+        const int statWidth = (statsArea.getWidth() - 7 * 12) / 8;
+        for (int i = 0; i < 8; ++i)
         {
             const juce::Rectangle<int> card(statsArea.getX() + i * (statWidth + 12),
                                             statsArea.getY(),
@@ -3172,6 +3209,60 @@ private:
         loadSummary();
         loadRating();
         loadHistory(true);
+        loadProgression();
+    }
+
+    // Server-authoritative progression: level, total XP and the last-100
+    // attempt statistics shown in the summary cards.
+    void loadProgression()
+    {
+        const int requestId = ++progressionRequestId;
+        juce::Component::SafePointer<AccountWindow> safeThis(this);
+
+        api.getJson("/profile/progression", token, 5000,
+            [safeThis, requestId](ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+
+                if (self == nullptr || requestId != self->progressionRequestId)
+                    return;
+
+                if (! response.transportOk
+                    || response.json.getProperty("xp_total", juce::var()).isVoid())
+                    return;
+
+                const auto& json = response.json;
+                const int level =
+                    static_cast<int>(json.getProperty("level", 1));
+                const int xpTotal =
+                    static_cast<int>(json.getProperty("xp_total", 0));
+                const int xpForNext =
+                    static_cast<int>(json.getProperty("xp_for_next", 0));
+
+                self->levelValue = juce::String(level);
+                self->xpValue = juce::String(xpTotal);
+                self->xpNote = juce::String(xpForNext) + " to level "
+                    + juce::String(level + 1);
+
+                const auto stats = json.getProperty("stats", juce::var());
+                const auto accuracy = stats.getProperty("accuracy", juce::var());
+
+                if (! accuracy.isVoid())
+                    self->accuracyValue =
+                        juce::String(juce::roundToInt(
+                            static_cast<double>(accuracy))) + "%";
+
+                const auto timing = stats.getProperty("timing", juce::var());
+
+                if (timing.isVoid())
+                    self->timingValue = "n/a";
+                else
+                    self->timingValue =
+                        juce::String(juce::roundToInt(
+                            static_cast<double>(timing))) + "%";
+
+                self->repaint();
+            });
     }
 
     void loadMe()
@@ -3715,6 +3806,12 @@ private:
     juce::String rankNote = "not in the top 50";
     juce::String songsValue = "-";
     juce::String attemptsValue = "-";
+    juce::String levelValue = "-";
+    juce::String xpValue = "-";
+    juce::String xpNote = "total experience";
+    juce::String accuracyValue = "-";
+    juce::String timingValue = "-";
+    int progressionRequestId = 0;
 
     std::vector<RatingRow> ratingRows;
     std::vector<HistoryRow> historyRows;

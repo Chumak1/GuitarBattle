@@ -240,6 +240,10 @@ void MainComponent::beginGameplayCountIn()
     if (gameState != GameState::Ready)
         return;
 
+    // A new run invalidates the progression summary of the previous one.
+    lastProgressionValid = false;
+    lastAchievementsText.clear();
+
     // The launch is counted and the server session is opened only now: the
     // Ready screen itself is not gameplay.
     startOnlineGameSession();

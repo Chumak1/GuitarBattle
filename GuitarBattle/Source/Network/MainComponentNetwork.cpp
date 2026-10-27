@@ -574,6 +574,20 @@ void MainComponent::submitOnlineGameResult()
     const int misses = gameplayStats.getMissCount();
     const int total = hits + misses;
     const double accuracy = total > 0 ? 100.0 * static_cast<double>(hits) / total : 0.0;
+
+    // Completion is measured against the actual number of target notes in the
+    // MIDI chart, not against the score. On a natural finish this is ~100%;
+    // the server still clamps it and rejects attempts below 50%.
+    const int notesTotal = static_cast<int>(gameSession.getMidiNotes().size());
+    const int notesPlayed = notesTotal > 0
+        ? juce::jmin(notesTotal, total)
+        : total;
+    const double completion = notesTotal > 0
+        ? juce::jlimit(0.0, 100.0,
+                       100.0 * static_cast<double>(notesPlayed)
+                           / static_cast<double>(notesTotal))
+        : 100.0;
+
     juce::DynamicObject::Ptr payload = new juce::DynamicObject();
     payload->setProperty("score_points", juce::jmax(0, gameplayStats.getScore()));
     payload->setProperty("accuracy_percent", juce::jlimit(0.0, 100.0, accuracy));
@@ -581,6 +595,14 @@ void MainComponent::submitOnlineGameResult()
     payload->setProperty("perfect_count", juce::jmax(0, gameplayStats.getPerfectCount()));
     payload->setProperty("good_count", juce::jmax(0, gameplayStats.getGreatCount() + gameplayStats.getGoodCount()));
     payload->setProperty("miss_count", juce::jmax(0, misses));
+    payload->setProperty("completion_percent", completion);
+    payload->setProperty("notes_total", juce::jmax(0, notesTotal));
+    payload->setProperty("notes_played", juce::jmax(0, notesPlayed));
+
+    const double averageTiming = gameplayStats.getAverageTimingErrorMs();
+
+    if (averageTiming >= 0.0)
+        payload->setProperty("avg_timing_error_ms", averageTiming);
 
     const auto sessionUuid = onlineGameSessionUuid;
     onlineGameSessionUuid.clear();
@@ -607,6 +629,42 @@ void MainComponent::submitOnlineGameResult()
             {
                 self->accountStatusLabel.setText("Online score submitted. Refreshing global rating...",
                                                  juce::dontSendNotification);
+
+                // Progression returned by the server: XP, level and any
+                // achievements unlocked by this attempt.
+                const auto& json = response.json;
+
+                if (json.hasProperty("xp_earned"))
+                {
+                    self->lastProgressionValid = true;
+                    self->lastXpEarned =
+                        static_cast<int>(json.getProperty("xp_earned", 0));
+                    self->lastXpTotal =
+                        static_cast<int>(json.getProperty("xp_total", 0));
+                    self->lastLevel =
+                        static_cast<int>(json.getProperty("level", 1));
+                    self->lastXpForNext =
+                        static_cast<int>(json.getProperty("xp_for_next", 0));
+
+                    juce::String achievements;
+
+                    if (auto* awarded = json.getProperty("achievements_awarded", juce::var())
+                                            .getArray())
+                    {
+                        for (const auto& item : *awarded)
+                        {
+                            const auto title =
+                                item.getProperty("title", juce::var()).toString();
+
+                            if (title.isNotEmpty())
+                                achievements << (achievements.isEmpty() ? "" : "  ·  ")
+                                             << title;
+                        }
+                    }
+
+                    self->lastAchievementsText = achievements;
+                }
+
                 self->refreshGlobalLeaderboard();
                 // Pick up the new personal best for this song right away.
                 self->refreshOnlineBestScores();

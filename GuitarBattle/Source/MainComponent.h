@@ -182,6 +182,13 @@ private:
     // block the message thread or touch the audio thread.
     juce::String telemetryClientSessionId;
     int telemetryTickCounter = 0;
+    // Progression data returned by the last successful score submission.
+    bool lastProgressionValid = false;
+    int lastXpEarned = 0;
+    int lastXpTotal = 0;
+    int lastLevel = 0;
+    int lastXpForNext = 0;
+    juce::String lastAchievementsText;
     void sendActivityHeartbeat(bool finalEvent);
     void sendGameLaunchTelemetry();
     // All server communication is asynchronous: requests run on this client's
