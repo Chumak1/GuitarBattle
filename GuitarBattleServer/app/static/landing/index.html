@@ -236,13 +236,6 @@
     .hero .wrap {
       position: relative;
       z-index: 2;
-      display: grid;
-      gap: clamp(30px, 5vw, 56px);
-      align-items: center;
-    }
-
-    @media (min-width: 900px) {
-      .hero .wrap { grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr); }
     }
 
     .kicker {
@@ -333,36 +326,6 @@
       border-color: rgba(243, 196, 81, 0.42);
       color: var(--gold);
       transform: translateY(-1px);
-    }
-
-    .hero-visual {
-      position: relative;
-      display: grid;
-      place-items: center;
-      min-height: 300px;
-    }
-
-    .hero-visual::after {
-      content: "";
-      position: absolute;
-      width: min(74%, 420px);
-      aspect-ratio: 1;
-      border-radius: 50%;
-      background: radial-gradient(circle, rgba(243, 196, 81, 0.16), transparent 68%);
-      filter: blur(10px);
-      pointer-events: none;
-    }
-
-    .guitar {
-      position: relative;
-      z-index: 1;
-      width: min(58vh, 330px);
-      height: auto;
-      transform: rotate(-14deg);
-      opacity: 0.86;
-      filter: saturate(0.85) contrast(1.03) drop-shadow(0 30px 60px rgba(0, 0, 0, 0.55));
-      pointer-events: none;
-      user-select: none;
     }
 
     /* ---------- facts strip ---------- */
@@ -665,11 +628,6 @@
       .header-login { margin-left: auto; }
     }
 
-    @media (max-width: 720px) {
-      .hero-visual { order: -1; min-height: 220px; }
-      .guitar { width: min(44vh, 240px); }
-    }
-
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
       * { transition: none !important; animation: none !important; }
@@ -716,125 +674,6 @@
           <a class="btn btn-primary" href="/register" data-i18n="landing.cta">Создать аккаунт</a>
           <a class="btn btn-ghost" href="#how" data-i18n="landing.how">Как это работает</a>
         </div>
-      </div>
-
-      <div class="hero-visual" aria-hidden="true">
-        <svg class="guitar" viewBox="0 0 800 1200" xmlns="http://www.w3.org/2000/svg" focusable="false">
-          <defs>
-            <linearGradient id="bodyFill" x1="0.1" y1="0" x2="0.9" y2="1">
-              <stop offset="0" stop-color="#203040"/>
-              <stop offset="0.48" stop-color="#101821"/>
-              <stop offset="1" stop-color="#05080c"/>
-            </linearGradient>
-            <linearGradient id="goldFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0" stop-color="#ffe7a6"/>
-              <stop offset="0.46" stop-color="#f3c451"/>
-              <stop offset="1" stop-color="#a97012"/>
-            </linearGradient>
-            <linearGradient id="fretboard" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0" stop-color="#0b1119"/>
-              <stop offset="0.5" stop-color="#182432"/>
-              <stop offset="1" stop-color="#0b1119"/>
-            </linearGradient>
-            <filter id="softBlur" x="-25%" y="-25%" width="150%" height="150%">
-              <feGaussianBlur stdDeviation="6"/>
-            </filter>
-          </defs>
-
-          <g filter="url(#softBlur)">
-            <path d="M366 690 L382 188 L418 188 L434 690 Z" fill="url(#fretboard)" stroke="url(#goldFill)" stroke-width="5"/>
-            <path d="M374 680 L388 202 L412 202 L426 680 Z" fill="#0a1017" opacity="0.9"/>
-
-            <g stroke="#8d9cab" stroke-opacity="0.30" stroke-width="2">
-              <line x1="383" y1="238" x2="417" y2="238"/>
-              <line x1="382" y1="280" x2="418" y2="280"/>
-              <line x1="381" y1="322" x2="419" y2="322"/>
-              <line x1="380" y1="364" x2="420" y2="364"/>
-              <line x1="378" y1="406" x2="422" y2="406"/>
-              <line x1="377" y1="448" x2="423" y2="448"/>
-              <line x1="376" y1="490" x2="424" y2="490"/>
-              <line x1="375" y1="532" x2="425" y2="532"/>
-              <line x1="373" y1="574" x2="427" y2="574"/>
-              <line x1="372" y1="616" x2="428" y2="616"/>
-              <line x1="371" y1="658" x2="429" y2="658"/>
-            </g>
-
-            <g stroke="#e9eff6" stroke-opacity="0.36" stroke-linecap="round">
-              <line x1="375" y1="1005" x2="382" y2="198" stroke-width="1.4"/>
-              <line x1="385" y1="1005" x2="389" y2="198" stroke-width="1.5"/>
-              <line x1="395" y1="1005" x2="396" y2="198" stroke-width="1.7"/>
-              <line x1="405" y1="1005" x2="403" y2="198" stroke-width="1.9"/>
-              <line x1="415" y1="1005" x2="410" y2="198" stroke-width="2.1"/>
-              <line x1="425" y1="1005" x2="417" y2="198" stroke-width="2.3"/>
-            </g>
-
-            <path d="M373 188 L353 94 C350 76 361 65 381 65 L419 65 C439 65 450 76 447 94 L427 188 Z"
-                  fill="url(#bodyFill)" stroke="url(#goldFill)" stroke-width="6"/>
-            <line x1="374" y1="190" x2="426" y2="190" stroke="url(#goldFill)" stroke-width="7"/>
-
-            <g fill="url(#goldFill)">
-              <rect x="327" y="84" width="28" height="11" rx="5.5"/>
-              <rect x="327" y="116" width="28" height="11" rx="5.5"/>
-              <rect x="327" y="148" width="28" height="11" rx="5.5"/>
-              <rect x="445" y="84" width="28" height="11" rx="5.5"/>
-              <rect x="445" y="116" width="28" height="11" rx="5.5"/>
-              <rect x="445" y="148" width="28" height="11" rx="5.5"/>
-              <circle cx="356" cy="89" r="5"/><circle cx="356" cy="121" r="5"/><circle cx="356" cy="153" r="5"/>
-              <circle cx="444" cy="89" r="5"/><circle cx="444" cy="121" r="5"/><circle cx="444" cy="153" r="5"/>
-            </g>
-
-            <path d="M400 655
-                     C 360 655 326 675 311 715
-                     C 297 752 306 782 287 812
-                     C 261 854 236 876 236 941
-                     C 236 1021 306 1086 400 1086
-                     C 494 1086 564 1021 564 941
-                     C 564 876 539 854 513 812
-                     C 494 782 503 752 489 715
-                     C 474 675 440 655 400 655 Z"
-                  fill="url(#bodyFill)" stroke="url(#goldFill)" stroke-width="9"/>
-
-            <path d="M400 695
-                     C 367 695 341 712 329 744
-                     C 317 776 326 807 309 835
-                     C 288 871 266 892 267 947
-                     C 268 1012 323 1057 400 1057
-                     C 477 1057 532 1012 533 947
-                     C 534 892 512 871 491 835
-                     C 474 807 483 776 471 744
-                     C 459 712 433 695 400 695 Z"
-                  fill="#081017" opacity="0.38"/>
-
-            <path d="M347 760
-                     C 327 804 337 866 368 906
-                     C 388 933 391 963 400 985
-                     C 421 982 449 954 464 914
-                     C 481 869 472 802 452 760 Z"
-                  fill="#060a0f" fill-opacity="0.78"
-                  stroke="#f3c451" stroke-opacity="0.24" stroke-width="3"/>
-
-            <g>
-              <rect x="345" y="831" width="110" height="29" rx="8" fill="#0a1017" stroke="url(#goldFill)" stroke-width="3"/>
-              <rect x="345" y="905" width="110" height="29" rx="8" fill="#0a1017" stroke="url(#goldFill)" stroke-width="3"/>
-              <g fill="#f3c451" opacity="0.72">
-                <circle cx="363" cy="845" r="2.4"/><circle cx="380" cy="845" r="2.4"/>
-                <circle cx="397" cy="845" r="2.4"/><circle cx="414" cy="845" r="2.4"/>
-                <circle cx="431" cy="845" r="2.4"/><circle cx="448" cy="845" r="2.4"/>
-                <circle cx="363" cy="919" r="2.4"/><circle cx="380" cy="919" r="2.4"/>
-                <circle cx="397" cy="919" r="2.4"/><circle cx="414" cy="919" r="2.4"/>
-                <circle cx="431" cy="919" r="2.4"/><circle cx="448" cy="919" r="2.4"/>
-              </g>
-            </g>
-
-            <rect x="352" y="974" width="96" height="24" rx="7" fill="url(#goldFill)" opacity="0.86"/>
-            <g fill="#0b1119" stroke="url(#goldFill)" stroke-width="3">
-              <circle cx="488" cy="986" r="15"/>
-              <circle cx="488" cy="1024" r="15"/>
-            </g>
-            <circle cx="488" cy="986" r="4" fill="#f3c451"/>
-            <circle cx="488" cy="1024" r="4" fill="#f3c451"/>
-          </g>
-        </svg>
       </div>
     </div>
   </section>
