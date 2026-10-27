@@ -858,27 +858,19 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             : juce::String("SERVER CATALOG");
         const double headerBpm = headerSong != nullptr ? headerSong->bpm : baseBpm;
 
-        g.setColour(UiColors::accent);
-        g.setFont(GameUi::eyebrow(10.0f));
-        g.drawText("CHOOSE YOUR NEXT CHALLENGE",
-                   juce::Rectangle<float>(art.getRight() + 20.0f,
-                                          leftCard.getY() + 22.0f,
-                                          leftW - 360.0f, 16.0f),
-                   juce::Justification::centredLeft, false);
-
         g.setColour(UiColors::muted);
         g.setFont(GameUi::font(10.0f, true));
         g.drawText(headerKind + "  /  " + juce::String(juce::roundToInt(headerBpm)) + " BPM",
                    juce::Rectangle<float>(art.getRight() + 20.0f,
-                                          leftCard.getY() + 42.0f,
+                                          leftCard.getY() + 26.0f,
                                           leftW - 360.0f, 16.0f),
                    juce::Justification::centredLeft, false);
         g.setColour(UiColors::text);
         g.setFont(GameUi::heading(30.0f));
         g.drawText(headerTitle,
                    juce::Rectangle<float>(art.getRight() + 20.0f,
-                                          leftCard.getY() + 58.0f,
-                                          leftW - 360.0f, 40.0f),
+                                          leftCard.getY() + 42.0f,
+                                          leftW - 360.0f, 44.0f),
                    juce::Justification::centredLeft, true);
 
         GameUi::drawDivider(g, leftCard.getX() + 24.0f,
@@ -1519,17 +1511,6 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     GameUi::drawCard(g, statsCard, 16.0f);
     GameUi::drawCard(g, targetCard, 16.0f);
 
-    // Practice runs are not scored: say it where the score normally lives.
-    if (practiceActive.load(std::memory_order_relaxed))
-    {
-        GameUi::drawPill(g,
-                         juce::Rectangle<float>(statsCard.getRight() - 250.0f,
-                                                hudY + 12.0f, 238.0f, 26.0f),
-                         "PRACTICE - NO SCORE",
-                         UiColors::accent,
-                         true);
-    }
-
     GameUi::drawEyebrow(g, "COMBO",
                         juce::Rectangle<float>(comboCard.getX() + 14.0f,
                                                comboCard.getY() + 14.0f,
@@ -1549,13 +1530,35 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                                       targetW - 30.0f, 15.0f),
                juce::Justification::centredLeft, false);
 
-    GameUi::drawEyebrow(g, "LIVE PERFORMANCE",
-                        juce::Rectangle<float>(statsCard.getX() + 18.0f,
-                                               statsCard.getY() + 9.0f,
-                                               statsCard.getWidth() - 36.0f, 14.0f),
-                        UiColors::accent);
-
+    if (practiceActive.load(std::memory_order_relaxed))
     {
+        // The live judgement strip is meaningless in a training run, so the
+        // card states the mode instead of showing scores that stay at zero.
+        GameUi::drawPill(g,
+                         juce::Rectangle<float>(statsCard.getX() + 16.0f,
+                                                statsCard.getY() + 12.0f,
+                                                104.0f, 24.0f),
+                         "PRACTICE",
+                         UiColors::accent,
+                         true);
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(11.0f, true));
+        g.drawFittedText("NO SCORE - PLAY THE HIGHLIGHTED NOTE",
+                         juce::Rectangle<int>(
+                             static_cast<int>(statsCard.getX() + 132.0f),
+                             static_cast<int>(statsCard.getY() + 14.0f),
+                             static_cast<int>(statsCard.getWidth() - 150.0f),
+                             22),
+                         juce::Justification::centredLeft, 1);
+    }
+    else
+    {
+        GameUi::drawEyebrow(g, "LIVE PERFORMANCE",
+                            juce::Rectangle<float>(statsCard.getX() + 18.0f,
+                                                   statsCard.getY() + 9.0f,
+                                                   statsCard.getWidth() - 36.0f, 14.0f),
+                            UiColors::accent);
+
         const float cellWidth = statsCard.getWidth() / 4.0f;
         const std::array<juce::String, 4> values
         {
@@ -1962,8 +1965,10 @@ void MainComponent::resized()
     // compact in the gameplay HUD.
     if (inputMonitor != nullptr)
     {
-        inputMonitor->setVisible(songSelect || tunerScreen || showGame || readyScreen);
-        inputMonitor->setCompact(showGame || readyScreen);
+        // Guitar Input lives on the song screen and in the tuner only; the
+        // gameplay HUD keeps its full width for the tablature and stats.
+        inputMonitor->setVisible(songSelect || tunerScreen);
+        inputMonitor->setCompact(false);
     }
 
     pitchLabel.setVisible(showGame);
@@ -2081,8 +2086,10 @@ void MainComponent::resized()
         const int rightX = 48 + leftW + gap;
         const int rightW = contentW - leftW - gap;
 
-        songPridumayBestLabel.setBounds(48 + 24 + 138, contentY + 78,
-                                        leftW - 24 - 138 - 24, 20);
+        // Best score sits under the title block, clear of the preview and mode
+        // buttons on the right, so a long song title can never cover it.
+        songPridumayBestLabel.setBounds(48 + 24 + 138, contentY + 108,
+                                        leftW - 360, 20);
 
         const int buttonY = contentY + contentH - 64;
         const int available = leftW - 48;
@@ -2213,14 +2220,6 @@ void MainComponent::resized()
         // The modal overlay paints the card above regular controls; keep the
         // button on top so it is both visible and clickable.
         readyStartButton.toFront(false);
-
-        if (inputMonitor != nullptr)
-        {
-            const int readyStatsW =
-                juce::jmax(180, width - 24 - 190 - 12 - 386);
-            inputMonitor->setBounds(386, hudY + 6,
-                                    juce::jmin(520, readyStatsW), 86);
-        }
     }
 
     // Pause card: a real RESUME button above the score summary.
@@ -2300,12 +2299,7 @@ void MainComponent::resized()
         const int targetX = width - 24 - targetW;
         const int statsX = pitchX + pitchW + hudGap;
         const int statsW = juce::jmax(180, targetX - hudGap - statsX);
-
-        // Compact input monitor fills the free HUD slot between the detected
-        // pitch and the target note.
-        if (inputMonitor != nullptr)
-            inputMonitor->setBounds(statsX, hudY + 6,
-                                    juce::jmin(520, statsW), 86);
+        juce::ignoreUnused(statsW);
         juce::ignoreUnused(statsW);
 
         comboLabel.setBounds(comboX + 8, hudY + 32, comboW - 16, 46);
@@ -2820,6 +2814,50 @@ namespace AccountWindowDetail
                          primary ? UiColors::onAccent : UiColors::text);
         button.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     }
+
+    // Achievement artwork arrives as full-colour artwork from the server. The
+    // client renders it in the single FretFight gold so every achievement badge
+    // matches the accent colour, while the source luminance keeps the glyph
+    // readable. Locked cards draw the same image at a lower opacity.
+    juce::Image tintAchievementIcon(const juce::Image& source)
+    {
+        if (! source.isValid() || source.getWidth() <= 0 || source.getHeight() <= 0)
+            return source;
+
+        juce::Image result(juce::Image::ARGB, source.getWidth(),
+                           source.getHeight(), true);
+        juce::Image::BitmapData src(source, juce::Image::BitmapData::readOnly);
+        juce::Image::BitmapData dst(result, juce::Image::BitmapData::writeOnly);
+
+        const auto gold = UiColors::accent;
+
+        for (int y = 0; y < source.getHeight(); ++y)
+        {
+            for (int x = 0; x < source.getWidth(); ++x)
+            {
+                const auto pixel = src.getPixelColour(x, y);
+                const float alpha = pixel.getFloatAlpha();
+
+                if (alpha <= 0.002f)
+                {
+                    dst.setPixelColour(x, y, juce::Colours::transparentBlack);
+                    continue;
+                }
+
+                const float shade = juce::jlimit(
+                    0.55f, 1.0f, 0.72f + 0.45f * pixel.getBrightness());
+
+                dst.setPixelColour(x, y,
+                                   juce::Colour::fromHSV(gold.getHue(),
+                                                         gold.getSaturation()
+                                                             * 0.92f,
+                                                         gold.getBrightness() * shade,
+                                                         alpha));
+            }
+        }
+
+        return result;
+    }
 }
 
 class AccountWindow final : public juce::Component
@@ -3181,12 +3219,16 @@ public:
 
                 if (iconIt != achievementIcons.end())
                 {
+                    // Unlocked badges are full gold, locked ones stay visible
+                    // but clearly dimmed.
+                    g.setOpacity(card.unlocked ? 1.0f : 0.42f);
                     g.drawImage(iconIt->second,
                                 juce::Rectangle<float>(static_cast<float>(iconX),
                                                        static_cast<float>(iconY),
                                                        static_cast<float>(iconSize),
                                                        static_cast<float>(iconSize)),
                                 juce::RectanglePlacement::centred);
+                    g.setOpacity(1.0f);
                 }
                 else
                 {
@@ -3792,7 +3834,8 @@ private:
                                     juce::RectanglePlacement::centred, 1.0f);
                             }
 
-                            window->achievementIcons[result.code] = image;
+                            window->achievementIcons[result.code] =
+                                AccountWindowDetail::tintAchievementIcon(image);
                         }
 
                         window->repaint();

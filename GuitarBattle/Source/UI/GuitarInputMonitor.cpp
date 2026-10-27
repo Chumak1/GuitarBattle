@@ -277,10 +277,25 @@ void GuitarInputMonitor::paint(juce::Graphics& g)
     const auto bounds = getLocalBounds().toFloat();
     const bool tight = tightLayout();
 
-    g.setColour(UiColors::surface.withAlpha(0.92f));
-    g.fillRoundedRectangle(bounds, 16.0f);
-    g.setColour(UiColors::border);
-    g.drawRoundedRectangle(bounds.reduced(0.5f), 16.0f, 1.0f);
+    // Stronger material than a plain card: a darker base, a warm rim and a
+    // soft inner highlight so the block reads as a live audio panel.
+    {
+        juce::ColourGradient fill(
+            UiColors::surface2, bounds.getX(), bounds.getY(),
+            UiColors::background.darker(0.25f), bounds.getX(), bounds.getBottom(),
+            false);
+        g.setGradientFill(fill);
+        g.fillRoundedRectangle(bounds, 16.0f);
+
+        g.setColour(juce::Colours::black.withAlpha(0.35f));
+        g.drawRoundedRectangle(bounds.reduced(0.5f), 16.0f, 1.0f);
+
+        g.setColour(UiColors::accent.withAlpha(0.30f));
+        g.drawRoundedRectangle(bounds.reduced(1.5f), 14.5f, 1.2f);
+
+        g.setColour(UiColors::accent.withAlpha(0.05f));
+        g.fillRoundedRectangle(bounds.reduced(1.0f).removeFromTop(26.0f), 14.0f);
+    }
 
     const float rmsDb = linearToDb(rmsShown);
     const float peakDb = linearToDb(peakShown);
@@ -328,24 +343,30 @@ void GuitarInputMonitor::paint(juce::Graphics& g)
         g.drawText(statusText, headerArea, juce::Justification::centredRight, false);
     }
 
-    // Meter: fixed dB scale with green/yellow/red zones and a peak-hold marker.
+    // Meter: fixed dB scale with saturated green/yellow/red zones, a bright
+    // level bar and a peak-hold marker.
     if (meterArea.getWidth() > 40 && meterArea.getHeight() > 4)
     {
         const auto bar = meterArea.toFloat();
+        const auto meterGreen = juce::Colour::fromString("FF2ED47A");
+        const auto meterYellow = juce::Colour::fromString("FFF6C21B");
+        const auto meterRed = juce::Colour::fromString("FFF04B4B");
 
-        g.setColour(UiColors::border);
+        // Recessed track with an inner shadow.
+        g.setColour(juce::Colours::black.withAlpha(0.55f));
         g.fillRoundedRectangle(bar, bar.getHeight() * 0.5f);
 
         const float yellowX = bar.getX() + bar.getWidth() * dbToNormalised(yellowDb);
         const float redX = bar.getX() + bar.getWidth() * dbToNormalised(redDb);
 
-        g.setColour(UiColors::green.withAlpha(0.22f));
+        // Zone backdrops stay visible at silence so the scale is readable.
+        g.setColour(meterGreen.withAlpha(0.34f));
         g.fillRect(juce::Rectangle<float>(bar.getX(), bar.getY(),
                                           yellowX - bar.getX(), bar.getHeight()));
-        g.setColour(UiColors::orange.withAlpha(0.24f));
+        g.setColour(meterYellow.withAlpha(0.38f));
         g.fillRect(juce::Rectangle<float>(yellowX, bar.getY(),
                                           redX - yellowX, bar.getHeight()));
-        g.setColour(UiColors::red.withAlpha(0.26f));
+        g.setColour(meterRed.withAlpha(0.40f));
         g.fillRect(juce::Rectangle<float>(redX, bar.getY(),
                                           bar.getRight() - redX, bar.getHeight()));
 
@@ -355,19 +376,24 @@ void GuitarInputMonitor::paint(juce::Graphics& g)
         if (levelW > 1.0f)
         {
             juce::ColourGradient gradient(
-                UiColors::green, bar.getX(), bar.getY(),
-                UiColors::red, bar.getRight(), bar.getY(), false);
-            gradient.addColour(0.70, UiColors::green);
+                meterGreen, bar.getX(), bar.getY(),
+                meterRed, bar.getRight(), bar.getY(), false);
+            gradient.addColour(0.70, meterGreen);
             gradient.addColour(juce::jlimit(0.71, 0.99,
                                             static_cast<double>(dbToNormalised(yellowDb))),
-                               UiColors::orange);
+                               meterYellow);
 
             g.setGradientFill(gradient);
             g.fillRoundedRectangle(bar.withWidth(levelW), bar.getHeight() * 0.5f);
+
+            g.setColour(juce::Colours::white.withAlpha(0.16f));
+            g.fillRoundedRectangle(bar.withWidth(levelW).withHeight(
+                                       juce::jmax(2.0f, bar.getHeight() * 0.34f)),
+                                   bar.getHeight() * 0.17f);
         }
 
         // Zone boundaries.
-        g.setColour(UiColors::background.withAlpha(0.45f));
+        g.setColour(juce::Colours::black.withAlpha(0.55f));
         g.drawVerticalLine(juce::roundToInt(yellowX), bar.getY(), bar.getBottom());
         g.drawVerticalLine(juce::roundToInt(redX), bar.getY(), bar.getBottom());
 
@@ -375,12 +401,16 @@ void GuitarInputMonitor::paint(juce::Graphics& g)
         if (heldPeak > 0.00001f)
         {
             const float holdX = bar.getX() + bar.getWidth() * dbToNormalised(heldDb);
-            g.setColour(heldDb >= redDb ? UiColors::red
-                                        : (heldDb >= yellowDb ? UiColors::orange
-                                                              : UiColors::text));
+            g.setColour(heldDb >= redDb ? meterRed
+                                        : (heldDb >= yellowDb ? meterYellow
+                                                              : juce::Colours::white));
             g.fillRect(juce::Rectangle<float>(holdX - 1.5f, bar.getY(), 3.0f,
                                               bar.getHeight()));
         }
+
+        // Thin outline keeps the meter crisp on the darker panel.
+        g.setColour(UiColors::borderStrong);
+        g.drawRoundedRectangle(bar.reduced(0.5f), bar.getHeight() * 0.5f, 1.0f);
     }
 
     // Numbers row: RMS, held peak and the detected note.
