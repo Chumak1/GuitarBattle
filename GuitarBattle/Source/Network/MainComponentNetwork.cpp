@@ -566,6 +566,25 @@ void MainComponent::startOnlineGameSession()
                 return;
             }
 
+            if (response.statusCode == 409)
+            {
+                const auto detail =
+                    response.json.getProperty("detail", juce::var()).toString();
+
+                if (detail.isNotEmpty())
+                {
+                    if (self->currentSessionIsDaily)
+                        self->dailyChallengeStatusLabel.setText(
+                            detail, juce::dontSendNotification);
+                    else
+                        self->accountStatusLabel.setText(
+                            detail, juce::dontSendNotification);
+                }
+
+                self->currentSessionIsDaily = false;
+                return;
+            }
+
             self->onlineGameSessionUuid = response.json.getProperty("id", juce::var()).toString();
 
             // The daily flag applies to exactly this session; a replay starts
@@ -1070,9 +1089,30 @@ void MainComponent::refreshDailyChallenge()
 
             if (self->dailyOfficialUsed)
             {
+                const auto result =
+                    json.getProperty("official_result", juce::var());
+
+                juce::String status = "Official attempt used.";
+
+                if (result.isObject())
+                {
+                    status << " Score "
+                           << static_cast<int>(result.getProperty("score_points", 0));
+
+                    const auto rank = result.getProperty("rank", juce::var());
+
+                    if (! rank.isVoid())
+                        status << "  ·  rank #" << static_cast<int>(rank);
+
+                    status << "  ·  replays are practice only.";
+                }
+                else
+                {
+                    status << " Replays are practice only.";
+                }
+
                 self->dailyChallengeStatusLabel.setText(
-                    "Official attempt used. Replays are practice only.",
-                    juce::dontSendNotification);
+                    status, juce::dontSendNotification);
             }
             else
             {

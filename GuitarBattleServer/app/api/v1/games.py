@@ -31,7 +31,8 @@ def _best_score_per_song_subquery():
 
     The global rating must not grow with every replay: only the best score a
     player has on a song contributes to the rating. Aggregating on read keeps
-    every historical attempt in the database untouched.
+    every historical attempt in the database untouched. Daily-challenge songs
+    are excluded so an official daily result never feeds the ordinary rating.
     """
     return (
         select(
@@ -41,7 +42,8 @@ def _best_score_per_song_subquery():
             func.max(Score.accuracy_percent).label("best_accuracy"),
         )
         .join(Score, Score.session_id == GameSession.id)
-        .where(GameSession.status == "finished")
+        .join(Song, Song.id == GameSession.song_id)
+        .where(GameSession.status == "finished", Song.daily_weekday.is_(None))
         .group_by(GameSession.user_id, GameSession.song_id)
         .subquery()
     )
@@ -56,12 +58,16 @@ def create_session(payload: GameSessionCreate, db: Session = Depends(get_db),
 
     mode = "normal"
     if payload.daily:
-        # The song of the day is fixed server-side; a daily session may only be
-        # created for it and only while the official attempt is still unused.
+        # The song of the day is fixed server-side by the weekday schedule; a
+        # daily session may only be created for it and only while the official
+        # attempt is still unused.
         today = progression.utc_today()
         challenge = progression.ensure_daily_challenge(db, today)
         if challenge is None:
-            raise HTTPException(status_code=404, detail="Daily challenge is not available")
+            raise HTTPException(
+                status_code=409,
+                detail="No published song is scheduled for today's daily challenge",
+            )
         if challenge.song_id != song.id:
             raise HTTPException(
                 status_code=409, detail="Song is not today's daily challenge"
@@ -125,7 +131,10 @@ def finish_session(session_id: UUID, payload: ScoreSubmit, db: Session = Depends
             started = started.replace(tzinfo=timezone.utc)
         daily_date = started.astimezone(timezone.utc).date()
         if progression.ensure_daily_challenge(db, daily_date) is None:
-            raise HTTPException(status_code=404, detail="Daily challenge is not available")
+            raise HTTPException(
+                status_code=409,
+                detail="No published song is scheduled for that daily challenge",
+            )
         if _official_daily_result(db, user.id, daily_date) is not None:
             raise HTTPException(
                 status_code=409, detail="Official daily attempt is already used"
@@ -239,7 +248,7 @@ def player_best_scores(db: Session = Depends(get_db),
         )
         .join(best_attempt, best_attempt.c.song_id == Song.id)
         .join(attempt_stats, attempt_stats.c.song_id == Song.id)
-        .where(Song.is_published.is_(True))
+        .where(Song.is_published.is_(True), Song.daily_weekday.is_(None))
         .order_by(best_attempt.c.best_score.desc(), Song.title.asc())
     ).all()
 
@@ -312,6 +321,7 @@ def global_leaderboard(limit: int = Query(default=10, ge=1, le=100),
         .where(
             User.is_active.is_(True),
             Song.is_published.is_(True),
+            Song.daily_weekday.is_(None),
         )
         .group_by(
             User.id,

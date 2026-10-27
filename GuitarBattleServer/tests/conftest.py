@@ -333,3 +333,16 @@ def second_published_song(db_client, admin_user) -> dict[str, Any]:
     )
     updated = helpers.publish_song(db_client, admin_user["headers"], song["id"])
     return {**song, **updated}
+
+
+@pytest.fixture()
+def today_daily_slot(db_client, admin_user, published_song) -> dict[str, Any]:
+    """Schedule ``published_song`` for today's UTC weekday (the daily song)."""
+    from app.services.progression import utc_today
+
+    return helpers.schedule_daily(
+        db_client,
+        admin_user["headers"],
+        utc_today().weekday(),
+        published_song["id"],
+    )

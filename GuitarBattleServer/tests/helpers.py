@@ -128,6 +128,25 @@ def publish_song(client, admin_headers: dict[str, str], song_id: str) -> dict[st
     return response.json()
 
 
+def schedule_daily(
+    client, admin_headers: dict[str, str], weekday: int, song_id: str | None
+) -> dict[str, Any]:
+    """Assign (or clear, with ``song_id=None``) one Daily Challenge weekday."""
+    response = client.put(
+        f"{API}/admin/daily/{weekday}",
+        json={"song_id": song_id},
+        headers=admin_headers,
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def daily_schedule(client, admin_headers: dict[str, str]) -> list[dict[str, Any]]:
+    response = client.get(f"{API}/admin/daily", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    return response.json()["items"]
+
+
 def build_midi_bytes(
     *,
     bpm: int = 120,

@@ -27,6 +27,7 @@ from app.schemas.admin_songs import (
     AdminSongStemsResponse,
     AdminSongUpdate,
 )
+from app.services.daily_slots import apply_song_weekday
 from app.services.song_assets import build_readiness, load_newest_files_by_song
 
 router = APIRouter(prefix="/admin/songs", tags=["admin: songs"])
@@ -96,6 +97,10 @@ def create_song(payload: AdminSongCreate, db: Session = Depends(get_db), _: User
     song = Song(**payload.model_dump(), is_published=False, version=1)
     db.add(song)
     try:
+        db.flush()
+        # ``daily_weekday`` is kept in sync with ``daily_slots`` in the same
+        # transaction, so the song is scheduled (or not) as soon as it exists.
+        apply_song_weekday(db, song)
         db.commit()
         db.refresh(song)
     except IntegrityError:
@@ -127,6 +132,10 @@ def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(g
         setattr(song, key, value)
     song.version += 1
     try:
+        if "daily_weekday" in changes:
+            # Setting the weekday schedules the song (moving it out of its old
+            # slot if needed); setting it to null removes it from every slot.
+            apply_song_weekday(db, song)
         db.commit()
         db.refresh(song)
     except IntegrityError:

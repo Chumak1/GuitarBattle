@@ -175,9 +175,12 @@ class DailyLeaderboardEntry(BaseModel):
 
 class DailyTodayResponse(BaseModel):
     date: date
-    song: DailySongInfo
-    rules_version: int
-    official_attempt_used: bool
+    #: 0 = Monday ... 6 = Sunday (UTC), the day the challenge belongs to.
+    weekday: int = 0
+    #: ``None`` when no published song is scheduled for this weekday.
+    song: DailySongInfo | None = None
+    rules_version: int = 1
+    official_attempt_used: bool = False
     official_result: DailyResultItem | None = None
     leaderboard_top: list[DailyLeaderboardEntry] = []
 
@@ -186,3 +189,29 @@ class DailyLeaderboardResponse(BaseModel):
     date: date
     items: list[DailyLeaderboardEntry]
     total: int = Field(default=0)
+
+
+class DailyHistoryItem(BaseModel):
+    """One official daily attempt of the signed-in player."""
+
+    date: date
+    song_id: UUID
+    song_slug: str
+    song_title: str
+    artist: str | None = None
+    score_points: int
+    accuracy_percent: float
+    avg_timing_error_ms: float | None = None
+    #: Place among all official results of that day (1 = best).
+    rank: int
+    #: How many players submitted an official result that day.
+    participants: int
+    created_at: datetime
+
+
+class DailyHistoryResponse(BaseModel):
+    items: list[DailyHistoryItem]
+    total: int
+    limit: int
+    offset: int
+

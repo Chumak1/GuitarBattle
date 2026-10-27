@@ -630,11 +630,12 @@ def _daily_today(client, headers):
 
 
 @pytest.mark.db
-def test_daily_today_is_deterministic(db_client, user_account, published_song):
+def test_daily_today_is_deterministic(db_client, user_account, published_song, today_daily_slot):
     first = _daily_today(db_client, user_account["headers"])
     second = _daily_today(db_client, user_account["headers"])
     assert first["song"]["id"] == second["song"]["id"] == published_song["id"]
     assert first["date"] == second["date"]
+    assert first["weekday"] == today_daily_slot["weekday"]
     assert first["rules_version"] == 1
     assert first["official_attempt_used"] is False
     assert first["official_result"] is None
@@ -644,7 +645,7 @@ def test_daily_today_is_deterministic(db_client, user_account, published_song):
 
 @pytest.mark.db
 def test_daily_session_requires_the_song_of_the_day(
-    db_client, user_account, published_song, second_published_song
+    db_client, user_account, published_song, second_published_song, today_daily_slot
 ):
     headers = user_account["headers"]
     today = _daily_today(db_client, headers)
@@ -664,7 +665,7 @@ def test_daily_session_requires_the_song_of_the_day(
 
 @pytest.mark.db
 def test_daily_training_does_not_enter_the_daily_leaderboard(
-    db_client, user_account, published_song
+    db_client, user_account, published_song, today_daily_slot
 ):
     headers = user_account["headers"]
     session = _start(db_client, headers, published_song["id"])  # practice
@@ -684,7 +685,7 @@ def test_daily_training_does_not_enter_the_daily_leaderboard(
 
 @pytest.mark.db
 def test_daily_attempt_is_official_once(
-    db_client, user_account, second_user, published_song
+    db_client, user_account, second_user, published_song, today_daily_slot
 ):
     headers = user_account["headers"]
     today = _daily_today(db_client, headers)
@@ -726,7 +727,7 @@ def test_daily_attempt_is_official_once(
 
 
 @pytest.mark.db
-def test_daily_achievements(db_client, user_account, published_song):
+def test_daily_achievements(db_client, user_account, published_song, today_daily_slot):
     headers = user_account["headers"]
     today = _daily_today(db_client, headers)
     session = _start(db_client, headers, today["song"]["id"], daily=True).json()
@@ -740,7 +741,7 @@ def test_daily_achievements(db_client, user_account, published_song):
 
 @pytest.mark.db
 def test_daily_first_place_is_awarded_after_the_day_ends(
-    db_client, user_account, published_song
+    db_client, user_account, published_song, today_daily_slot
 ):
     """There is no background worker: the award happens on the next read."""
     from app.models.game_session import GameSession

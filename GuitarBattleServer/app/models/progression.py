@@ -5,11 +5,13 @@ from typing import Any
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     Date,
     DateTime,
     Float,
     ForeignKey,
     Integer,
+    SmallInteger,
     String,
     UniqueConstraint,
     func,
@@ -122,6 +124,40 @@ class DailyChallenge(Base):
     rules_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class DailySlot(Base):
+    """Weekly schedule of the daily challenge: one song per weekday (UTC).
+
+    ``weekday`` uses the Python convention: ``0`` = Monday ... ``6`` = Sunday.
+    The schedule is editable by administrators; a concrete day is frozen into
+    :class:`DailyChallenge` on the first request for that date, so changing the
+    slot never rewrites results that players have already submitted.
+
+    ``songs.daily_weekday`` mirrors this table and is kept in sync by
+    ``app.services.daily_slots``; it is the value the catalogue filters read.
+    """
+
+    __tablename__ = "daily_slots"
+    __table_args__ = (
+        CheckConstraint(
+            "weekday >= 0 AND weekday <= 6", name="ck_daily_slots_weekday_range"
+        ),
+    )
+
+    weekday: Mapped[int] = mapped_column(SmallInteger, primary_key=True)
+    song_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("songs.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
     )
 
 

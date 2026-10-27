@@ -14,6 +14,8 @@ class AdminSongCreate(BaseModel):
     duration_seconds: int = Field(default=60, ge=1, le=86400)
     cover_key: str | None = Field(default=None, max_length=512)
     description: str | None = Field(default=None, max_length=10000)
+    #: Daily Challenge slot: 0 = Monday ... 6 = Sunday, ``None`` = ordinary song.
+    daily_weekday: int | None = Field(default=None, ge=0, le=6)
 
     @field_validator("slug", "title", "genre")
     @classmethod
@@ -41,6 +43,8 @@ class AdminSongUpdate(BaseModel):
     duration_seconds: int | None = Field(default=None, ge=1, le=86400)
     cover_key: str | None = Field(default=None, max_length=512)
     description: str | None = Field(default=None, max_length=10000)
+    #: Explicit ``null`` clears the slot; omitting the field keeps it as is.
+    daily_weekday: int | None = Field(default=None, ge=0, le=6)
 
     @field_validator("slug", "title", "genre")
     @classmethod
@@ -74,6 +78,7 @@ class AdminSongResponse(BaseModel):
     version: int
     is_published: bool
     description: str | None
+    daily_weekday: int | None = None
     created_at: datetime
     updated_at: datetime
     readiness: SongReadinessResponse = Field(default_factory=SongReadinessResponse)

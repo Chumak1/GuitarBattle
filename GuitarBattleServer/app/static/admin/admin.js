@@ -27,6 +27,7 @@
   };
   const MAX_MIDI_BYTES = 20 * 1024 * 1024;
   const MAX_AUDIO_BYTES = 100 * 1024 * 1024;
+  const WEEKDAY_SHORT = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
   const state = {
     token: sessionStorage.getItem(TOKEN_KEY) || "",
@@ -355,6 +356,19 @@
       : '<span class="badge-soft badge-draft"><i class="bi bi-pencil-square"></i>Черновик</span>';
   }
 
+  // A song with a daily slot is not in the ordinary catalogue; the badge makes
+  // that visible right in the list instead of only on the Daily Challenge tab.
+  function dailyBadge(song) {
+    const weekday = song?.daily_weekday;
+    if (weekday === null || weekday === undefined) {
+      return "";
+    }
+    const label = WEEKDAY_SHORT[weekday] || String(weekday);
+    return `<span class="badge-soft badge-midi" title="Песня дня: ${escapeHtml(label)}">
+      <i class="bi bi-calendar-check"></i>Daily · ${escapeHtml(label)}
+    </span>`;
+  }
+
   function setSongsLoading(loading) {
     ["refreshButton", "refreshButtonTop", "refreshButtonBottom"].forEach((id) => {
       const button = el(id);
@@ -423,7 +437,7 @@
             </div>
           </div>
         </td>
-        <td>${publishedBadge(song)}</td>
+        <td><div class="d-flex flex-wrap gap-1">${publishedBadge(song)}${dailyBadge(song)}</div></td>
         <td>${readinessBadge(song)}</td>
         <td class="d-none d-lg-table-cell"><span class="text-nowrap">${escapeHtml(song.bpm)}</span></td>
         <td class="d-none d-xl-table-cell"><span class="text-nowrap">${formatDuration(song.duration_seconds)}</span></td>
@@ -616,6 +630,10 @@
     el("songBpm").value = song?.bpm ?? 120;
     el("songDifficulty").value = String(song?.difficulty ?? 1);
     el("songDuration").value = song?.duration_seconds ?? 180;
+    el("songDailyWeekday").value =
+      song?.daily_weekday === null || song?.daily_weekday === undefined
+        ? ""
+        : String(song.daily_weekday);
     el("songDescription").value = song?.description || "";
     el("songModalTitle").textContent = song ? "Редактировать песню" : "Новая песня";
     el("songModalSubtitle").textContent = song
@@ -647,6 +665,7 @@
     }
 
     const id = el("songId").value;
+    const dailyWeekday = el("songDailyWeekday").value;
     const payload = {
       slug: el("songSlug").value.trim(),
       title: el("songTitle").value.trim(),
@@ -656,6 +675,9 @@
       difficulty: Number(el("songDifficulty").value),
       duration_seconds: Number(el("songDuration").value),
       description: el("songDescription").value.trim() || null,
+      // Always sent so that an explicit "Не задано" clears an existing slot;
+      // PATCH treats a present null as "remove the song from the schedule".
+      daily_weekday: dailyWeekday === "" ? null : Number(dailyWeekday),
     };
 
     showFormAlert(el("songFormAlert"), "");
@@ -1229,6 +1251,9 @@
     showLogin,
     showToast,
     getUser: () => state.user,
+    // The Daily Challenge tab changes song slots; the songs table shows the
+    // resulting badge and catalogue state, so it exposes a reload hook.
+    reloadSongs: loadSongs,
   };
 
   document.addEventListener("DOMContentLoaded", init);

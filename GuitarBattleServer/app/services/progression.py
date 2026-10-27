@@ -14,7 +14,6 @@ Formula summary (kept in sync with README "Progression"):
 """
 from __future__ import annotations
 
-import hashlib
 import math
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta, timezone
@@ -306,29 +305,32 @@ def mastery_payload(best_accuracy: float, difficulty: int) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Daily challenge
 # ---------------------------------------------------------------------------
-def pick_daily_song(db: Session, day: date) -> Song | None:
-    """Deterministic song of the day from the published catalog.
+def daily_song_for_weekday(db: Session, weekday: int) -> Song | None:
+    """The scheduled song of one weekday, published only.
 
-    ``sha256(date) % count`` over songs ordered by slug: stable for a given
-    catalog, independent of insertion order and of the API process.
+    The slot itself may point at a draft (an administrator prepares the week in
+    advance), but players must not receive a song whose assets cannot be
+    downloaded yet. An unpublished slot therefore behaves like a free slot.
     """
-    songs = list(
-        db.scalars(
-            select(Song).where(Song.is_published.is_(True)).order_by(Song.slug.asc())
-        ).all()
-    )
-    if not songs:
+    from app.services.daily_slots import scheduled_song
+
+    song = scheduled_song(db, weekday)
+    if song is None or not song.is_published:
         return None
-    digest = hashlib.sha256(day.isoformat().encode("utf-8")).hexdigest()
-    return songs[int(digest, 16) % len(songs)]
+    return song
 
 
 def ensure_daily_challenge(db: Session, day: date) -> DailyChallenge | None:
-    """Return (and create on first use) the challenge row for ``day``."""
+    """Return (and create on first use) the challenge row for ``day``.
+
+    The song comes from the weekday schedule (``daily_slots``). Once a row
+    exists it is never rewritten: changing the slot later affects future days
+    only, so the official results of the day cannot be mixed up.
+    """
     challenge = db.get(DailyChallenge, day)
     if challenge is not None:
         return challenge
-    song = pick_daily_song(db, day)
+    song = daily_song_for_weekday(db, day.weekday())
     if song is None:
         return None
     db.execute(
@@ -399,6 +401,92 @@ def daily_leaderboard(
         }
         for index, row in enumerate(rows)
     ]
+
+
+def _ranked_daily_results():
+    """Official results with their place and participant count per day."""
+    return (
+        select(
+            DailyResult.id.label("result_id"),
+            DailyResult.user_id.label("user_id"),
+            DailyResult.challenge_date.label("challenge_date"),
+            DailyResult.score_points.label("score_points"),
+            DailyResult.accuracy_percent.label("accuracy_percent"),
+            DailyResult.avg_timing_error_ms.label("avg_timing_error_ms"),
+            DailyResult.created_at.label("created_at"),
+            func.row_number()
+            .over(
+                partition_by=DailyResult.challenge_date,
+                order_by=(
+                    DailyResult.score_points.desc(),
+                    DailyResult.accuracy_percent.desc(),
+                    DailyResult.created_at.asc(),
+                    DailyResult.id.asc(),
+                ),
+            )
+            .label("position"),
+            func.count()
+            .over(partition_by=DailyResult.challenge_date)
+            .label("participants"),
+        )
+        .subquery()
+    )
+
+
+def daily_history(
+    db: Session, user_id: Any, *, limit: int = 20, offset: int = 0
+) -> tuple[list[dict[str, Any]], int]:
+    """Official results of one player, newest day first, with the day rank."""
+    ranked = _ranked_daily_results()
+    total = int(
+        db.scalar(
+            select(func.count()).select_from(ranked).where(ranked.c.user_id == user_id)
+        )
+        or 0
+    )
+    rows = db.execute(
+        select(
+            ranked.c.challenge_date,
+            ranked.c.score_points,
+            ranked.c.accuracy_percent,
+            ranked.c.avg_timing_error_ms,
+            ranked.c.position,
+            ranked.c.participants,
+            ranked.c.created_at,
+            Song.id.label("song_id"),
+            Song.slug.label("song_slug"),
+            Song.title.label("song_title"),
+            Song.artist.label("artist"),
+        )
+        .join(
+            DailyChallenge,
+            DailyChallenge.challenge_date == ranked.c.challenge_date,
+        )
+        .join(Song, Song.id == DailyChallenge.song_id)
+        .where(ranked.c.user_id == user_id)
+        .order_by(ranked.c.challenge_date.desc())
+        .limit(limit)
+        .offset(offset)
+    ).all()
+    return (
+        [
+            {
+                "date": row.challenge_date,
+                "song_id": row.song_id,
+                "song_slug": row.song_slug,
+                "song_title": row.song_title,
+                "artist": row.artist,
+                "score_points": row.score_points,
+                "accuracy_percent": row.accuracy_percent,
+                "avg_timing_error_ms": row.avg_timing_error_ms,
+                "rank": int(row.position),
+                "participants": int(row.participants),
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ],
+        total,
+    )
 
 
 def daily_first_place_dates(

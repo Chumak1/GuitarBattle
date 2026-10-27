@@ -18,6 +18,8 @@ from app.schemas.progression import (
     PublicProfileResponse,
     AchievementCatalogResponse,
     AchievementItem,
+    DailyHistoryItem,
+    DailyHistoryResponse,
     DailyLeaderboardEntry,
     DailyLeaderboardResponse,
     DailyResultItem,
@@ -249,11 +251,25 @@ def _daily_song_payload(song: Song) -> DailySongInfo:
 def daily_today(
     db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> DailyTodayResponse:
-    """Today's challenge (UTC), the player's official attempt and the top 5."""
+    """Today's challenge (UTC by weekday schedule), official attempt and top 5.
+
+    Every weekday has its own scheduled song. A day without a published song in
+    its slot is a valid answer with ``song: null`` — the client shows "no daily
+    challenge today" instead of an error.
+    """
     today = progression.utc_today()
+    weekday = today.weekday()
     challenge = progression.ensure_daily_challenge(db, today)
     if challenge is None:
-        raise HTTPException(status_code=404, detail="Daily challenge is not available")
+        return DailyTodayResponse(
+            date=today,
+            weekday=weekday,
+            song=None,
+            rules_version=progression.DAILY_RULES_VERSION,
+            official_attempt_used=False,
+            official_result=None,
+            leaderboard_top=[],
+        )
     db.commit()
 
     song = db.get(Song, challenge.song_id)
@@ -276,11 +292,31 @@ def daily_today(
 
     return DailyTodayResponse(
         date=today,
+        weekday=weekday,
         song=_daily_song_payload(song),
         rules_version=int(challenge.rules_version),
         official_attempt_used=official is not None,
         official_result=result,
         leaderboard_top=[DailyLeaderboardEntry(**row) for row in board[:5]],
+    )
+
+
+@router.get("/daily/history", response_model=DailyHistoryResponse)
+def daily_history(
+    limit: int = Query(default=20, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DailyHistoryResponse:
+    """The player's official daily attempts, newest first, with the day rank."""
+    items, total = progression.daily_history(
+        db, user.id, limit=limit, offset=offset
+    )
+    return DailyHistoryResponse(
+        items=[DailyHistoryItem(**item) for item in items],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 

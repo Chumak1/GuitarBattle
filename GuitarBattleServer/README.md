@@ -22,14 +22,17 @@ FastAPI + PostgreSQL + SQLAlchemy + Alembic + Docker Compose.
 - `GET /` — the landing page at `app/static/landing/index.html` (hero, project overview, how it works, features, requirements, CTA).
 - `GET /login`, `GET /register` — sign-in, registration with email confirmation, and password reset at `app/static/app/auth.html`.
 - `GET /account` — the signed-in player page at `app/static/app/account.html`: global rating, attempt history, username/display name and password changes.
-- `GET /admin/` — the admin SPA at `app/static/admin/`. It has four sections:
-  songs, landing CMS, game builds and «Статистика». The statistics tab
-  (`app/static/admin/admin-statistics.js`, panel `#sectionStatistics`) shows app
-  time, sessions and game launches per account plus game aggregates; it loads
-  lazily on the first visit and refreshes on every later visit. Every number
-  comes from the admin-only `/admin/statistics/*` API, and an expired token
-  returns the SPA to its single login view (`window.FFAdmin.handleUnauthorized`).
-  There is no separate `/statistics` page.
+- `GET /admin/` — the admin SPA at `app/static/admin/`. It has five sections:
+  songs, «Daily Challenge», landing CMS, game builds and «Статистика». The
+  statistics tab (`app/static/admin/admin-statistics.js`, panel
+  `#sectionStatistics`) shows app time, sessions and game launches per account
+  plus game aggregates; it loads lazily on the first visit and refreshes on
+  every later visit. Every number comes from the admin-only
+  `/admin/statistics/*` API, and an expired token returns the SPA to its single
+  login view (`window.FFAdmin.handleUnauthorized`). The Daily Challenge tab
+  (`app/static/admin/admin-daily.js`, panel `#sectionDaily`) holds the weekly
+  schedule: one song per weekday with «Назначить» / «Очистить». There is no
+  separate `/statistics` page.
 
 All of them are served by FastAPI from inside the API image. Caddy only needs to reverse-proxy `fretfight.online` to `127.0.0.1:8000`; no separate static-site root is required.
 
@@ -51,8 +54,11 @@ The script packs the server directory (never `.env`), uploads it over SSH, keeps
 All paths below use `/api/v1`.
 
 ### Public song catalog
-- `GET /songs?limit=20&offset=0` — published songs only.
-- `GET /songs/{slug}` — details and public file metadata.
+- `GET /songs?limit=20&offset=0` — published songs only. Songs that hold a Daily
+  Challenge slot (`songs.daily_weekday IS NOT NULL`) are not listed here.
+- `GET /songs/{slug}` — details and public file metadata. It still resolves a
+  daily-challenge song: the client requests it without a token before playing
+  the official attempt, and the assets must stay downloadable by slug.
 - `GET /songs/{slug}/files/{file_id}/download` — download MIDI or an instrumental MP3 stem for a published song.
 - `GET /leaderboard?limit=20&offset=0` — global top scores.
 - `GET /leaderboard?song_slug=pridumay-svetly-mir` — scores for one song.
@@ -131,7 +137,7 @@ All endpoints below except leaderboard require `Authorization: Bearer <access_to
   `{ "score_points": 1200, "accuracy_percent": 92.5, "max_combo": 14, "perfect_count": 8, "good_count": 4, "miss_count": 2 }`
   Optional progression fields: `completion_percent` (0–100, default 100), `avg_timing_error_ms` (0–2000), `notes_total`, `notes_played`. The response contains the score fields plus `xp_earned`, `xp_total`, `level`, `level_up`, `xp_to_next`, `xp_remaining`, `personal_best_updated`, `mastery` and `achievements_awarded`; a client that only reads the score fields keeps working.
 - `GET /games/history` - current player's recent sessions.
-- `GET /games/best-scores` - signed-in player's best score for every published song, plus the personal rating total (`rating_points` = sum of those best scores). Used by the client to show a best score next to each catalogue row.
+- `GET /games/best-scores` - signed-in player's best score for every published song outside the Daily Challenge schedule, plus the personal rating total (`rating_points` = sum of those best scores). Used by the client to show a best score next to each catalogue row; daily songs never feed the ordinary rating.
 
 Important: score submission is still client-reported. Progression clamps everything
 it can (`completion_percent` never exceeds `notes_played / notes_total`, XP is capped
@@ -176,9 +182,15 @@ Endpoints (all require Bearer):
   the statistics block.
 - `GET /profile/personal-bests?limit=10&offset=0` — personal bests of published songs.
 - `GET /achievements` — the catalog with `progress`, `unlocked` and `awarded_at`.
-- `GET /daily/today` — the song of the day, whether the official attempt is used,
-  the official result and the top 5.
+- `GET /daily/today` — today's challenge: `date`, `weekday` (0 = Monday …
+  6 = Sunday, UTC), the scheduled `song` or `null` when the slot is free or the
+  scheduled song is not published, whether the official attempt is used, the
+  official result and the top 5.
 - `GET /daily/leaderboard?date=YYYY-MM-DD` — official results of a day.
+- `GET /daily/history?limit=20&offset=0` — the player's official daily attempts,
+  newest day first: `date`, `song_id`, `song_slug`, `song_title`, `artist`,
+  `score_points`, `accuracy_percent`, `avg_timing_error_ms`, `rank` (place among
+  all results of that day) and `participants`.
 
 Statistics block (last 100 finished attempts with `completion_percent > 25`):
 `accuracy` (mean accuracy), `timing` (`100 - clamp(0, 100, avg_timing_error_ms / 1.5)`,
@@ -188,17 +200,39 @@ fewer than 2 samples), `versatility`
 (`100 * (0.6 * distinct_songs / published_songs + 0.4 * distinct_genres / published_genres)`),
 `samples`.
 
-Daily challenge rules:
+Daily challenge rules (migration `0009_daily_slots`):
 
-- The song of the day is deterministic: `sha256(date_iso) % count` over published
-  songs ordered by `slug`, persisted in `daily_challenges` (so it never changes
-  retroactively). There is no per-genre rotation in the catalog yet.
-- `POST /games/sessions` with `daily: true` requires that exact song and an unused
-  official attempt, otherwise `409`. Practice sessions on the same song stay
-  `mode: "normal"` and never enter the daily ranking.
+- The schedule is explicit: `daily_slots` holds one song per weekday (`0` =
+  Monday … `6` = Sunday, UTC) and `songs.daily_weekday` mirrors it. The public
+  catalogue, the global rating and `/games/best-scores` ignore songs with a
+  slot; a daily song is still playable as a practice session
+  (`mode: "normal"`), and its files stay downloadable by slug.
+- The song of a date is resolved from that weekday's slot on the first request
+  for the date and frozen in `daily_challenges`, so changing or clearing a slot
+  never rewrites a day that already started. A slot pointing at a draft behaves
+  like a free slot until the song is published.
+- `POST /games/sessions` with `daily: true` requires the frozen song of today and
+  an unused official attempt, otherwise `409`. Practice sessions on the same
+  song stay `mode: "normal"` and never enter the daily ranking.
 - `finish` of a daily session inserts `daily_results` (unique `(date, user_id)`);
   a second official attempt returns `409`. Timing, score and accuracy are stored
   for the daily ranking, which sorts by score desc, then accuracy desc.
+
+Admin schedule (`is_admin` required):
+
+- `GET /admin/daily` — seven slots: `{weekday, weekday_name, song: {id, slug,
+  title, artist, genre, bpm, difficulty, duration_seconds, is_published} | null,
+  updated_at}`.
+- `PUT /admin/daily/{weekday}` — body `{"song_id": "<uuid>"}` assigns,
+  `{"song_id": null}` clears. Weekday outside 0..6 → `422`, unknown song → `404`.
+- Conflict policy: the assignment **moves** the song. If it already occupied
+  another weekday, that slot is cleared; if the target weekday held a different
+  song, that song loses its slot and returns to the ordinary catalogue. No
+  `409` for that case, so replacing a week does not require manual cleanup.
+- `daily_weekday` is part of the admin song payloads
+  (`POST/PATCH /admin/songs`, list and detail responses) and is synced with
+  `daily_slots` in the same transaction: setting it schedules the song, sending
+  `null` removes it from the schedule.
 
 Known limitations:
 
@@ -353,7 +387,15 @@ Migration `0008_progression` adds the progression tables and seeds the
 downgrading drops per-player XP, personal bests, achievements and daily results,
 while `scores` / `game_sessions` keep their historical rows minus the new columns.
 
+Migration `0009_daily_slots` adds the weekly Daily Challenge schedule:
+`songs.daily_weekday` (smallint `NULL` or 0..6 with a check constraint and an
+index) and the `daily_slots` table (`weekday` primary key with a 0..6 check,
+`song_id` `ON DELETE CASCADE`, `updated_at`). It creates no rows: the schedule
+starts empty and existing `daily_challenges` / `daily_results` rows are kept as
+historical facts. Downgrade
+(`alembic downgrade 0008_progression`) drops the table, the index and the column.
+
 
 ### Глобальный рейтинг игроков
 
-`GET /api/v1/leaderboard/global?limit=10&offset=0` — публичный рейтинг пользователей. Для каждой пары `user_id + song_id` учитывается только лучший результат; `rating_points` — сумма лучших результатов по опубликованным песням (повторные и более слабые попытки рейтинг не увеличивают); `games_played` — количество песен, давших вклад в рейтинг. На главном экране JUCE рейтинг открывается/обновляется кнопкой **REFRESH RATING**.
+`GET /api/v1/leaderboard/global?limit=10&offset=0` — публичный рейтинг пользователей. Для каждой пары `user_id + song_id` учитывается только лучший результат; `rating_points` — сумма лучших результатов по опубликованным песням, у которых не задан `daily_weekday` (повторные и более слабые попытки рейтинг не увеличивают, официальные daily-попытки в обычный рейтинг не попадают); `games_played` — количество песен, давших вклад в рейтинг. На главном экране JUCE рейтинг открывается/обновляется кнопкой **REFRESH RATING**.

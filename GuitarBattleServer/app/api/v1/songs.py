@@ -72,8 +72,14 @@ def list_songs(
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
 ) -> SongListResponse:
-    """Return only published songs; drafts remain private to the admin workflow."""
-    filters = [Song.is_published.is_(True)]
+    """Return only published songs; drafts remain private to the admin workflow.
+
+    Songs holding a Daily Challenge slot (``daily_weekday IS NOT NULL``) are not
+    part of the ordinary catalogue. They stay reachable by slug — see
+    :func:`get_song` — because the client downloads their assets to play the
+    official daily attempt.
+    """
+    filters = [Song.is_published.is_(True), Song.daily_weekday.is_(None)]
     if search:
         term = f"%{search.strip()}%"
         filters.append((Song.title.ilike(term)) | (Song.slug.ilike(term)) | (Song.artist.ilike(term)))
@@ -97,6 +103,9 @@ def list_songs(
 
 @router.get("/{slug}", response_model=SongDetailResponse, summary="Get a published song")
 def get_song(slug: str, db: Session = Depends(get_db)) -> SongDetailResponse:
+    # A daily-challenge song is hidden from the catalogue list but must stay
+    # resolvable here: the client calls this endpoint (without a token) to get
+    # the asset URLs of the song of the day.
     song = db.scalar(select(Song).where(Song.slug == slug, Song.is_published.is_(True)))
     if song is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")

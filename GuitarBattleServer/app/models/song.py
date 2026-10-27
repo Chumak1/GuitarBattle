@@ -1,12 +1,19 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Integer, SmallInteger, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 class Song(Base):
     __tablename__ = "songs"
+    __table_args__ = (
+        CheckConstraint(
+            "daily_weekday IS NULL OR (daily_weekday >= 0 AND daily_weekday <= 6)",
+            name="ck_songs_daily_weekday_range",
+        ),
+    )
+
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     slug: Mapped[str] = mapped_column(String(120), unique=True, index=True, nullable=False)
     title: Mapped[str] = mapped_column(String(200), nullable=False)
@@ -19,6 +26,13 @@ class Song(Base):
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     is_published: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Daily-challenge slot of this song: ``0`` = Monday ... ``6`` = Sunday (UTC).
+    #: ``NULL`` means an ordinary catalogue song. A non-null value hides the song
+    #: from the public catalogue, the global rating and personal-best lists, but
+    #: its assets stay downloadable by slug so the official attempt can be played.
+    daily_weekday: Mapped[int | None] = mapped_column(
+        SmallInteger, nullable=True, index=True
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

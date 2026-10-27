@@ -25,13 +25,15 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/auth/me` | Bearer | профиль |
 | PATCH | `/auth/me` | `display_name?`, `username?` (хотя бы одно поле; `username` — 3–32 символа `[A-Za-z0-9_.-]`, приводится к нижнему регистру, 409 если занят) | профиль |
 | POST | `/auth/change-password` | Bearer, `current_password`, `new_password` | 204, без тела; старые токены инвалидируются |
-| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных; у каждого элемента `readiness` |
-| GET | `/songs/{slug}` | — | детали + `version` + `files` + `assets` + `readiness` |
+| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных **без** песен со слотом Daily Challenge; у каждого элемента `readiness` |
+| GET | `/songs/{slug}` | — | детали + `version` + `files` + `assets` + `readiness`; песня дня тоже резолвится (клиент качает ассеты без токена) |
 | GET | `/songs/{slug}/files/{file_id}/download` | — | MIDI/MP3 |
-| GET | `/admin/songs` | Bearer admin, `search?`, `published?`, `limit`, `offset` | черновики и опубликованные |
-| POST | `/admin/songs` | Bearer admin, `slug`, `title`, `bpm`, остальные поля опциональны | черновик |
-| GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `readiness` |
-| PATCH | `/admin/songs/{id}` | Bearer admin, поля песни | обновлённая песня |
+| GET | `/admin/songs` | Bearer admin, `search?`, `published?`, `limit`, `offset` | черновики и опубликованные; у каждой песни `daily_weekday` |
+| POST | `/admin/songs` | Bearer admin, `slug`, `title`, `bpm`, остальные поля опциональны, `daily_weekday?` (0–6 или `null`) | черновик |
+| GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `readiness` + `daily_weekday` |
+| PATCH | `/admin/songs/{id}` | Bearer admin, поля песни; `daily_weekday: null` снимает слот | обновлённая песня |
+| GET | `/admin/daily` | Bearer admin | 7 слотов `{weekday, weekday_name, song \| null, updated_at}` |
+| PUT | `/admin/daily/{weekday}` | Bearer admin, `{song_id: UUID \| null}`, weekday 0–6 | слот; назначение переносит песню, `422` вне 0–6, `404` неизвестная песня |
 | POST | `/admin/songs/{id}/publish` | Bearer admin | публикация |
 | POST | `/admin/songs/{id}/unpublish` | Bearer admin | снятие с публикации |
 | DELETE | `/admin/songs/{id}` | Bearer admin | 204 |
@@ -43,14 +45,15 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | POST | `/games/sessions` | `song_id` (UUID), `speed_percent`, `daily?` (bool, по умолчанию `false`) | сессия; `mode` = `normal`/`daily` |
 | POST | `/games/sessions/{id}/finish` | `score_points`, `accuracy_percent`, `max_combo`, `perfect_count`, `good_count`, `miss_count`, опционально `completion_percent`, `avg_timing_error_ms`, `notes_total`, `notes_played` | score + блок прогрессии (см. ниже) |
 | GET | `/games/history` | Bearer, `limit`, `offset` | история |
-| GET | `/games/best-scores` | Bearer | лучший счёт по каждой опубликованной песне + сумма рейтинга |
+| GET | `/games/best-scores` | Bearer | лучший счёт по каждой опубликованной песне вне Daily Challenge + сумма рейтинга |
 | GET | `/leaderboard` | `song_slug?`, `limit`, `offset` | результаты |
-| GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков (сумма лучших результатов по песням) |
+| GET | `/leaderboard/global` | `limit`, `offset` | рейтинг игроков (сумма лучших результатов по песням вне Daily Challenge) |
 | GET | `/profile/progression` | Bearer | уровень, XP, мастерство, жанры, статистика |
 | GET | `/profile/personal-bests` | Bearer, `limit` (1–100, по умолчанию 10), `offset` | личные рекорды по опубликованным песням |
 | GET | `/achievements` | Bearer | каталог достижений + прогресс/разблокировка |
-| GET | `/daily/today` | Bearer | песня дня, официальная попытка, топ-5 |
+| GET | `/daily/today` | Bearer | `date`, `weekday` (0=Пн…6=Вс, UTC), `song` (или `null`), официальная попытка, топ-5 |
 | GET | `/daily/leaderboard` | Bearer, `date?` (YYYY-MM-DD, по умолчанию сегодня UTC) | официальные результаты дня |
+| GET | `/daily/history` | Bearer, `limit` (1–100, по умолчанию 20), `offset` | официальные результаты игрока по дням с `rank` и `participants` |
 | GET | `/client-assets/manifest` | — (публичный) | `schema`, `version`, `archive_url`, `archive_size_bytes`, `archive_sha256`, `files[]`; 503, если manifest или bundle отсутствует |
 | GET/HEAD | `/client-assets/bundle.zip` | — (публичный) | zip `guitarbattle-sounds.zip`; 503, если архив отсутствует |
 | GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` для лендинга |
@@ -302,18 +305,42 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
   следующем обращении к `/profile/progression`, `/achievements` или
   `/daily/leaderboard`, когда день уже закончился (фонового планировщика нет).
 
-### Испытание дня
+### Испытание дня (расписание по дням недели)
 
-- Песня дня выбирается детерминированно:
-  `sha256(date_iso) % count` по опубликованным песням, отсортированным по `slug`;
-  выбор сохраняется в `daily_challenges` и не меняется задним числом.
-- `POST /games/sessions` c `daily: true` требует именно эту песню (иначе 409) и
-  неиспользованную официальную попытку (иначе 409); сессия получает `mode=daily`.
-- `finish` такой сессии вставляет `daily_results` (unique `date+user`); вторая
-  официальная попытка → 409. Тренировки (`mode=normal`) в рейтинг дня не попадают.
+Миграция `0009_daily_slots`: `songs.daily_weekday` (smallint `NULL` или 0..6,
+CHECK + индекс) и таблица `daily_slots` (`weekday` PK 0..6, `song_id`
+`ON DELETE CASCADE`, `updated_at`). `0` — понедельник, `6` — воскресенье (UTC);
+значение совпадает с `datetime.date.weekday()`.
+
+- Песня дня берётся из слота текущего дня недели и при первом запросе за дату
+  фиксируется в `daily_challenges` (`rules_version=1`). Уже созданная запись не
+  перезаписывается: смена или очистка слота меняет только будущие дни. Слот,
+  указывающий на черновик, для игроков выглядит как пустой.
+- `/daily/today` без слота отвечает `200` с
+  `{date, weekday, song: null, rules_version: 1, official_attempt_used: false,
+  official_result: null, leaderboard_top: []}` — это не ошибка.
+- `POST /games/sessions` c `daily: true` требует песню дня (иначе 409) и
+  неиспользованную официальную попытку (иначе 409); если слот не задан или
+  занят черновиком — тоже 409. Сессия получает `mode=daily`. Неопубликованная
+  песня вообще не стартует (404 «Published song not found»).
+- `finish` такой сессии вставляет `daily_results` (unique `date+user`) в той же
+  транзакции; вторая официальная попытка → 409. Тренировки (`mode=normal`) в
+  рейтинг дня не попадают и остаются доступными даже для песни дня.
 - Рейтинг дня сортируется по `score_points` desc, затем `accuracy_percent` desc.
-- Правила `/leaderboard` и `/leaderboard/global` не изменились: они по-прежнему
-  считают по `scores`, независимо от XP и режима.
+- Песни со слотом исключены из `GET /songs`, `GET /leaderboard/global` и
+  `GET /games/best-scores`. `GET /songs/{slug}` и скачивание файлов продолжают
+  работать: клиент запрашивает детали песни дня **без** токена, чтобы скачать
+  MIDI и стемы. `GET /leaderboard` (по песне) и `song_best_scores` не менялись.
+- Админ: `GET /admin/daily` (7 слотов) и `PUT /admin/daily/{weekday}`
+  (`{song_id}` / `{song_id: null}`), только `is_admin`. Конфликты решаются
+  переносом: песня уходит со старого дня, прежняя песня слота теряет
+  `daily_weekday` и возвращается в обычный каталог (это не 409).
+- `daily_weekday` есть в схемах `/admin/songs` (create/patch/list/detail) и
+  синхронизируется с `daily_slots` в той же транзакции: установка поля
+  назначает слот, `null` — снимает.
+- Админка: вкладка «Daily Challenge» (`app/static/admin/admin-daily.js`,
+  панель `#sectionDaily`), 7 строк с «Назначить»/«Очистить»; в форме песни —
+  поле «Daily weekday»; в списке песен — бейдж «Daily · Пн».
 
 ## Где искать в клиенте
 
@@ -342,6 +369,9 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
   worker-потоке, применяются в UI через `callAsync`.
 - `startOnlineGameSession` с `daily=true` — официальная попытка дня; при 409
   показывать «официальная попытка уже использована», а не ошибку сети.
+- `loadDailyChallenge` (`/daily/today`) — `song: null` значит «на этот день
+  песня не назначена»; это нормальный ответ, кнопку официальной попытки нужно
+  скрыть. Поле `weekday` — 0=Пн…6=Вс (UTC).
 - `startSelectedSong` / `downloadOnlineSong` — выбор строки каталога и загрузка ассетов по требованию.
 - Телеметрия активности (`/activity/heartbeat`, `/activity/game-launch`) — из
   worker-потока, без блокировки UI-потока.
@@ -376,7 +406,13 @@ MIDI-банки гитары/баса/фортепиано/барабанов с
 - `completion_percent` — проценты 0–100, не доля 0–1; `notes_played`/`notes_total`
   только понижают completion, поэтому клиент не может «дописать» прогресс.
 - `daily: true` в `POST /games/sessions` — только для песни дня; 409 значит
-  «не та песня» или «официальная попытка уже использована».
+  «слот не задан / занят черновиком», «не та песня» или «официальная попытка уже
+  использована». Клиент должен различать 409 (нормальный отказ) и сетевую ошибку.
+- Песня дня есть в `/songs/{slug}`, но отсутствует в `/songs`, `/leaderboard/global`,
+  `/games/best-scores`. Не «исправляйте» это, скрывая детали по slug: клиент
+  качает ассеты песни дня этим запросом без `Authorization`.
+- `weekday` в `/daily/today` и `/admin/daily` — 0=Пн…6=Вс (UTC), а не ISO 1–7.
+- `song` в `/daily/today` может быть `null`; это не ошибка и не 404.
 - Повторный `finish` (в том числе параллельный) даёт 409 и не начисляет XP —
   это нормальный ответ, а не сбой.
 - `mastery` в ответе `finish` — объект, а `achievements_awarded` — массив объектов,

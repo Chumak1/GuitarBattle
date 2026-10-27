@@ -10,6 +10,7 @@ from app.models.progression import (
     Achievement,
     DailyChallenge,
     DailyResult,
+    DailySlot,
     SongBestScore,
     UserAchievement,
     XpAward,
@@ -21,6 +22,6 @@ __all__ = [
     "Competition", "CompetitionParticipant",
     "LandingSettings", "GameBuild",
     "AppSession", "GameLaunch",
-    "Achievement", "DailyChallenge", "DailyResult", "SongBestScore",
+    "Achievement", "DailyChallenge", "DailyResult", "DailySlot", "SongBestScore",
     "UserAchievement", "XpAward",
 ]

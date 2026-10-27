@@ -791,6 +791,10 @@
 
     if (name === "landing" && !state.loaded) loadLanding();
     if (name === "builds" && !state.buildsLoaded) loadBuilds();
+    if (name === "daily") {
+      const daily = window.FFAdminDaily;
+      if (daily) daily.show();
+    }
     if (name === "statistics") {
       // Lazy first load, refresh on every later visit. The statistics module
       // owns its own state and reuses the shared admin token and error handling.
@@ -802,7 +806,10 @@
   function refreshCurrent() {
     if (state.section === "landing") loadLanding();
     else if (state.section === "builds") loadBuilds();
-    else if (state.section === "statistics") {
+    else if (state.section === "daily") {
+      const daily = window.FFAdminDaily;
+      if (daily) daily.refresh();
+    } else if (state.section === "statistics") {
       const statistics = window.FFAdminStatistics;
       if (statistics) statistics.refresh();
     }
