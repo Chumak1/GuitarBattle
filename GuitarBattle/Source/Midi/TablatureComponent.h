@@ -49,7 +49,8 @@ private:
         juce::Graphics& g,
         const TabNote& note,
         float x,
-        float y);
+        float y,
+        float noteRadius);
 
     void drawMeasureLines(
         juce::Graphics& g,

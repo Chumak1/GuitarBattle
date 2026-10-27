@@ -1,6 +1,8 @@
 #include "TablatureComponent.h"
 #include "../UI/GameStyle.h"
 
+#include <algorithm>
+
 namespace
 {
     constexpr float leftMargin = 62.0f;
@@ -23,6 +25,14 @@ TablatureComponent::TablatureComponent()
 void TablatureComponent::setNotes(const std::vector<TabNote>& newNotes)
 {
     notes = newNotes;
+    // Notes are addressed by start beat in paint(); sorting once keeps the
+    // per-frame work proportional to the visible window instead of the whole
+    // song, which matters for dense MIDI.
+    std::stable_sort(notes.begin(), notes.end(),
+                     [](const TabNote& a, const TabNote& b)
+                     {
+                         return a.startBeat < b.startBeat;
+                     });
     repaint();
 }
 
@@ -38,10 +48,35 @@ void TablatureComponent::setBpm(double newBpm)
 
 void TablatureComponent::setPlayheadBeat(double beat)
 {
+    const auto now = juce::Time::getCurrentTime();
+
+    // The audio engine reports the beat at the start of the audio block, which
+    // is a little behind the wall-clock position the 60 Hz timer has already
+    // extrapolated. Snapping back to it produced a visible one-frame stutter
+    // on every 30 Hz sync, especially on dense tablature.
+    if (playheadRunning
+        && lastSyncTime.toMilliseconds() > 0
+        && bpm > 0.0)
+    {
+        const double elapsedSeconds =
+            static_cast<double>(now.toMilliseconds()
+                                - lastSyncTime.toMilliseconds()) / 1000.0;
+        const double extrapolated =
+            syncedBeat + elapsedSeconds * bpm / 60.0;
+
+        if (extrapolated > beat && extrapolated - beat < 0.5)
+            beat = extrapolated;
+    }
+
     syncedBeat = beat;
     playheadBeat = beat;
-    lastSyncTime = juce::Time::getCurrentTime();
-    repaint();
+    lastSyncTime = now;
+
+    // While the playhead is running the 60 Hz timer repaints continuously;
+    // repainting here as well would double the paint rate for every 30 Hz
+    // audio sync.
+    if (! playheadRunning)
+        repaint();
 }
 
 // Freeze the visual timeline during count-in and while the game is paused.
@@ -197,10 +232,10 @@ void TablatureComponent::drawMeasureNumbers(juce::Graphics& g, float playheadX)
 void TablatureComponent::drawNote(juce::Graphics& g,
                                   const TabNote& note,
                                   float x,
-                                  float y)
+                                  float y,
+                                  float noteRadius)
 {
     const auto colour = getFingerColour(note.finger);
-    const float noteRadius = juce::jlimit(9.0f, 22.0f, layoutStringSpacing * 0.40f);
 
     const double distance = note.startBeat - playheadBeat;
 
@@ -233,7 +268,6 @@ void TablatureComponent::drawNote(juce::Graphics& g,
     }
 
     g.setColour(UiColors::background);
-    g.setFont(GameUi::heading(juce::jmax(10.0f, noteRadius * 1.05f)));
     g.drawText(juce::String(note.fret),
                juce::Rectangle<int>(static_cast<int>(x - noteRadius),
                                     static_cast<int>(y - noteRadius),
@@ -353,17 +387,46 @@ void TablatureComponent::paint(juce::Graphics& g)
     //==========================================================================
     // Notes
 
-    for (const auto& note : notes)
+    // Only the notes inside the visible beat window are drawn. The vector is
+    // sorted by start beat, so the scan starts at the first visible note and
+    // stops as soon as notes leave the right edge. The fret font is created
+    // once per paint instead of once per note.
+    const float noteRadius =
+        juce::jlimit(9.0f, 22.0f, layoutStringSpacing * 0.40f);
+
+    g.setFont(GameUi::heading(juce::jmax(10.0f, noteRadius * 1.05f)));
+
+    if (pixelsPerBeat > 0.0 && ! notes.empty())
     {
-        const double relativeBeat = note.startBeat - playheadBeat;
-        const float x = playheadX + static_cast<float>(relativeBeat * pixelsPerBeat);
+        const double firstVisibleBeat =
+            playheadBeat
+            + (static_cast<double>(leftMargin) - static_cast<double>(playheadX))
+                / pixelsPerBeat
+            - 1.0;
 
-        if (x < leftMargin || x > static_cast<float>(getWidth()) + 20.0f)
-            continue;
+        auto it = std::lower_bound(
+            notes.begin(), notes.end(), firstVisibleBeat,
+            [](const TabNote& note, double beat)
+            {
+                return note.startBeat < beat;
+            });
 
-        const int displayRow = numberOfStrings - 1 - note.stringIndex;
-        const float y = layoutFirstStringY + displayRow * layoutStringSpacing;
-        drawNote(g, note, x, y);
+        for (; it != notes.end(); ++it)
+        {
+            const double relativeBeat = it->startBeat - playheadBeat;
+            const float x = playheadX
+                + static_cast<float>(relativeBeat * pixelsPerBeat);
+
+            if (x > static_cast<float>(getWidth()) + 40.0f)
+                break;
+
+            if (x < leftMargin - 20.0f)
+                continue;
+
+            const int displayRow = numberOfStrings - 1 - it->stringIndex;
+            const float y = layoutFirstStringY + displayRow * layoutStringSpacing;
+            drawNote(g, *it, x, y, noteRadius);
+        }
     }
 
     //==========================================================================
