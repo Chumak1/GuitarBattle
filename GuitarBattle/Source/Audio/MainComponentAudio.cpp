@@ -1094,7 +1094,8 @@ void MainComponent::getNextAudioBlock(
 
     int metronomeTriggerOffset = -1;
 
-    if (gameState == GameState::Playing)
+    if (gameState == GameState::Playing
+        && ! practiceHoldActive.load(std::memory_order_relaxed))
     {
         metronomeTriggerOffset = metronome.processScheduler(
             currentSample,
@@ -1104,7 +1105,8 @@ void MainComponent::getNextAudioBlock(
     //==========================================================================
     // Playhead
 
-    if (gameState == GameState::Playing)
+    if (gameState == GameState::Playing
+        && ! practiceHoldActive.load(std::memory_order_relaxed))
     {
         const auto currentGameplayStart =
             gameplayStartSample.load(
@@ -1571,7 +1573,8 @@ void MainComponent::getNextAudioBlock(
     //==========================================================================
     // MIDI guitar backing track. The pitch-analysis buffers above contain only
     // the clean physical guitar input, so this generated sound cannot affect scoring.
-    if (midiBackingEnabled.load(std::memory_order_relaxed))
+    if (midiBackingEnabled.load(std::memory_order_relaxed)
+        && ! practiceHoldActive.load(std::memory_order_relaxed))
     {
         const double currentBpm = bpm.load(std::memory_order_relaxed);
         const double sr = cachedSampleRate.load(std::memory_order_relaxed);

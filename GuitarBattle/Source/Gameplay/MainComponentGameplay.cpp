@@ -262,8 +262,9 @@ void MainComponent::beginGameplayCountIn()
     }
 
     // The launch is counted and the server session is opened only now: the
-    // Ready screen itself is not gameplay.
-    startOnlineGameSession();
+    // Ready screen itself is not gameplay. A training run never opens one.
+    if (! practiceMode)
+        startOnlineGameSession();
 
     const auto currentSample =
         audioSampleCounter.load(
@@ -302,12 +303,20 @@ void MainComponent::beginGameplayCountIn()
     gameSession.setTargetNoteIndex(0);
     setTargetFromMidiIndex(0);
 
+    if (practiceMode)
+    {
+        gameplayStats.reset();
+        beginPracticeRun();
+    }
+
     gameState = GameState::Playing;
     gameStartButton.setButtonText("START");
     menuButton.setButtonText("MAIN MENU");
     tunerStartButton.setEnabled(false);
     pauseButton.setButtonText("PAUSE");
-    hitLabel.setText("COUNT-IN 3", juce::dontSendNotification);
+    hitLabel.setText(practiceMode ? "PRACTICE - PLAY THE HIGHLIGHTED NOTE"
+                                  : "COUNT-IN 3",
+                     juce::dontSendNotification);
 
     resized();
     repaint();
@@ -471,6 +480,12 @@ void MainComponent::resumeGame()
 
 void MainComponent::returnToSongSelect()
 {
+    // A training run ends here too: no state may leak into the next game.
+    practiceActive.store(false, std::memory_order_relaxed);
+    practiceHoldActive.store(false, std::memory_order_relaxed);
+    practiceHoldStartSample.store(0, std::memory_order_relaxed);
+    practiceCompleted = false;
+
     countInActive.store(false, std::memory_order_release);
     countInRemaining.store(0, std::memory_order_relaxed);
     tablatureComponent.setPlayheadRunning(false);

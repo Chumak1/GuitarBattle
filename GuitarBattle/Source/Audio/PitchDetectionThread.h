@@ -426,6 +426,19 @@ public:
                                 continue;
                             }
 
+                            //==================================================================
+                            // Practice mode
+                            //
+                            // The message thread confirms the target note, freezes
+                            // and resumes the transport. The competitive scoring
+                            // path below must never run: it would consume targets
+                            // and submit a result.
+                            if (owner.practiceActive.load(std::memory_order_relaxed))
+                            {
+                                owner.practiceLastPitch.store(pitch, std::memory_order_relaxed);
+                                continue;
+                            }
+
                             const auto detectedNote =
                                 owner.pitchDetector.frequencyToNote(
                                     pitch);
