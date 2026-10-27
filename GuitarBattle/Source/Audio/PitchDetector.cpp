@@ -37,27 +37,49 @@ double PitchDetector::detectPitch(
     }
 
     //==============================================================
+    // Analysis window
+    //
+    // The autocorrelation is O(window * lags). 4096 samples at 44.1 kHz made
+    // one analysis cost tens of milliseconds in a debug build; 2048 samples
+    // still contain several periods of the lowest guitar note and is ~3x
+    // cheaper. The most recent samples are used.
+
+    constexpr int maxAnalysisWindow = 2048;
+
+    const int lowestNoteLag =
+        static_cast<int>(sampleRate / 60.0);
+
+    const int analysisWindow =
+        juce::jmax(maxAnalysisWindow, lowestNoteLag + 256);
+
+    const int windowLength =
+        juce::jmin(numSamples, analysisWindow);
+    const int windowOffset =
+        numSamples - windowLength;
+
+    //==============================================================
     // Remove DC offset
 
     double mean = 0.0;
 
-    for (int i = 0; i < numSamples; ++i)
-        mean += static_cast<double>(samples[i]);
+    for (int i = 0; i < windowLength; ++i)
+        mean += static_cast<double>(samples[windowOffset + i]);
 
-    mean /= static_cast<double>(numSamples);
+    mean /= static_cast<double>(windowLength);
 
     //==============================================================
-    // Copy signal without DC
+    // Copy signal without DC (reusing the scratch buffer)
 
-    std::vector<double> signal(
-        static_cast<size_t>(numSamples));
+    auto& signal = signalBuffer;
+
+    signal.resize(static_cast<size_t>(windowLength));
 
     double rmsSum = 0.0;
 
-    for (int i = 0; i < numSamples; ++i)
+    for (int i = 0; i < windowLength; ++i)
     {
         const double value =
-            static_cast<double>(samples[i])
+            static_cast<double>(samples[windowOffset + i])
             - mean;
 
         signal[static_cast<size_t>(i)] =
@@ -69,7 +91,7 @@ double PitchDetector::detectPitch(
     const double rms =
         std::sqrt(
             rmsSum
-            / static_cast<double>(numSamples));
+            / static_cast<double>(windowLength));
 
     if (rms < 0.005)
         return 0.0;
@@ -99,7 +121,7 @@ double PitchDetector::detectPitch(
 
     if (minLag <= 0
         || maxLag <= minLag
-        || maxLag >= numSamples)
+        || maxLag >= windowLength)
     {
         return 0.0;
     }
@@ -117,9 +139,9 @@ double PitchDetector::detectPitch(
     //
     // This is much more resistant to YIN choosing a subharmonic.
 
-    std::vector<double> correlation(
-        static_cast<size_t>(maxLag + 1),
-        0.0);
+    auto& correlation = correlationBuffer;
+
+    correlation.assign(static_cast<size_t>(maxLag + 1), 0.0);
 
     for (int lag = minLag;
         lag <= maxLag;
@@ -130,7 +152,7 @@ double PitchDetector::detectPitch(
         double energyB = 0.0;
 
         const int count =
-            numSamples - lag;
+            windowLength - lag;
 
         for (int i = 0;
             i < count;
@@ -172,7 +194,8 @@ double PitchDetector::detectPitch(
         double correlation = 0.0;
     };
 
-    std::vector<Candidate> candidates;
+    std::array<Candidate, 64> candidates{};
+    int candidateCount = 0;
 
     for (int lag = minLag + 1;
         lag < maxLag;
@@ -192,17 +215,18 @@ double PitchDetector::detectPitch(
 
         if (current >= previous
             && current >= next
-            && current > 0.20)
+            && current > 0.20
+            && candidateCount < static_cast<int>(candidates.size()))
         {
-            candidates.push_back(
+            candidates[static_cast<size_t>(candidateCount++)] =
                 {
                     lag,
                     current
-                });
+                };
         }
     }
 
-    if (candidates.empty())
+    if (candidateCount == 0)
         return 0.0;
 
     //==============================================================
@@ -210,7 +234,7 @@ double PitchDetector::detectPitch(
 
     std::sort(
         candidates.begin(),
-        candidates.end(),
+        candidates.begin() + candidateCount,
         [](const Candidate& a,
             const Candidate& b)
         {
@@ -243,12 +267,17 @@ double PitchDetector::detectPitch(
     // correlation support.
 
     Candidate best =
-        candidates.front();
+        candidates[0];
 
     constexpr double relativeThreshold = 0.88;
 
-    for (const auto& candidate : candidates)
+    for (int candidateIndex = 0;
+        candidateIndex < candidateCount;
+        ++candidateIndex)
     {
+        const auto& candidate =
+            candidates[static_cast<size_t>(candidateIndex)];
+
         if (candidate.lag >= best.lag)
             continue;
 

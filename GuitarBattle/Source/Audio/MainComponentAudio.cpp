@@ -1717,5 +1717,7 @@ void MainComponent::initialiseAudio()
     //==========================================================================
     // Start pitch thread
 
-    pitchThread->startThread();
+    // Below normal priority: pitch analysis must yield to the message and
+    // audio threads so dense analysis never stalls the interface.
+    pitchThread->startThread(juce::Thread::Priority::low);
 }

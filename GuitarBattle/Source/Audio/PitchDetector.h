@@ -115,4 +115,10 @@ public:
 
     juce::String frequencyToNote(
         double frequency) const;
+
+private:
+    // Scratch storage reused by detectPitch() so pitch analysis does not
+    // allocate on every audio buffer.
+    mutable std::vector<double> signalBuffer;
+    mutable std::vector<double> correlationBuffer;
 };
