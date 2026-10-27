@@ -171,6 +171,7 @@ private:
     juce::Label loginScreenTitleLabel;
     juce::Label currentUserLabel;
     juce::TextButton logoutButton{ "LOG OUT" };
+    juce::TextButton quitButton{ "EXIT" };
     bool showAuthScreen = true;
     juce::String currentUsername;
     juce::String onlineAccessToken;
@@ -353,6 +354,8 @@ private:
     juce::TextButton menuButton{ "MAIN MENU" };
 
     juce::TextButton speed50Button{ "50%" };
+
+    juce::TextButton speed75Button{ "75%" };
 
     juce::TextButton speed100Button{ "100%" };
 

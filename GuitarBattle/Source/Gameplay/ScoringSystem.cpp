@@ -33,6 +33,7 @@ double ScoringSystem::getBpmMultiplier(double bpmPercent)
         { 50.0, 0.50 },
         { 60.0, 0.65 },
         { 70.0, 0.80 },
+        { 75.0, 0.85 },
         { 80.0, 0.90 },
         { 90.0, 0.95 },
         { 100.0, 1.00 },

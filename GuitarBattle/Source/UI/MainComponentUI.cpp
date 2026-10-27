@@ -1787,6 +1787,7 @@ void MainComponent::resized()
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
     logoutButton.setVisible(songSelect && currentUsername.isNotEmpty());
     accountSettingsButton.setVisible(songSelect && currentUsername.isNotEmpty());
+    quitButton.setVisible(songSelect);
     gameSongTitleLabel.setVisible(showGame || readyScreen);
 
     songPridumayButton.setVisible(songSelect);
@@ -1864,6 +1865,7 @@ void MainComponent::resized()
     distortionDriveLabel.setVisible(false);
     distortionToneLabel.setVisible(false);
     speed50Button.setVisible(showGame);
+    speed75Button.setVisible(showGame);
     speed100Button.setVisible(showGame);
     speed120Button.setVisible(showGame);
     audioSettingsButton.setVisible(songSelect || showGame || tunerScreen);
@@ -1925,6 +1927,7 @@ void MainComponent::resized()
         audioSettingsButton.setButtonText("AUDIO SETTINGS");
         audioSettingsButton.setBounds(audioX, 42, accountButtonW, accountButtonH);
         logoutButton.setBounds(logoutX, 42, accountButtonW, accountButtonH);
+        quitButton.setBounds(48, 42, 96, 32);
         songTitleLabel.setBounds(48, 140, width - 96, 44);
 
         const int contentY = 228;
@@ -2104,8 +2107,9 @@ void MainComponent::resized()
         bpmLabel.setBounds(212 + 42, 83, 44, 22);
 
         speed50Button.setBounds(310, 82, 44, 24);
-        speed100Button.setBounds(360, 82, 48, 24);
-        speed120Button.setBounds(414, 82, 48, 24);
+        speed75Button.setBounds(358, 82, 44, 24);
+        speed100Button.setBounds(406, 82, 48, 24);
+        speed120Button.setBounds(458, 82, 48, 24);
 
         const int hudGap = 12;
         const int comboW = 124;
@@ -4167,7 +4171,8 @@ void MainComponent::initialiseUi()
 
     // Consistent typography across the primary gameplay controls.
     for (auto* button : { &gameStartButton, &pauseButton, &menuButton,
-                          &speed50Button, &speed100Button, &speed120Button,
+                          &speed50Button, &speed75Button, &speed100Button,
+                          &speed120Button,
                           &audioSettingsButton, &tunerStartButton, &tunerSkipButton })
         button->setLookAndFeel(&getLookAndFeel());
 
@@ -4483,18 +4488,25 @@ void MainComponent::initialiseUi()
     // to make these buttons appear.
 
     addAndMakeVisible(speed50Button);
+    addAndMakeVisible(speed75Button);
     addAndMakeVisible(speed100Button);
     addAndMakeVisible(speed120Button);
 
     speed50Button.setClickingTogglesState(true);
+    speed75Button.setClickingTogglesState(true);
     speed100Button.setClickingTogglesState(true);
     speed120Button.setClickingTogglesState(true);
 
     speed50Button.setRadioGroupId(2001);
+    speed75Button.setRadioGroupId(2001);
     speed100Button.setRadioGroupId(2001);
     speed120Button.setRadioGroupId(2001);
 
     speed50Button.setToggleState(
+        false,
+        juce::dontSendNotification);
+
+    speed75Button.setToggleState(
         false,
         juce::dontSendNotification);
 
@@ -4521,6 +4533,12 @@ void MainComponent::initialiseUi()
             setSpeed(50.0);
         };
 
+    speed75Button.onClick =
+        [this, setSpeed]
+        {
+            setSpeed(75.0);
+        };
+
     speed100Button.onClick =
         [this, setSpeed]
         {
@@ -4535,6 +4553,7 @@ void MainComponent::initialiseUi()
 
     for (auto* button :
         { &speed50Button,
+          &speed75Button,
           &speed100Button,
           &speed120Button })
     {
@@ -4646,6 +4665,21 @@ void MainComponent::initialiseUi()
     logoutButton.setTooltip("Sign out of your account");
     logoutButton.onClick = [this] { logoutCurrentUser(); };
     addAndMakeVisible(logoutButton);
+
+    // Quit button on the main screen. systemRequestedQuit() runs the normal
+    // shutdown path, so the audio session and telemetry are closed cleanly.
+    quitButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    quitButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
+    quitButton.setColour(juce::TextButton::textColourOffId, UiColors::muted);
+    quitButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    quitButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    quitButton.setTooltip("Close GuitarBattle");
+    quitButton.onClick = []
+    {
+        if (auto* app = juce::JUCEApplication::getInstance())
+            app->systemRequestedQuit();
+    };
+    addAndMakeVisible(quitButton);
 
     // The username is a plain label. This visible button opens the personal
     // account/settings window without covering the name.
