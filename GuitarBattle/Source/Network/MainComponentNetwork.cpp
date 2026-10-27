@@ -691,7 +691,7 @@ void MainComponent::submitOnlineGameResult()
                                 item.getProperty("title", juce::var()).toString();
 
                             if (title.isNotEmpty())
-                                achievements << (achievements.isEmpty() ? "" : "  ·  ")
+                                achievements << (achievements.isEmpty() ? "" : "  |  ")
                                              << title;
                         }
                     }
@@ -1014,10 +1014,10 @@ void MainComponent::refreshProgressionSummary()
 
             juce::String text;
             text << "LEVEL " << level
-                 << "   ·   " << xp << " XP"
-                 << "   ·   " << xpForNext << " XP TO NEXT"
-                 << "   ·   " << unlocked << "/" << total << " ACHIEVEMENTS"
-                 << "   ·   RATING " << self->ratingPoints;
+                 << "   |   " << xp << " XP"
+                 << "   |   " << xpForNext << " XP TO NEXT"
+                 << "   |   " << unlocked << "/" << total << " ACHIEVEMENTS"
+                 << "   |   RATING " << self->ratingPoints;
 
             self->progressionSummaryLabel.setText(text,
                                                   juce::dontSendNotification);
@@ -1097,7 +1097,7 @@ void MainComponent::refreshDailyChallenge()
                 song.getProperty("title", juce::var()).toString();
 
             self->dailyChallengeButton.setButtonText(
-                "DAILY  ·  " + (title.isNotEmpty() ? title : dayName));
+                "DAILY  |  " + (title.isNotEmpty() ? title : dayName));
 
             self->dailyChallengeButton.setColour(
                 juce::TextButton::buttonColourId, UiColors::accent);
@@ -1119,9 +1119,9 @@ void MainComponent::refreshDailyChallenge()
                     const auto rank = result.getProperty("rank", juce::var());
 
                     if (! rank.isVoid())
-                        status << "  ·  rank #" << static_cast<int>(rank);
+                        status << "  |  rank #" << static_cast<int>(rank);
 
-                    status << "  ·  replays are practice only.";
+                    status << "  |  replays are practice only.";
                 }
                 else
                 {
@@ -1210,7 +1210,7 @@ void MainComponent::openPublicProfile(const juce::String& userId)
             if (achievements != nullptr)
             {
                 for (const auto& item : *achievements)
-                    text << "• "
+                    text << "* "
                          << item.getProperty("title", juce::var()).toString()
                          << "  (+"
                          << static_cast<int>(item.getProperty("xp_bonus", 0))
