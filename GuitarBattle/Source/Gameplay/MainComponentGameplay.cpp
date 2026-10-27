@@ -1134,7 +1134,10 @@ void MainComponent::advanceTarget()
                 noteName,
                 juce::dontSendNotification);
 
-            repaint();
+            // Only the target label changed. Repainting the whole window here
+            // forced the tablature to repaint once per note on top of its own
+            // 60 Hz clock.
+            targetNoteLabel.repaint();
         });
 }
 

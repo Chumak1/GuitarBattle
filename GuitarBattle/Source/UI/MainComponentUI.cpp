@@ -21,7 +21,11 @@ void MainComponent::showHitFeedback(const juce::String& text, int type)
     feedbackBaseFontSize = 27.0f;
     hitLabel.setText(text, juce::dontSendNotification);
     updateHitFeedbackAnimation();
-    repaint();
+
+    // Repaint only the feedback label. A full-window repaint here forced the
+    // tablature to repaint on every hit and during the whole animation, which
+    // made dense songs look like they were stalling.
+    hitLabel.repaint();
 }
 
 void MainComponent::updateHitFeedbackAnimation()
@@ -36,7 +40,7 @@ void MainComponent::updateHitFeedbackAnimation()
         feedbackType = 0;
         hitLabel.setFont(GameUi::font(feedbackBaseFontSize, true));
         hitLabel.setColour(juce::Label::textColourId, UiColors::blue);
-        repaint();
+        hitLabel.repaint();
         return;
     }
 
@@ -58,7 +62,7 @@ void MainComponent::updateHitFeedbackAnimation()
     const float alpha = 1.0f - 0.35f * progress;
     hitLabel.setFont(GameUi::font(fontSize, true));
     hitLabel.setColour(juce::Label::textColourId, feedbackColour.withAlpha(alpha));
-    repaint();
+    hitLabel.repaint();
 }
 
 void MainComponent::showEmailVerificationDialog(const juce::String& email,
