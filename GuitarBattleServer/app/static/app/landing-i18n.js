@@ -8,6 +8,11 @@ window.FFI18N.add({
     'landing.ogDescription': 'Табы, минусовки из четырёх стемов и оценка игры по микрофону в реальном времени. Соревнуйтесь за место в мировом рейтинге.',
     'landing.ogLocale': 'ru_RU',
 
+    'contacts.title': 'Контакты',
+    'contacts.name': 'Чумак Евгений Александрович',
+    'contacts.emailLabel': 'Email',
+    'contacts.telegramLabel': 'Telegram',
+
     'landing.navLabel': 'Основная навигация',
     'landing.nav.about': 'О проекте',
     'landing.nav.how': 'Как играть',
@@ -96,6 +101,11 @@ window.FFI18N.add({
     'landing.ogTitle': 'fretfight — the first online guitar battle',
     'landing.ogDescription': 'Tabs, backing tracks built from four stems and real-time microphone scoring. Compete for a place on the global leaderboard.',
     'landing.ogLocale': 'en_US',
+
+    'contacts.title': 'Contacts',
+    'contacts.name': 'Evgeniy Aleksandrovich Chumak',
+    'contacts.emailLabel': 'Email',
+    'contacts.telegramLabel': 'Telegram',
 
     'landing.navLabel': 'Main navigation',
     'landing.nav.about': 'About',

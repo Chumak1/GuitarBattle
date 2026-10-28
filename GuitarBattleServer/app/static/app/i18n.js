@@ -205,6 +205,11 @@ window.FFI18N = (function () {
       'common.back': 'Назад',
       'common.loading': 'загрузка…',
 
+      'contacts.title': 'Контакты',
+      'contacts.name': 'Чумак Евгений Александрович',
+      'contacts.emailLabel': 'Email',
+      'contacts.telegramLabel': 'Telegram',
+
       'policy.docTitle': 'Политика конфиденциальности — fretfight',
       'policy.kicker': 'Документы',
       'policy.title': 'Политика конфиденциальности',
@@ -375,6 +380,11 @@ window.FFI18N = (function () {
       'common.refresh': 'Refresh',
       'common.back': 'Back',
       'common.loading': 'loading…',
+
+      'contacts.title': 'Contacts',
+      'contacts.name': 'Evgeniy Aleksandrovich Chumak',
+      'contacts.emailLabel': 'Email',
+      'contacts.telegramLabel': 'Telegram',
 
       'policy.docTitle': 'Privacy Policy — fretfight',
       'policy.kicker': 'Legal',
