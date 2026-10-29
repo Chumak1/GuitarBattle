@@ -2815,49 +2815,162 @@ namespace AccountWindowDetail
         button.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     }
 
-    // Achievement artwork arrives as full-colour artwork from the server. The
-    // client renders it in the single FretFight gold so every achievement badge
-    // matches the accent colour, while the source luminance keeps the glyph
-    // readable. Locked cards draw the same image at a lower opacity.
-    juce::Image tintAchievementIcon(const juce::Image& source)
+    struct AchievementCard
     {
-        if (! source.isValid() || source.getWidth() <= 0 || source.getHeight() <= 0)
-            return source;
+        juce::String code;
+        juce::String title;
+        juce::String description;
+        juce::String iconUrl;
+        juce::String awardedAt;
+        int xpBonus = 0;
+        int progress = 0;
+        int goal = 0;
+        bool unlocked = false;
+    };
 
-        juce::Image result(juce::Image::ARGB, source.getWidth(),
-                           source.getHeight(), true);
-        juce::Image::BitmapData src(source, juce::Image::BitmapData::readOnly);
-        juce::Image::BitmapData dst(result, juce::Image::BitmapData::writeOnly);
+    // One badge tile. The bundled artwork is a dark glyph on a transparent
+    // background, exactly like on the site, so it is drawn on the same light
+    // rounded plate instead of being recoloured into the accent colour.
+    void paintAchievementTile(juce::Graphics& g,
+                              const juce::Rectangle<int>& tile,
+                              const AchievementCard& card,
+                              const juce::Image* icon)
+    {
+        const bool unlocked = card.unlocked;
 
-        const auto gold = UiColors::accent;
+        g.setColour(unlocked ? UiColors::surface2.withAlpha(0.92f)
+                             : UiColors::surface2.withAlpha(0.45f));
+        g.fillRoundedRectangle(tile.toFloat(), 12.0f);
+        g.setColour(unlocked ? UiColors::accent.withAlpha(0.55f)
+                             : UiColors::border);
+        g.drawRoundedRectangle(tile.toFloat(), 12.0f, 1.0f);
 
-        for (int y = 0; y < source.getHeight(); ++y)
+        constexpr int iconSize = 52;
+        const int iconX = tile.getX() + 12;
+        const int iconY = tile.getY() + (tile.getHeight() - iconSize) / 2;
+        const juce::Rectangle<float> iconTile(
+            static_cast<float>(iconX), static_cast<float>(iconY),
+            static_cast<float>(iconSize), static_cast<float>(iconSize));
+
+        g.setColour(unlocked ? juce::Colour(0xFFE9EFF6).withAlpha(0.92f)
+                             : juce::Colour(0xFF8D9CAB).withAlpha(0.16f));
+        g.fillRoundedRectangle(iconTile, 13.0f);
+
+        if (icon != nullptr)
         {
-            for (int x = 0; x < source.getWidth(); ++x)
-            {
-                const auto pixel = src.getPixelColour(x, y);
-                const float alpha = pixel.getFloatAlpha();
+            g.setOpacity(unlocked ? 1.0f : 0.35f);
+            g.drawImage(*icon, iconTile,
+                        juce::RectanglePlacement::centred, false);
+            g.setOpacity(1.0f);
+        }
 
-                if (alpha <= 0.002f)
+        const int textX = iconX + iconSize + 12;
+        const int textW = tile.getRight() - textX - 12;
+
+        g.setColour(unlocked ? UiColors::text : UiColors::muted);
+        g.setFont(GameUi::font(12.5f, true));
+        g.drawFittedText(card.title,
+                         juce::Rectangle<int>(textX, tile.getY() + 8,
+                                              textW, 16),
+                         juce::Justification::centredLeft, 1);
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(9.5f));
+        g.drawFittedText(card.description,
+                         juce::Rectangle<int>(textX, tile.getY() + 26,
+                                              textW, 26),
+                         juce::Justification::topLeft, 2);
+
+        juce::String status;
+
+        if (unlocked)
+        {
+            status = "Unlocked";
+
+            if (card.awardedAt.isNotEmpty())
+                status << "  " << card.awardedAt.substring(0, 10);
+
+            status << "   +" << card.xpBonus << " XP";
+        }
+        else
+        {
+            status = "Locked";
+
+            if (card.goal > 0)
+                status << "   " << card.progress << "/" << card.goal;
+
+            status << "   +" << card.xpBonus << " XP";
+        }
+
+        g.setColour(unlocked ? UiColors::green : UiColors::muted);
+        g.setFont(GameUi::font(9.0f, true));
+        g.drawFittedText(status,
+                         juce::Rectangle<int>(textX, tile.getBottom() - 20,
+                                              textW, 14),
+                         juce::Justification::centredLeft, 1);
+    }
+
+    // Scrolling list modelled on the website profile: every achievement is
+    // listed with its icon, title, description and progress, so the account
+    // window shows the same badge artwork the browser does. Two tiles share a
+    // row; the ListBox owns scrolling and clipping.
+    class AchievementListModel final : public juce::ListBoxModel
+    {
+    public:
+        void setData(const std::vector<AchievementCard>* cardsToUse,
+                     const std::map<juce::String, juce::Image>* iconsToUse)
+        {
+            cards = cardsToUse;
+            icons = iconsToUse;
+        }
+
+        int getNumRows() override
+        {
+            const int count = cards != nullptr
+                ? static_cast<int>(cards->size()) : 0;
+            return (count + 1) / 2;
+        }
+
+        void paintListBoxItem(int rowNumber, juce::Graphics& g,
+                              int width, int height, bool) override
+        {
+            if (cards == nullptr || rowNumber < 0)
+                return;
+
+            constexpr int gap = 8;
+            const int tileWidth = juce::jmax(80, (width - gap) / 2);
+            const int firstIndex = rowNumber * 2;
+
+            for (int offset = 0; offset < 2; ++offset)
+            {
+                const int index = firstIndex + offset;
+
+                if (index >= static_cast<int>(cards->size()))
+                    break;
+
+                const auto& card = (*cards)[static_cast<size_t>(index)];
+                const juce::Image* icon = nullptr;
+
+                if (icons != nullptr)
                 {
-                    dst.setPixelColour(x, y, juce::Colours::transparentBlack);
-                    continue;
+                    const auto found = icons->find(card.code);
+
+                    if (found != icons->end() && found->second.isValid())
+                        icon = &found->second;
                 }
 
-                const float shade = juce::jlimit(
-                    0.55f, 1.0f, 0.72f + 0.45f * pixel.getBrightness());
-
-                dst.setPixelColour(x, y,
-                                   juce::Colour::fromHSV(gold.getHue(),
-                                                         gold.getSaturation()
-                                                             * 0.92f,
-                                                         gold.getBrightness() * shade,
-                                                         alpha));
+                paintAchievementTile(
+                    g,
+                    juce::Rectangle<int>(offset * (tileWidth + gap), 0,
+                                         tileWidth, height),
+                    card, icon);
             }
         }
 
-        return result;
-    }
+    private:
+        const std::vector<AchievementCard>* cards = nullptr;
+        const std::map<juce::String, juce::Image>* icons = nullptr;
+    };
 }
 
 class AccountWindow final : public juce::Component
@@ -3065,115 +3178,11 @@ public:
                                    iconSize * 0.18f);
         }
 
-        // Genre mastery radar, kept compact next to the account details.
-        if (! genreNames.isEmpty())
-        {
-            auto radarArea = juce::Rectangle<int>(
-                accountInner.getX() + accountInner.getWidth() - 320,
-                accountInner.getY() + 4,
-                320, 120);
-
-            g.setColour(UiColors::muted);
-            g.setFont(GameUi::eyebrow(9.0f));
-            g.drawText("GENRE MASTERY",
-                       radarArea.removeFromTop(14).toFloat(),
-                       juce::Justification::centredLeft, false);
-
-            const float radius = juce::jmin(
-                static_cast<float>(radarArea.getWidth()) * 0.30f,
-                static_cast<float>(radarArea.getHeight()) * 0.38f);
-
-            if (radius > 20.0f)
-            {
-                const auto centre = radarArea.toFloat().getCentre();
-                const int axes = 8;
-
-                auto axisPoint = [centre, radius, axes](int index, float scale)
-                {
-                    const float angle = -juce::MathConstants<float>::halfPi
-                        + juce::MathConstants<float>::twoPi
-                            * static_cast<float>(index)
-                            / static_cast<float>(axes);
-                    return juce::Point<float>(
-                        centre.x + std::cos(angle) * radius * scale,
-                        centre.y + std::sin(angle) * radius * scale);
-                };
-
-                for (int ring = 1; ring <= 3; ++ring)
-                {
-                    juce::Path ringPath;
-                    const float scale = static_cast<float>(ring) / 3.0f;
-
-                    for (int i = 0; i < axes; ++i)
-                    {
-                        const auto p = axisPoint(i, scale);
-
-                        if (i == 0)
-                            ringPath.startNewSubPath(p);
-                        else
-                            ringPath.lineTo(p);
-                    }
-
-                    ringPath.closeSubPath();
-                    g.setColour(UiColors::border.withAlpha(0.7f));
-                    g.strokePath(ringPath, juce::PathStrokeType(1.0f));
-                }
-
-                for (int i = 0; i < axes; ++i)
-                {
-                    const auto outer = axisPoint(i, 1.0f);
-                    g.setColour(UiColors::border.withAlpha(0.55f));
-                    g.drawLine(juce::Line<float>(centre, outer), 1.0f);
-
-                    const juce::String label =
-                        i < genreNames.size()
-                            ? genreNames[i].substring(0, 10)
-                            : juce::String("-");
-
-                    const auto labelPoint = axisPoint(i, 1.22f);
-                    g.setColour(i < genreNames.size()
-                                    ? UiColors::muted
-                                    : UiColors::borderStrong);
-                    g.setFont(GameUi::font(7.5f));
-                    g.drawText(label,
-                               juce::Rectangle<float>(labelPoint.x - 30.0f,
-                                                      labelPoint.y - 7.0f,
-                                                      60.0f, 14.0f),
-                               juce::Justification::centred, false);
-                }
-
-                juce::Path shape;
-
-                for (int i = 0; i < axes; ++i)
-                {
-                    const float value = i < genreValues.size()
-                        ? juce::jlimit(0.0f, 100.0f, genreValues[i]) / 100.0f
-                        : 0.0f;
-                    const auto p = axisPoint(i, value);
-
-                    if (i == 0)
-                        shape.startNewSubPath(p);
-                    else
-                        shape.lineTo(p);
-                }
-
-                shape.closeSubPath();
-                g.setColour(UiColors::accent.withAlpha(0.22f));
-                g.fillPath(shape);
-                g.setColour(UiColors::accent);
-                g.strokePath(shape, juce::PathStrokeType(1.6f));
-            }
-        }
-
         if (achievementsTotalCount > 0)
         {
             const int gridX = accountInner.getX();
             const int gridY = accountInner.getY() + 146;
             const int gridW = accountInner.getWidth();
-            const int cellGap = 8;
-            const int cellW = (gridW - cellGap) / 2;
-            const int cellH = juce::jmax(
-                72, juce::jmin(78, (accountInner.getBottom() - gridY - cellGap) / 2));
 
             g.setColour(UiColors::muted);
             g.setFont(GameUi::eyebrow(9.5f));
@@ -3182,119 +3191,6 @@ public:
                            + juce::String(achievementsTotalCount),
                        juce::Rectangle<int>(gridX, gridY - 18, gridW, 14).toFloat(),
                        juce::Justification::centredLeft, false);
-
-            int shown = 0;
-
-            for (const auto& card : achievementCards)
-            {
-                if (shown >= 4)
-                    break;
-
-                const int column = shown % 2;
-                const int row = shown / 2;
-                const juce::Rectangle<int> tile(gridX + column * (cellW + cellGap),
-                                                gridY + row * (cellH + cellGap),
-                                                cellW, cellH);
-
-                g.setColour(card.unlocked ? UiColors::surface2.withAlpha(0.92f)
-                                          : UiColors::surface2.withAlpha(0.45f));
-                g.fillRoundedRectangle(tile.toFloat(), 12.0f);
-                g.setColour(card.unlocked ? UiColors::accent.withAlpha(0.55f)
-                                          : UiColors::border);
-                g.drawRoundedRectangle(tile.toFloat(), 12.0f, 1.0f);
-
-                const int iconSize = 34;
-                const int iconX = tile.getX() + 10;
-                const int iconY = tile.getY() + 10;
-
-                if (! card.unlocked)
-                {
-                    g.setColour(UiColors::background.withAlpha(0.45f));
-                    g.fillRoundedRectangle(tile.toFloat(), 12.0f);
-                }
-
-                // The glyph is drawn after the dim overlay so locked
-                // achievements stay recognisable instead of disappearing.
-                const auto iconIt = achievementIcons.find(card.code);
-
-                if (iconIt != achievementIcons.end())
-                {
-                    // Unlocked badges are full gold, locked ones stay visible
-                    // but clearly dimmed.
-                    g.setOpacity(card.unlocked ? 1.0f : 0.42f);
-                    g.drawImage(iconIt->second,
-                                juce::Rectangle<float>(static_cast<float>(iconX),
-                                                       static_cast<float>(iconY),
-                                                       static_cast<float>(iconSize),
-                                                       static_cast<float>(iconSize)),
-                                juce::RectanglePlacement::centred);
-                    g.setOpacity(1.0f);
-                }
-                else
-                {
-                    g.setColour(UiColors::accent.withAlpha(0.18f));
-                    g.fillEllipse(static_cast<float>(iconX), static_cast<float>(iconY),
-                                  static_cast<float>(iconSize),
-                                  static_cast<float>(iconSize));
-                    g.setColour(UiColors::accent);
-                    g.drawEllipse(static_cast<float>(iconX), static_cast<float>(iconY),
-                                  static_cast<float>(iconSize),
-                                  static_cast<float>(iconSize), 1.0f);
-                }
-
-                if (! card.unlocked)
-                {
-                    g.setColour(UiColors::background.withAlpha(0.45f));
-                    g.fillRoundedRectangle(tile.toFloat(), 12.0f);
-                }
-
-                const int textX = iconX + iconSize + 8;
-                const int textW = tile.getRight() - textX - 10;
-
-                g.setColour(card.unlocked ? UiColors::text : UiColors::muted);
-                g.setFont(GameUi::font(11.5f, true));
-                g.drawFittedText(card.title,
-                                 juce::Rectangle<int>(textX, tile.getY() + 7,
-                                                      textW, 17),
-                                 juce::Justification::centredLeft, 1);
-
-                g.setColour(UiColors::muted);
-                g.setFont(GameUi::font(9.0f));
-                g.drawFittedText(card.description,
-                                 juce::Rectangle<int>(textX, tile.getY() + 25,
-                                                      textW, 28),
-                                 juce::Justification::topLeft, 2);
-
-                juce::String status;
-
-                if (card.unlocked)
-                {
-                    status = "Unlocked";
-
-                    if (card.awardedAt.isNotEmpty())
-                        status << "  " << card.awardedAt.substring(0, 10);
-
-                    status << "   +" << card.xpBonus << " XP";
-                }
-                else
-                {
-                    status = "Locked";
-
-                    if (card.goal > 0)
-                        status << "   " << card.progress << "/" << card.goal;
-
-                    status << "   +" << card.xpBonus << " XP";
-                }
-
-                g.setColour(card.unlocked ? UiColors::green : UiColors::muted);
-                g.setFont(GameUi::font(8.5f, true));
-                g.drawFittedText(status,
-                                 juce::Rectangle<int>(textX, tile.getBottom() - 17,
-                                                      textW, 13),
-                                 juce::Justification::centredLeft, 1);
-
-                ++shown;
-            }
         }
     }
 
@@ -3380,9 +3276,10 @@ public:
         changePasswordButton.setBounds(changePasswordButtonArea);
 
         const auto accountInner = accountCard.reduced(20);
-        accountLogoutButton.setBounds(accountInner.getRight() - 220,
-                                      accountInner.getBottom() - 34,
-                                      220, 34);
+        const int achievementsTop = accountInner.getY() + 146;
+        achievementList.setBounds(
+            accountInner.getX(), achievementsTop, accountInner.getWidth(),
+            juce::jmax(80, accountInner.getBottom() - achievementsTop));
 
         alertLabel.setBounds(margin, getHeight() - 40,
                              getWidth() - margin * 2, 24);
@@ -3676,14 +3573,12 @@ private:
         AccountWindowDetail::styleButton(changePasswordButton, true);
         AccountWindowDetail::styleButton(refreshButton, false);
         AccountWindowDetail::styleButton(logoutButton, false);
-        AccountWindowDetail::styleButton(accountLogoutButton, false);
         AccountWindowDetail::styleButton(showMoreButton, false);
 
         saveProfileButton.onClick = [this] { saveProfile(); };
         changePasswordButton.onClick = [this] { changePassword(); };
         refreshButton.onClick = [this] { refreshAll(); };
         logoutButton.onClick = [this] { logout(); };
-        accountLogoutButton.onClick = [this] { logout(); };
         showMoreButton.onClick = [this] { loadHistory(false); };
         showMoreButton.setVisible(false);
 
@@ -3691,8 +3586,20 @@ private:
         addAndMakeVisible(changePasswordButton);
         addAndMakeVisible(refreshButton);
         addAndMakeVisible(logoutButton);
-        addAndMakeVisible(accountLogoutButton);
         addAndMakeVisible(showMoreButton);
+
+        // The achievement list scrolls inside the account card, so every badge
+        // is visible with the same artwork the website profile shows.
+        achievementList.setRowHeight(88);
+        achievementList.setOutlineThickness(0);
+        achievementList.setColour(juce::ListBox::backgroundColourId,
+                                  juce::Colours::transparentBlack);
+        achievementList.setColour(juce::ListBox::outlineColourId,
+                                  juce::Colours::transparentBlack);
+        achievementList.setWantsKeyboardFocus(false);
+        achievementModel.setData(&achievementCards, &achievementIcons);
+        achievementList.setVisible(false);
+        addAndMakeVisible(achievementList);
 
         alertLabel.setFont(GameUi::font(12.0f));
         alertLabel.setColour(juce::Label::textColourId, UiColors::muted);
@@ -3747,7 +3654,7 @@ private:
 
                 for (const auto& item : *items)
                 {
-                    AchievementCard card;
+                    AccountWindowDetail::AchievementCard card;
                     card.code = item.getProperty("code", juce::var()).toString();
                     card.title = item.getProperty("title", juce::var()).toString();
                     card.description =
@@ -3768,7 +3675,7 @@ private:
                     if (card.unlocked)
                         ++self->achievementsUnlockedCount;
 
-                    if (card.iconUrl.isNotEmpty() && iconJobs.size() < 12)
+                    if (card.iconUrl.isNotEmpty() && iconJobs.size() < 64)
                         iconJobs.push_back({ card.code, card.iconUrl });
 
                     self->achievementCards.push_back(card);
@@ -3778,11 +3685,25 @@ private:
                 // the account card always shows the most relevant cards.
                 std::stable_sort(self->achievementCards.begin(),
                                  self->achievementCards.end(),
-                                 [](const AchievementCard& a,
-                                    const AchievementCard& b)
+                                 [](const AccountWindowDetail::AchievementCard& a,
+                                    const AccountWindowDetail::AchievementCard& b)
                                  {
                                      return a.unlocked && ! b.unlocked;
                                  });
+
+                // Hand the full list to the scrolling grid. The cards are
+                // rendered there, so the fetched icons and the summary always
+                // reflect the latest response.
+                self->achievementModel.setData(&self->achievementCards,
+                                               &self->achievementIcons);
+                self->achievementList.setVisible(
+                    self->achievementsTotalCount > 0);
+                self->achievementList.updateContent();
+
+                if (auto* viewport = self->achievementList.getViewport())
+                    viewport->setViewPosition(0, 0);
+
+                self->achievementList.repaint();
 
                 if (iconJobs.empty())
                 {
@@ -3825,19 +3746,21 @@ private:
                             if (drawable == nullptr)
                                 continue;
 
-                            juce::Image image(juce::Image::ARGB, 40, 40, true);
+                            // Rasterise at the same size the website uses: a
+                            // 52 px plate with 9 px padding around the glyph.
+                            juce::Image image(juce::Image::ARGB, 52, 52, true);
                             {
                                 juce::Graphics imageGraphics(image);
                                 drawable->drawWithin(
                                     imageGraphics,
-                                    juce::Rectangle<float>(0.0f, 0.0f, 40.0f, 40.0f),
+                                    juce::Rectangle<float>(9.0f, 9.0f, 34.0f, 34.0f),
                                     juce::RectanglePlacement::centred, 1.0f);
                             }
 
-                            window->achievementIcons[result.code] =
-                                AccountWindowDetail::tintAchievementIcon(image);
+                            window->achievementIcons[result.code] = image;
                         }
 
+                        window->achievementList.repaint();
                         window->repaint();
                     });
             });
@@ -3891,27 +3814,6 @@ private:
                     self->timingValue =
                         juce::String(juce::roundToInt(
                             static_cast<double>(timing))) + "%";
-
-                self->genreNames.clear();
-                self->genreValues.clear();
-
-                if (auto* genres =
-                        json.getProperty("genre_mastery", juce::var()).getArray())
-                {
-                    for (const auto& item : *genres)
-                    {
-                        const auto name =
-                            item.getProperty("genre", juce::var()).toString();
-
-                        if (name.isEmpty())
-                            continue;
-
-                        self->genreNames.add(name);
-                        self->genreValues.add(static_cast<float>(
-                            static_cast<double>(
-                                item.getProperty("value", 0))));
-                    }
-                }
 
                 self->repaint();
             });
@@ -4463,24 +4365,10 @@ private:
     juce::String xpNote = "total experience";
     juce::String accuracyValue = "-";
     juce::String timingValue = "-";
-    juce::StringArray genreNames;
-    juce::Array<float> genreValues;
-
-    struct AchievementCard
-    {
-        juce::String code;
-        juce::String title;
-        juce::String description;
-        juce::String iconUrl;
-        juce::String awardedAt;
-        int xpBonus = 0;
-        int progress = 0;
-        int goal = 0;
-        bool unlocked = false;
-    };
-
-    std::vector<AchievementCard> achievementCards;
+    std::vector<AccountWindowDetail::AchievementCard> achievementCards;
     std::map<juce::String, juce::Image> achievementIcons;
+    AccountWindowDetail::AchievementListModel achievementModel;
+    juce::ListBox achievementList { "Achievements", &achievementModel };
     int achievementsUnlockedCount = 0;
     int achievementsTotalCount = 0;
     int achievementsRequestId = 0;
@@ -4515,7 +4403,6 @@ private:
     juce::TextButton showMoreButton { "SHOW MORE" };
     juce::TextButton refreshButton { "REFRESH" };
     juce::TextButton logoutButton { "LOG OUT" };
-    juce::TextButton accountLogoutButton { "SIGN OUT" };
     juce::Label alertLabel;
     juce::Label ratingEmptyLabel;
     juce::Label historyEmptyLabel;
