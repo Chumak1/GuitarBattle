@@ -1479,7 +1479,28 @@ void MainComponent::getNextAudioBlock(
     }
 
     //==========================================================================
-    // No metronome outside gameplay
+    // Preview song / background music
+    //
+    // This must stay above the gameplay-only early return below: on the song
+    // select screen the callback returns before the guitar monitoring block,
+    // and music rendered after that return would never reach the output. The
+    // message thread guarantees that at most one of the two is playing, and
+    // that neither plays during a game round (updateMusicState()); the
+    // callback only renders the already-selected source.
+
+    if (previewPlayer.isPlaying())
+    {
+        previewPlayer.render(*bufferToFill.buffer, bufferToFill.startSample,
+                             bufferToFill.numSamples);
+    }
+    else if (backgroundPlayer.isPlaying())
+    {
+        backgroundPlayer.render(*bufferToFill.buffer, bufferToFill.startSample,
+                                bufferToFill.numSamples);
+    }
+
+    //==========================================================================
+    // No guitar monitoring or metronome outside gameplay
 
     if (gameState != GameState::Playing)
         return;
@@ -1828,24 +1849,6 @@ void MainComponent::getNextAudioBlock(
             metronomePlaybackPosition = 0;
             metronomeSamplesRemaining = 0;
         }
-    }
-
-    //==========================================================================
-    // Preview song / background music
-    //
-    // The message thread guarantees that at most one of the two is playing,
-    // and that neither plays during a game round (updateMusicState()). The
-    // callback only renders the already-selected source.
-
-    if (previewPlayer.isPlaying())
-    {
-        previewPlayer.render(*bufferToFill.buffer, bufferToFill.startSample,
-                             bufferToFill.numSamples);
-    }
-    else if (backgroundPlayer.isPlaying())
-    {
-        backgroundPlayer.render(*bufferToFill.buffer, bufferToFill.startSample,
-                                bufferToFill.numSamples);
     }
 }
 
