@@ -34,6 +34,12 @@ public:
 
     void playFromStart();
     void stop();
+    // Pauses without losing the playback position, so the same track can
+    // continue after a higher-priority source (a preview or gameplay) ends.
+    void pause();
+    // Continues from the stored position; starts from the beginning when the
+    // track was never played or has already reached its end.
+    void resume();
     bool isPlaying() const noexcept;
     bool isAtEnd() const noexcept;
 

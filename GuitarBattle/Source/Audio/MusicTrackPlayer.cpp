@@ -30,8 +30,29 @@ std::shared_ptr<MusicTrackPlayer::Track> MusicTrackPlayer::decodeFile(const juce
     track->audio = std::make_shared<juce::AudioBuffer<float>> (channels, totalSamples);
     track->audio->clear();
 
-    if (! reader->read (track->audio.get(), 0, totalSamples, 0, true, true))
+    // Read in blocks and keep everything decoded before the first failure.
+    // MP3 duration is only an estimate, and a VBR stream with a truncated or
+    // unusual tail can fail the single full-length read even though the vast
+    // majority of the file is perfectly decodable.
+    constexpr int blockSize = 4096;
+    int decodedSamples = 0;
+
+    while (decodedSamples < totalSamples)
+    {
+        const int count = juce::jmin(blockSize, totalSamples - decodedSamples);
+
+        if (! reader->read (track->audio.get(), decodedSamples, count,
+                            decodedSamples, true, true))
+            break;
+
+        decodedSamples += count;
+    }
+
+    if (decodedSamples <= 0)
         return nullptr;
+
+    if (decodedSamples < totalSamples)
+        track->audio->setSize (channels, decodedSamples, true, true, true);
 
     return track;
 }
@@ -86,6 +107,29 @@ void MusicTrackPlayer::stop()
 {
     playing.store (false, std::memory_order_relaxed);
     position.store (0, std::memory_order_relaxed);
+}
+
+void MusicTrackPlayer::pause()
+{
+    playing.store (false, std::memory_order_relaxed);
+}
+
+void MusicTrackPlayer::resume()
+{
+    auto current = std::atomic_load (&track);
+
+    if (current == nullptr || current->audio == nullptr
+        || current->audio->getNumSamples() <= 1)
+        return;
+
+    // Reaching the end stops a non-looping track; a looping one wraps inside
+    // render(). Either way, resuming from the final sample would be silent, so
+    // start over in that case.
+    if (position.load (std::memory_order_relaxed)
+        >= current->audio->getNumSamples() - 1)
+        position.store (0, std::memory_order_relaxed);
+
+    playing.store (true, std::memory_order_relaxed);
 }
 
 bool MusicTrackPlayer::isPlaying() const noexcept

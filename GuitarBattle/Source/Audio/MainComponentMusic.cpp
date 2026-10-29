@@ -238,8 +238,11 @@ void MainComponent::preparePreviewForSelectedSong()
             self->previewPlayer.setTrack(*result);
             self->previewPlayer.setLooping(false);
             self->previewPlayer.setGain(1.0f);
-            self->previewPlayer.playFromStart();
 
+            // Selecting a song only prepares its preview. Audio starts when
+            // the player presses PLAY PREVIEW, so the background track keeps
+            // playing on the first screen instead of being replaced by the
+            // preview of the initially selected row.
             self->updateMusicState();
             self->updatePreviewButton();
         });
@@ -276,6 +279,10 @@ void MainComponent::updateMusicState()
 {
     // Single source of truth for audio priority:
     // game audio > preview song > background music.
+    //
+    // Background music is paused rather than stopped whenever a higher-priority
+    // source takes over, so it continues from the same position (and keeps
+    // looping) as soon as that source ends.
     const bool gameAudioActive =
         gameState == GameState::Playing
         || gameState == GameState::Paused
@@ -288,7 +295,7 @@ void MainComponent::updateMusicState()
             previewPlayer.stop();
 
         if (backgroundPlayer.isPlaying())
-            backgroundPlayer.stop();
+            backgroundPlayer.pause();
 
         updatePreviewButton();
         return;
@@ -297,7 +304,7 @@ void MainComponent::updateMusicState()
     if (previewPlayer.isPlaying())
     {
         if (backgroundPlayer.isPlaying())
-            backgroundPlayer.stop();
+            backgroundPlayer.pause();
 
         updatePreviewButton();
         return;
@@ -311,11 +318,11 @@ void MainComponent::updateMusicState()
     if (backgroundAllowed)
     {
         if (! backgroundPlayer.isPlaying())
-            backgroundPlayer.playFromStart();
+            backgroundPlayer.resume();
     }
     else if (backgroundPlayer.isPlaying())
     {
-        backgroundPlayer.stop();
+        backgroundPlayer.pause();
     }
 
     updatePreviewButton();
