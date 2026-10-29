@@ -105,7 +105,7 @@ void MainComponent::evaluatePracticeNote()
 
     const double pitch = practiceLastPitch.load(std::memory_order_relaxed);
 
-    if (pitch <= 20.0 || pitch >= 1000.0)
+    if (pitch <= minDetectedPitchHz || pitch > maxDetectedPitchHz)
         return;
 
     const int expectedMidi = notes[static_cast<size_t>(index)].midiNote;
@@ -210,7 +210,7 @@ void MainComponent::updatePracticeMode()
                 const double pitch =
                     practiceLastPitch.load(std::memory_order_relaxed);
 
-                if (pitch > 20.0 && pitch < 1000.0
+                if (pitch > minDetectedPitchHz && pitch <= maxDetectedPitchHz
                     && pitchDetector.frequencyToMidi(pitch)
                         == notes[static_cast<size_t>(heldIndex)].midiNote)
                 {

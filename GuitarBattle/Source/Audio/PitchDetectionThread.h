@@ -231,8 +231,8 @@ public:
                     // the player usually keeps the target note ringing, so the
                     // hold must be able to release without a fresh attack.
                     if (owner.practiceActive.load(std::memory_order_relaxed)
-                        && pitch > 20.0
-                        && pitch < 1000.0
+                        && pitch > MainComponent::minDetectedPitchHz
+                        && pitch <= MainComponent::maxDetectedPitchHz
                         && rms >= noteRmsGate)
                     {
                         owner.practiceLastPitch.store(
@@ -249,8 +249,8 @@ public:
 
 
 
-                    if (pitch > 20.0
-                        && pitch < 1000.0
+                    if (pitch > MainComponent::minDetectedPitchHz
+                        && pitch <= MainComponent::maxDetectedPitchHz
                         && rms >= noteRmsGate
                         && (onset || owner.tunerActive.load(std::memory_order_relaxed)))
                     {
@@ -938,8 +938,8 @@ public:
 
                     juce::ignoreUnused(onset);
 
-                    if (pitch > 20.0
-                        && pitch < 1000.0
+                    if (pitch > MainComponent::minDetectedPitchHz
+                        && pitch <= MainComponent::maxDetectedPitchHz
                         && rms >= displayNoteGate)
                     {
                         const auto detectedNote =

@@ -776,6 +776,15 @@ private:
 
 
     static constexpr int pitchAnalysisSize = 4096;
+
+    // Accepted pitch window for a detected guitar note. The 21st fret on the
+    // high E string is ~1109 Hz and the 24th fret is ~1319 Hz, so the old
+    // 1000 Hz ceiling silently rejected the top of the fretboard. The ceiling
+    // sits above the highest playable fret and below the second harmonic of
+    // the low E string.
+    static constexpr double minDetectedPitchHz = 20.0;
+    static constexpr double maxDetectedPitchHz = 1500.0;
+
     PitchDetector pitchDetector;
     GuitarTuner tuner;
     Metronome metronome;

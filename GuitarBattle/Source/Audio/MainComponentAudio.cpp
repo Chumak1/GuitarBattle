@@ -67,7 +67,8 @@ void MainComponent::updateInputMonitor()
     const int clips = inputClipEvents.load(std::memory_order_relaxed);
 
     const bool noteActive = noteOn.load(std::memory_order_relaxed)
-        && lastPitch > 20.0 && lastPitch < 1000.0;
+        && lastPitch > minDetectedPitchHz
+        && lastPitch <= maxDetectedPitchHz;
 
     juce::String noteName;
 
