@@ -49,6 +49,52 @@ class HeroBackgroundResponse(BaseModel):
     hero_background: HeroBackground = Field(default_factory=HeroBackground)
 
 
+class SiteSocials(BaseModel):
+    """Links to the author's social profiles.
+
+    ``None`` means "no profile yet": the public page renders a disabled
+    placeholder icon instead of a link.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    youtube: str | None = Field(default=None, max_length=2048)
+    instagram: str | None = Field(default=None, max_length=2048)
+    twitter: str | None = Field(default=None, max_length=2048)
+    vk: str | None = Field(default=None, max_length=2048)
+
+
+class SiteContactsUpdate(BaseModel):
+    """What the administrator edits; also the admin ``GET`` response."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name_ru: str = Field(default="", max_length=120)
+    name_en: str = Field(default="", max_length=120)
+    email: str = Field(default="", max_length=254)
+    telegram: str = Field(default="", max_length=128)
+    socials: SiteSocials = Field(default_factory=SiteSocials)
+
+
+class SiteContactsName(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ru: str = ""
+    en: str = ""
+
+
+class SiteContacts(BaseModel):
+    """Public contacts block served to the static pages."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: SiteContactsName
+    email: str = ""
+    telegram: str = ""  # "@handle"
+    telegram_url: str = ""  # "https://t.me/handle"
+    socials: dict[str, str | None]
+
+
 class GameBuildItem(BaseModel):
     id: int
     version: str = ""

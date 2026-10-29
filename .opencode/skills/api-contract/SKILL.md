@@ -65,6 +65,7 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` для лендинга |
 | GET | `/downloads/game` | — (публичный) | активная сборка игры; 404, если активной сборки нет |
 | GET | `/geo` | — (публичный) | `country`, `language` (`ru`/`en`/`null`) по IP из локальной DB-IP Lite |
+| GET | `/site/contacts` | — (публичный) | `name` (`ru`/`en`), `email`, `telegram` (`@handle`), `telegram_url`, `socials` (`youtube`/`instagram`/`twitter`/`vk`; `null` — заглушка «Скоро»); без записи в CMS отдаёт дефолты |
 | POST | `/activity/heartbeat` | Bearer, `client_session_id` (≤64), `app_version?`, `platform?`, `final=false` | 200, `session_id`, `started_at`, `last_seen_at`; upsert по `(user_id, client_session_id)`, `final=true` ставит `ended_at` |
 | POST | `/activity/game-launch` | Bearer, `client_session_id?`, `game_key` (≤120), `song_id?`, `mode?` | 201, `id`; неизвестные `song_id`/сессия сохраняются как `NULL`, а не 4xx |
 | GET | `/admin/statistics/overview` | Bearer admin, `days=30` (1–365) | `generated_at`, `users_total`, `users_active_24h`, `users_active_7d`, `sessions_total`, `app_seconds_total`, `avg_session_seconds`, `launches_total`, `launches_24h` |
@@ -75,6 +76,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | PUT | `/admin/site/landing` | Bearer admin, `blocks`, `hero_background` | сохранённый контент; блоки ≤ 256 КиБ, строки ≤ 5000, глубина ≤ 8 |
 | POST | `/admin/site/landing/background` | Bearer admin, multipart `file` | 201, `hero_background`; JPEG/PNG/WebP/GIF/MP4/WebM |
 | DELETE | `/admin/site/landing/background` | Bearer admin | 200, `hero_background.type = "none"` |
+| GET | `/admin/site/contacts` | Bearer admin | `name_ru`, `name_en`, `email`, `telegram`, `socials` (сохранённые значения или дефолты) |
+| PUT | `/admin/site/contacts` | Bearer admin, те же поля | сохранённые нормализованные значения; 422 с именем поля в `detail` для битого email/telegram/URL соцсети; пишет `content["contacts"]`, не трогая `blocks`/`hero_background` |
 | GET | `/admin/site/game-builds` | Bearer admin | список загруженных сборок |
 | POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `version?` | 201, сборка создаётся неактивной; `.exe/.zip/.msi` |
 | POST | `/admin/site/game-builds/{id}/activate` | Bearer admin | 200, сборка становится единственной активной |
@@ -101,6 +104,14 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 - `hero_background`: `{type: "none" | "image" | "video", url, poster_url}`. Файлы
   лежат в `LANDING_MEDIA_DIR` (`/data/landing_media`), лимит 50 МиБ, сигнатуры
   проверяются на сервере.
+- Контакты — `content["contacts"]` в той же строке `landing_settings` (миграции
+  не требуют): `{name_ru, name_en, email, telegram, socials}`. Публичный
+  `GET /site/contacts` нормализует telegram (`@handle`, `handle`, `t.me/handle`,
+  `https://t.me/handle` → `@handle` + `telegram_url`) и пропускает только
+  абсолютные `http(s)`-ссылки разрешённых доменов; пустая соцсеть — `null`.
+  Блок статически вставлен на `/`, `/login`, `/register`, `/account`, `/policy`;
+  `app/static/app/contacts.js` подменяет значения из API, без JS остаются
+  дефолты и 4 заглушки соцсетей.
 - Сборки игры лежат в `GAME_BUILDS_DIR` (`/data/game_builds`), лимит 500 МиБ.
   Активна максимум одна сборка; `/downloads/game` отдаёт её с
   `Content-Disposition: attachment`.

@@ -47,6 +47,13 @@ from app.schemas.site import (
     GameBuildListResponse,
     HeroBackground,
     HeroBackgroundResponse,
+    SiteContactsUpdate,
+)
+from app.services.contacts import (
+    ContactsValidationError,
+    contacts_to_content,
+    contacts_update_from_content,
+    normalize_contacts_update,
 )
 
 router = APIRouter(prefix="/admin/site", tags=["admin: site"])
@@ -325,6 +332,49 @@ def delete_landing_background(
     saved = _save_landing_background(db, HeroBackground())
     _remove_media_file(_local_media_path(previous.url))
     return HeroBackgroundResponse(hero_background=saved)
+
+
+@router.get(
+    "/contacts",
+    response_model=SiteContactsUpdate,
+    summary="Read the contacts block of the public pages",
+)
+def get_admin_contacts(
+    db: Session = Depends(get_db), _: User = Depends(require_admin)
+) -> SiteContactsUpdate:
+    return contacts_update_from_content(landing_content(get_landing_row(db)))
+
+
+@router.put(
+    "/contacts",
+    response_model=SiteContactsUpdate,
+    summary="Update the contacts block of the public pages",
+)
+def update_admin_contacts(
+    payload: SiteContactsUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> SiteContactsUpdate:
+    try:
+        values = normalize_contacts_update(payload)
+    except ContactsValidationError as exc:
+        # Plain 422 with the field name; no internals leak into the response.
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
+
+    row = get_landing_row(db)
+    if row is None:
+        row = LandingSettings(id=LANDING_SETTINGS_ID, content={})
+        db.add(row)
+    # Keep the rest of the document (landing blocks, hero background) intact.
+    content = dict(landing_content(row))
+    content["contacts"] = contacts_to_content(values)
+    row.content = content
+    db.commit()
+    db.refresh(row)
+
+    return contacts_update_from_content(landing_content(row))
 
 
 @router.get("/game-builds", response_model=GameBuildListResponse, summary="List uploaded game builds")

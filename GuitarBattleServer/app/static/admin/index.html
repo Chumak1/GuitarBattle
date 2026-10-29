@@ -118,6 +118,11 @@
           </button>
         </li>
         <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="contacts">
+            <i class="bi bi-person-lines-fill me-1"></i>Контакты
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
           <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="builds">
             <i class="bi bi-download me-1"></i>Сборка игры
           </button>
@@ -361,6 +366,80 @@
 
         <div id="landingBlocks" class="vstack gap-3"></div>
         <p class="form-hint mt-3 mb-0">Пустое поле означает стандартный текст. Изменения появятся на сайте сразу после сохранения.</p>
+      </div>
+
+      <div id="sectionContacts" data-admin-panel="contacts" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Публичный сайт</div>
+            <h1 class="page-title">Контакты и соцсети</h1>
+            <p class="page-subtitle">Блок показывается внизу всех публичных страниц (<code>/</code>, <code>/login</code>, <code>/register</code>, <code>/account</code>, <code>/policy</code>). Изменения применяются без передеплоя.</p>
+          </div>
+          <div class="d-flex gap-2">
+            <button id="contactsReload" class="btn btn-outline-light" type="button">
+              <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+            </button>
+            <button id="contactsSave" class="btn btn-warning fw-semibold" type="button">
+              <span id="contactsSaveSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+              <i class="bi bi-check2 me-1"></i>Сохранить
+            </button>
+          </div>
+        </div>
+
+        <div id="contactsAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <section class="card content-card mb-4">
+          <div class="card-body p-4">
+            <h2 class="h5 mb-3">Контакты</h2>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsNameRu">Имя (RU)</label>
+                <input id="contactsNameRu" class="form-control" type="text" maxlength="120" placeholder="Чумак Евгений Александрович">
+                <p class="form-hint mb-0">Пустое поле — на сайте останется перевод по умолчанию.</p>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsNameEn">Name (EN)</label>
+                <input id="contactsNameEn" class="form-control" type="text" maxlength="120" placeholder="Evgeniy Aleksandrovich Chumak">
+                <p class="form-hint mb-0">Пустое поле — на сайте останется перевод по умолчанию.</p>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsEmail">Email</label>
+                <input id="contactsEmail" class="form-control" type="email" maxlength="254" placeholder="chumakevgeny@gmail.com" required>
+                <p class="form-hint mb-0">Обязательное поле: из него собирается ссылка <code>mailto:</code>.</p>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsTelegram">Telegram</label>
+                <input id="contactsTelegram" class="form-control" type="text" maxlength="128" placeholder="@chumakevgene">
+                <p class="form-hint mb-0">Можно <code>@handle</code>, <code>handle</code> или ссылку <code>https://t.me/handle</code>. Пустое поле скрывает строку.</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card content-card mb-4">
+          <div class="card-body p-4">
+            <h2 class="h5 mb-1">Соцсети</h2>
+            <p class="form-hint mt-0 mb-3">Пустое поле — иконка показывается как заглушка «Скоро»; заполненное — становится ссылкой.</p>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsYoutube">YouTube</label>
+                <input id="contactsYoutube" class="form-control" type="url" maxlength="2048" placeholder="https://www.youtube.com/@channel">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsInstagram">Instagram</label>
+                <input id="contactsInstagram" class="form-control" type="url" maxlength="2048" placeholder="https://www.instagram.com/account">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsTwitter">Twitter / X</label>
+                <input id="contactsTwitter" class="form-control" type="url" maxlength="2048" placeholder="https://x.com/account">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsVk">VK</label>
+                <input id="contactsVk" class="form-control" type="url" maxlength="2048" placeholder="https://vk.com/account">
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div id="sectionBuilds" data-admin-panel="builds" hidden>
@@ -849,6 +928,6 @@
   <script src="/app/landing-i18n.js"></script>
   <script src="./admin-statistics.js?v=20261026-2"></script>
   <script src="./admin-daily.js?v=20261027-1"></script>
-  <script src="./admin-site.js?v=20261027-1"></script>
+  <script src="./admin-site.js?v=20261029-1"></script>
 </body>
 </html>

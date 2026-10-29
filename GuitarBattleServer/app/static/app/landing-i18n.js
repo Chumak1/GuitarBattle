@@ -12,6 +12,8 @@ window.FFI18N.add({
     'contacts.name': 'Чумак Евгений Александрович',
     'contacts.emailLabel': 'Email',
     'contacts.telegramLabel': 'Telegram',
+    'contacts.soon': 'Скоро',
+    'contacts.socialsLabel': 'Мы в соцсетях',
 
     'landing.navLabel': 'Основная навигация',
     'landing.nav.about': 'О проекте',
@@ -106,6 +108,8 @@ window.FFI18N.add({
     'contacts.name': 'Evgeniy Aleksandrovich Chumak',
     'contacts.emailLabel': 'Email',
     'contacts.telegramLabel': 'Telegram',
+    'contacts.soon': 'Coming soon',
+    'contacts.socialsLabel': 'Follow us',
 
     'landing.navLabel': 'Main navigation',
     'landing.nav.about': 'About',

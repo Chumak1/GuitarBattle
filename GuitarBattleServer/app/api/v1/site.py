@@ -24,7 +24,9 @@ from app.schemas.site import (
     GeoResponse,
     HeroBackground,
     LandingResponse,
+    SiteContacts,
 )
+from app.services.contacts import contacts_update_from_content, public_contacts
 from app.services.geo import country_for_ip, language_for_country
 
 router = APIRouter(tags=["site"])
@@ -119,6 +121,16 @@ def get_landing(db: Session = Depends(get_db)) -> LandingResponse:
         hero_background=hero_background_from_content(content),
         download=download,
     )
+
+
+@router.get(
+    "/site/contacts",
+    response_model=SiteContacts,
+    summary="Contacts block shown at the bottom of the public pages",
+)
+def get_contacts(db: Session = Depends(get_db)) -> SiteContacts:
+    content = landing_content(get_landing_row(db))
+    return public_contacts(contacts_update_from_content(content))
 
 
 @router.get("/downloads/game", summary="Download the current desktop build")

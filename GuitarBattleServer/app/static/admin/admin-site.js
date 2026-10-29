@@ -81,6 +81,8 @@
     loaded: false,
     builds: [],
     buildsLoaded: false,
+    contacts: null,
+    contactsLoaded: false,
     section: "songs",
   };
 
@@ -776,6 +778,84 @@
     }
   }
 
+  /* ---------- contacts ---------- */
+
+  const SOCIAL_INPUTS = [
+    { key: "youtube", id: "contactsYoutube" },
+    { key: "instagram", id: "contactsInstagram" },
+    { key: "twitter", id: "contactsTwitter" },
+    { key: "vk", id: "contactsVk" },
+  ];
+
+  function setInput(id, value) {
+    const input = el(id);
+    if (input) input.value = typeof value === "string" ? value : "";
+  }
+
+  function fillContacts(data) {
+    const values = data || {};
+    setInput("contactsNameRu", values.name_ru);
+    setInput("contactsNameEn", values.name_en);
+    setInput("contactsEmail", values.email);
+    setInput("contactsTelegram", values.telegram);
+    const socials = values.socials || {};
+    SOCIAL_INPUTS.forEach((network) => setInput(network.id, socials[network.key]));
+  }
+
+  function readContacts() {
+    const inputValue = (id) => {
+      const input = el(id);
+      return input ? input.value.trim() : "";
+    };
+    const socials = {};
+    SOCIAL_INPUTS.forEach((network) => {
+      socials[network.key] = inputValue(network.id);
+    });
+    return {
+      name_ru: inputValue("contactsNameRu"),
+      name_en: inputValue("contactsNameEn"),
+      email: inputValue("contactsEmail"),
+      telegram: inputValue("contactsTelegram"),
+      socials,
+    };
+  }
+
+  async function loadContacts() {
+    state.contactsLoaded = true;
+    showAlert("contactsAlert", "");
+    try {
+      const data = await api("/admin/site/contacts");
+      state.contacts = data;
+      fillContacts(data);
+    } catch (error) {
+      state.contactsLoaded = false;
+      showAlert("contactsAlert", errorText(error));
+    }
+  }
+
+  async function saveContacts() {
+    const button = el("contactsSave");
+    const spinner = el("contactsSaveSpinner");
+    if (button) button.disabled = true;
+    if (spinner) spinner.hidden = false;
+    showAlert("contactsAlert", "");
+
+    try {
+      const data = await api("/admin/site/contacts", {
+        method: "PUT",
+        body: readContacts(),
+      });
+      state.contacts = data;
+      fillContacts(data);
+      showAlert("contactsAlert", "Контакты сохранены.", "success");
+    } catch (error) {
+      showAlert("contactsAlert", errorText(error));
+    } finally {
+      if (button) button.disabled = false;
+      if (spinner) spinner.hidden = true;
+    }
+  }
+
   /* ---------- navigation ---------- */
 
   function showSection(name) {
@@ -790,6 +870,7 @@
     });
 
     if (name === "landing" && !state.loaded) loadLanding();
+    if (name === "contacts" && !state.contactsLoaded) loadContacts();
     if (name === "builds" && !state.buildsLoaded) loadBuilds();
     if (name === "daily") {
       const daily = window.FFAdminDaily;
@@ -805,6 +886,7 @@
 
   function refreshCurrent() {
     if (state.section === "landing") loadLanding();
+    else if (state.section === "contacts") loadContacts();
     else if (state.section === "builds") loadBuilds();
     else if (state.section === "daily") {
       const daily = window.FFAdminDaily;
@@ -824,6 +906,8 @@
 
     el("landingReload")?.addEventListener("click", loadLanding);
     el("landingSave")?.addEventListener("click", saveLanding);
+    el("contactsReload")?.addEventListener("click", loadContacts);
+    el("contactsSave")?.addEventListener("click", saveContacts);
     el("landingBgUpload")?.addEventListener("click", uploadBackground);
     el("landingBgRemove")?.addEventListener("click", removeBackground);
     el("buildsReload")?.addEventListener("click", loadBuilds);

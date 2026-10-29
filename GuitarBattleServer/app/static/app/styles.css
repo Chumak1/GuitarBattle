@@ -781,9 +781,50 @@ html[lang="en"] .policy-doc[data-doc="en"] { display: block; }
   text-decoration: underline;
 }
 
+.contacts__socials {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.contacts__socials > li { display: flex; }
+
+.contacts__social {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  color: var(--muted);
+  background: transparent;
+  text-decoration: none;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+
+.contacts__social:hover {
+  color: var(--gold);
+  border-color: var(--gold);
+}
+
+.contacts__social.is-placeholder {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.contacts__social.is-placeholder:hover {
+  color: var(--muted);
+  border-color: var(--line);
+}
+
 @media (max-width: 560px) {
   .contacts { padding: 20px 18px; }
   .contacts__links { flex-direction: column; gap: 10px; }
+  .contacts__socials { gap: 8px; }
 }
 
 /* ---------- footer ---------- */
