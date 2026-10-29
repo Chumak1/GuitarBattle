@@ -202,11 +202,16 @@ void MainComponent::timerCallback()
 
     //==========================================================================
     // Automatic MISS after +150 ms
+    //
+    // Practice mode never scores and holds the transport at the target note,
+    // so the wall-clock miss timeout must not run there: it would resolve the
+    // target and skip the note that is waiting for the player.
 
     if (currentTarget >= 0
         && currentTarget <
         static_cast<int>(
-            gameSession.getMidiNotes().size()))
+            gameSession.getMidiNotes().size())
+        && ! practiceActive.load(std::memory_order_relaxed))
     {
         auto* device =
             deviceManager.getCurrentAudioDevice();

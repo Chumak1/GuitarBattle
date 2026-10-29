@@ -484,6 +484,7 @@ void MainComponent::returnToSongSelect()
     practiceActive.store(false, std::memory_order_relaxed);
     practiceHoldActive.store(false, std::memory_order_relaxed);
     practiceHoldStartSample.store(0, std::memory_order_relaxed);
+    practicePitchSample.store(0, std::memory_order_relaxed);
     practiceCompleted = false;
 
     countInActive.store(false, std::memory_order_release);

@@ -824,6 +824,10 @@ private:
     std::atomic<bool> practiceHoldActive{ false };
     std::atomic<uint64_t> practiceHoldStartSample{ 0 };
     std::atomic<double> practiceLastPitch{ 0.0 };
+    // End sample of the analysis window that produced practiceLastPitch. The
+    // message thread uses it to ignore pitches captured before the current
+    // freeze, so a ringing note from earlier cannot release the hold.
+    std::atomic<uint64_t> practicePitchSample{ 0 };
     uint64_t practiceLastOnsetSample = 0;
     bool practiceCompleted = false;
 
@@ -835,6 +839,7 @@ private:
     void freezePracticeTransport();
     void releasePracticeTransport();
     void evaluatePracticeNote();
+    void advancePracticeTarget(int index);
     void finishPracticeSession();
 
     //==========================================================================

@@ -226,6 +226,25 @@ public:
 
 
                     //==========================================================
+                    // Practice mode: publish the live pitch on every analysis
+                    // window, not only on an onset. While the transport is held
+                    // the player usually keeps the target note ringing, so the
+                    // hold must be able to release without a fresh attack.
+                    if (owner.practiceActive.load(std::memory_order_relaxed)
+                        && pitch > 20.0
+                        && pitch < 1000.0
+                        && rms >= noteRmsGate)
+                    {
+                        owner.practiceLastPitch.store(
+                            pitch, std::memory_order_relaxed);
+
+                        owner.practicePitchSample.store(
+                            analysisSample
+                                + static_cast<uint64_t>(numAnalysisSamples),
+                            std::memory_order_relaxed);
+                    }
+
+                    //==========================================================
                     // Valid detected guitar note
 
 

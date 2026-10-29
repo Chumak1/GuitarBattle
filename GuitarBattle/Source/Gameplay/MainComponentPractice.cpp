@@ -30,6 +30,7 @@ void MainComponent::beginPracticeRun()
     practiceHoldActive.store(false, std::memory_order_relaxed);
     practiceHoldStartSample.store(0, std::memory_order_relaxed);
     practiceLastPitch.store(0.0, std::memory_order_relaxed);
+    practicePitchSample.store(0, std::memory_order_relaxed);
     practiceLastOnsetSample = 0;
     practiceCompleted = false;
 }
@@ -96,7 +97,7 @@ void MainComponent::releasePracticeTransport()
 
 void MainComponent::evaluatePracticeNote()
 {
-    const auto notes = gameSession.getMidiNotes();
+    const auto& notes = gameSession.getMidiNotes();
     const int index = gameSession.getTargetNoteIndex();
 
     if (index < 0 || index >= static_cast<int>(notes.size()))
@@ -120,19 +121,7 @@ void MainComponent::evaluatePracticeNote()
 
     if (detectedMidi == expectedMidi)
     {
-        gameSession.resolveTarget(index);
-        const int nextIndex = gameSession.advanceTargetIndex();
-
-        releasePracticeTransport();
-
-        if (nextIndex >= static_cast<int>(notes.size()))
-        {
-            finishPracticeSession();
-            return;
-        }
-
-        setTargetFromMidiIndex(nextIndex);
-        hitLabel.setText("GOOD - NEXT NOTE", juce::dontSendNotification);
+        advancePracticeTarget(index);
         return;
     }
 
@@ -142,6 +131,28 @@ void MainComponent::evaluatePracticeNote()
                      juce::dontSendNotification);
 }
 
+void MainComponent::advancePracticeTarget(int index)
+{
+    const auto& notes = gameSession.getMidiNotes();
+
+    if (index < 0 || index >= static_cast<int>(notes.size()))
+        return;
+
+    gameSession.resolveTarget(index);
+    const int nextIndex = gameSession.advanceTargetIndex();
+
+    releasePracticeTransport();
+
+    if (nextIndex >= static_cast<int>(notes.size()))
+    {
+        finishPracticeSession();
+        return;
+    }
+
+    setTargetFromMidiIndex(nextIndex);
+    hitLabel.setText("GOOD - NEXT NOTE", juce::dontSendNotification);
+}
+
 void MainComponent::updatePracticeMode()
 {
     if (! practiceActive.load(std::memory_order_relaxed)
@@ -149,7 +160,7 @@ void MainComponent::updatePracticeMode()
         || practiceCompleted)
         return;
 
-    const auto notes = gameSession.getMidiNotes();
+    const auto& notes = gameSession.getMidiNotes();
     const int index = gameSession.getTargetNoteIndex();
 
     if (index >= static_cast<int>(notes.size()))
@@ -171,6 +182,45 @@ void MainComponent::updatePracticeMode()
 
         if (practiceCompleted)
             return;
+    }
+
+    // While the transport is held, watch the live pitch as well. A note that
+    // was attacked just before the freeze, or that the player keeps ringing,
+    // produces no new onset; without this poll the hold would never release.
+    if (practiceHoldActive.load(std::memory_order_relaxed))
+    {
+        const int heldIndex = gameSession.getTargetNoteIndex();
+
+        if (heldIndex >= 0 && heldIndex < static_cast<int>(notes.size()))
+        {
+            const auto holdStart =
+                practiceHoldStartSample.load(std::memory_order_relaxed);
+            const auto pitchSample =
+                practicePitchSample.load(std::memory_order_relaxed);
+            const double sampleRate =
+                cachedSampleRate.load(std::memory_order_relaxed);
+
+            // Ignore the analysis window that still contains audio from before
+            // the freeze, so a ringing previous note cannot release the hold.
+            const auto settleSamples = static_cast<uint64_t>(
+                juce::jmax(1.0, sampleRate * 0.12));
+
+            if (pitchSample > holdStart + settleSamples)
+            {
+                const double pitch =
+                    practiceLastPitch.load(std::memory_order_relaxed);
+
+                if (pitch > 20.0 && pitch < 1000.0
+                    && pitchDetector.frequencyToMidi(pitch)
+                        == notes[static_cast<size_t>(heldIndex)].midiNote)
+                {
+                    advancePracticeTarget(heldIndex);
+
+                    if (practiceCompleted)
+                        return;
+                }
+            }
+        }
     }
 
     // Freeze exactly at the target so the note is played at its own beat.

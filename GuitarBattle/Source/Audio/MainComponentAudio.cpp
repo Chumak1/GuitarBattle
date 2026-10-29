@@ -1534,7 +1534,14 @@ void MainComponent::getNextAudioBlock(
 
     //==========================================================================
     // External music mixer. All four instrumental stems share gameplayStartSample and remain aligned.
-    if (gameState == GameState::Playing)
+    //
+    // Practice mode freezes the whole musical timeline: while the transport is
+    // held, the stems must be silent together with the metronome, the MIDI
+    // backing and the playhead. releasePracticeTransport() shifts both anchors
+    // by the frozen duration, so simply skipping the block keeps the stems
+    // aligned with the beat when the transport resumes.
+    if (gameState == GameState::Playing
+        && ! practiceHoldActive.load(std::memory_order_relaxed))
     {
         const uint64_t songStart = gameplayStartSample.load(std::memory_order_relaxed);
         const double outputRate = cachedSampleRate.load(std::memory_order_relaxed);
