@@ -187,8 +187,19 @@ void MainComponent::timerCallback()
         if (currentSample >= startSample)
         {
             countInActive.store(false, std::memory_order_release);
-            tablatureComponent.setPlayheadRunning(true);
-            hitLabel.setText("GO!", juce::dontSendNotification);
+
+            // A practice run whose first target is on beat zero is already
+            // holding the transport at the count-in end. Keep the tablature
+            // frozen and the target prompt visible instead of starting the
+            // scroll and replacing the prompt with "GO!".
+            const bool practiceHeld =
+                practiceHoldActive.load(std::memory_order_acquire);
+
+            tablatureComponent.setPlayheadRunning(! practiceHeld);
+
+            if (! practiceHeld)
+                hitLabel.setText("GO!", juce::dontSendNotification);
+
             repaint(); // Remove the large countdown overlay as gameplay begins.
         }
         else

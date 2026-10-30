@@ -1069,6 +1069,15 @@ void MainComponent::prepareToPlay(
         0,
         std::memory_order_relaxed);
 
+    // A gate belongs to the previous timeline: the device may restart with a
+    // different sample rate or buffer size, so any scheduled stop is stale.
+    practiceGateArmed.store(
+        false,
+        std::memory_order_relaxed);
+
+    practiceGateSample.store(
+        0,
+        std::memory_order_relaxed);
 
 }
 
@@ -1091,23 +1100,59 @@ void MainComponent::getNextAudioBlock(
         std::memory_order_relaxed);
 
     //==========================================================================
+    // Practice gate
+    //
+    // The message thread schedules the exact sample at which the musical
+    // timeline must stop. Only the musical layers are shortened; input
+    // capture, pitch analysis and guitar monitoring keep the full block.
+
+    const bool practiceHeld =
+        practiceHoldActive.load(std::memory_order_acquire);
+
+    int musicSamples = bufferToFill.numSamples;
+    bool practiceGateReached = false;
+    uint64_t practiceGateValue = 0;
+
+    if (! practiceHeld
+        && gameState == GameState::Playing
+        && practiceActive.load(std::memory_order_relaxed)
+        && practiceGateArmed.load(std::memory_order_acquire))
+    {
+        practiceGateValue =
+            practiceGateSample.load(std::memory_order_relaxed);
+
+        const auto blockEnd =
+            currentSample + static_cast<uint64_t>(bufferToFill.numSamples);
+
+        // A zero gate means the message thread disarmed it between the two
+        // loads above (pause, release, menu). Never treat it as sample zero:
+        // that would freeze the whole timeline at the wrong position.
+        if (practiceGateValue != 0
+            && practiceGateValue <= blockEnd)
+        {
+            practiceGateReached = true;
+            musicSamples = practiceGateValue > currentSample
+                ? static_cast<int>(practiceGateValue - currentSample)
+                : 0;
+        }
+    }
+
+    //==========================================================================
 // Beat scheduler
 
     int metronomeTriggerOffset = -1;
 
-    if (gameState == GameState::Playing
-        && ! practiceHoldActive.load(std::memory_order_relaxed))
+    if (gameState == GameState::Playing && ! practiceHeld)
     {
         metronomeTriggerOffset = metronome.processScheduler(
             currentSample,
-            bufferToFill.numSamples);
+            musicSamples);
     }
 
     //==========================================================================
     // Playhead
 
-    if (gameState == GameState::Playing
-        && ! practiceHoldActive.load(std::memory_order_relaxed))
+    if (gameState == GameState::Playing && ! practiceHeld)
     {
         const auto currentGameplayStart =
             gameplayStartSample.load(
@@ -1538,15 +1583,14 @@ void MainComponent::getNextAudioBlock(
     //
     // Practice mode freezes the whole musical timeline: while the transport is
     // held, the stems must be silent together with the metronome, the MIDI
-    // backing and the playhead. releasePracticeTransport() shifts both anchors
-    // by the frozen duration, so simply skipping the block keeps the stems
-    // aligned with the beat when the transport resumes.
-    if (gameState == GameState::Playing
-        && ! practiceHoldActive.load(std::memory_order_relaxed))
+    // backing and the playhead. The audio callback stops the stems on the
+    // exact gate sample, and releasePracticeTransport() shifts both anchors by
+    // the frozen duration, so the stems resume on the same beat.
+    if (gameState == GameState::Playing && ! practiceHeld)
     {
         const uint64_t songStart = gameplayStartSample.load(std::memory_order_relaxed);
         const double outputRate = cachedSampleRate.load(std::memory_order_relaxed);
-        if (outputRate > 0.0 && currentSample + static_cast<uint64_t>(bufferToFill.numSamples) > songStart)
+        if (outputRate > 0.0 && currentSample + static_cast<uint64_t>(musicSamples) > songStart)
         {
             const std::array<float, 4> gains = {
                 midiDrumsEnabled.load(std::memory_order_relaxed) ? midiDrumsVolume.load(std::memory_order_relaxed) : 0.0f,
@@ -1565,7 +1609,7 @@ void MainComponent::getNextAudioBlock(
                     || track.sourceSampleRate <= 0.0)
                     continue;
 
-                for (int i = 0; i < bufferToFill.numSamples; ++i)
+                for (int i = 0; i < musicSamples; ++i)
                 {
                     const uint64_t absoluteSample = currentSample + static_cast<uint64_t>(i);
                     if (absoluteSample < songStart)
@@ -1603,7 +1647,7 @@ void MainComponent::getNextAudioBlock(
     // MIDI guitar backing track. The pitch-analysis buffers above contain only
     // the clean physical guitar input, so this generated sound cannot affect scoring.
     if (midiBackingEnabled.load(std::memory_order_relaxed)
-        && ! practiceHoldActive.load(std::memory_order_relaxed))
+        && ! practiceHeld)
     {
         const double currentBpm = bpm.load(std::memory_order_relaxed);
         const double sr = cachedSampleRate.load(std::memory_order_relaxed);
@@ -1611,11 +1655,11 @@ void MainComponent::getNextAudioBlock(
         const float backingVolume = midiBackingVolume.load(std::memory_order_relaxed);
         const auto& notes = gameSession.getMidiNotes();
         if (sr > 0.0 && currentBpm > 0.0 && backingVolume > 0.0f
-            && notes.size() > 0 && currentSample + static_cast<uint64_t>(bufferToFill.numSamples) > songStart)
+            && notes.size() > 0 && currentSample + static_cast<uint64_t>(musicSamples) > songStart)
         {
             const double samplesPerBeat = sr * 60.0 / currentBpm;
             const int channels = outputChannelCount;
-            const int blockSamples = bufferToFill.numSamples;
+            const int blockSamples = musicSamples;
             const double blockStart = static_cast<double>(currentSample);
             const double blockEnd = blockStart + static_cast<double>(blockSamples);
 
@@ -1696,13 +1740,14 @@ void MainComponent::getNextAudioBlock(
     // guitar capture, so they cannot influence pitch detection or scoring.
     if (!externalAudioMixerActive
         && gameState == GameState::Playing
+        && ! practiceHeld
         && dailyChallengeLoaded.load(std::memory_order_relaxed)
         && !backingNotes.empty())
     {
         const double sr = cachedSampleRate.load(std::memory_order_relaxed);
         const double currentBpm = bpm.load(std::memory_order_relaxed);
         const uint64_t songStart = gameplayStartSample.load(std::memory_order_relaxed);
-        if (sr > 0.0 && currentBpm > 0.0 && currentSample + static_cast<uint64_t>(bufferToFill.numSamples) > songStart)
+        if (sr > 0.0 && currentBpm > 0.0 && currentSample + static_cast<uint64_t>(musicSamples) > songStart)
         {
             const double samplesPerBeat = sr * 60.0 / currentBpm;
             const int channels = outputChannelCount;
@@ -1726,7 +1771,7 @@ void MainComponent::getNextAudioBlock(
                 // naturally even when the MIDI percussion event is very short.
                 const double length = note.instrument == 2 ? juce::jmax(midiLength, sr * 3.0) : midiLength;
                 const int first = juce::jmax(0, static_cast<int>(std::floor(relativeStart)));
-                const int last = juce::jmin(bufferToFill.numSamples, static_cast<int>(std::ceil(relativeStart + length)));
+                const int last = juce::jmin(musicSamples, static_cast<int>(std::ceil(relativeStart + length)));
                 if (last <= first) continue;
                 const double frequency = juce::MidiMessage::getMidiNoteInHertz(note.midiNote);
                 const float velocity = static_cast<float>(note.velocity) / 127.0f;
@@ -1791,7 +1836,8 @@ void MainComponent::getNextAudioBlock(
 // Play the loaded WAV sample continuously across the audio block.
 // The playback position is advanced for every output sample.
 
-    if (metronomeSamplesRemaining > 0)
+    if (! practiceHeld
+        && metronomeSamplesRemaining > 0)
     {
         const auto& buffer =
             metronomePlayingAccent
@@ -1810,7 +1856,7 @@ void MainComponent::getNextAudioBlock(
         const int outputOffset =
             juce::jlimit(
                 0,
-                bufferToFill.numSamples,
+                musicSamples,
                 metronomeBlockOffset);
 
         const int samplesToPlay =
@@ -1818,7 +1864,7 @@ void MainComponent::getNextAudioBlock(
                 metronomeSamplesRemaining,
                 std::min(
                     availableSamples,
-                    bufferToFill.numSamples - outputOffset));
+                    musicSamples - outputOffset));
 
         if (samplesToPlay > 0)
         {
@@ -1857,6 +1903,40 @@ void MainComponent::getNextAudioBlock(
             metronomePlaybackPosition = 0;
             metronomeSamplesRemaining = 0;
         }
+    }
+
+    //==========================================================================
+    // Practice gate commit
+    //
+    // The musical layers above were rendered only up to the gate sample, so
+    // the transport is now exactly on the target note. Freezing here, in the
+    // audio callback, keeps the stop independent of the 30 Hz UI timer and of
+    // the device output latency. Input capture, pitch analysis and the guitar
+    // monitor keep running: the player must hear themselves to perform the
+    // target.
+
+    if (practiceGateReached
+        && ! practiceHeld
+        && gameState == GameState::Playing
+        && practiceActive.load(std::memory_order_relaxed))
+    {
+        // Disarm first: releasePracticeTransport() re-arms for the next
+        // target and must not observe this gate again.
+        practiceGateArmed.store(false, std::memory_order_relaxed);
+
+        // The playhead stops on the target beat, not on the rendered block
+        // end, so the highlighted note is the one the player has to play.
+        currentPlayheadBeat.store(
+            getSongBeatForSample(practiceGateValue),
+            std::memory_order_relaxed);
+
+        practiceHoldStartSample.store(
+            practiceGateValue,
+            std::memory_order_relaxed);
+
+        practiceHoldActive.store(
+            true,
+            std::memory_order_release);
     }
 }
 

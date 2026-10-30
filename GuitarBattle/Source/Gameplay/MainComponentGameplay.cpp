@@ -125,6 +125,11 @@ void MainComponent::beginManagedTempoChange(double percent)
     metronomeSamplesRemaining = 0;
     metronomePlaybackPosition = 0;
 
+    // The tempo change re-anchors the beat timeline. A gate scheduled for the
+    // old anchor would stop the song at the wrong sample.
+    practiceGateArmed.store(false, std::memory_order_relaxed);
+    practiceGateSample.store(0, std::memory_order_relaxed);
+
     gameState = GameState::Preparing;
 
     juce::Component::SafePointer<MainComponent> safeThis(this);
@@ -172,6 +177,12 @@ void MainComponent::finishManagedTempoChange()
 
         tempoAnchorBeat.store(pendingTempoBeat, std::memory_order_relaxed);
         tempoAnchorSample.store(now, std::memory_order_relaxed);
+
+        // A practice hold stays frozen across the tempo change. The prep time
+        // is already accounted for by the anchor move above, so the hold must
+        // restart from the resume sample to avoid shifting the timeline twice.
+        if (practiceHoldActive.load(std::memory_order_acquire))
+            practiceHoldStartSample.store(now, std::memory_order_relaxed);
     }
     else
     {
@@ -300,6 +311,15 @@ void MainComponent::beginGameplayCountIn()
     metronomeSamplesRemaining = 0;
     metronomePlaybackPosition = 0;
 
+    // A new run must never inherit a gate or a hold scheduled by the previous
+    // one. The hold is normally cleared by returnToSongSelect(), but the audio
+    // thread can commit a gate concurrently with leaving the screen, so reset
+    // it here unconditionally.
+    practiceGateArmed.store(false, std::memory_order_relaxed);
+    practiceGateSample.store(0, std::memory_order_relaxed);
+    practiceHoldActive.store(false, std::memory_order_relaxed);
+    practiceHoldStartSample.store(0, std::memory_order_relaxed);
+
     gameSession.setTargetNoteIndex(0);
     setTargetFromMidiIndex(0);
 
@@ -342,6 +362,11 @@ void MainComponent::pauseGame()
 
     metronomeSamplesRemaining = 0;
     metronomePlaybackPosition = 0;
+
+    // A scheduled practice gate belongs to the old timeline: the pause shift
+    // moves the anchors, so the gate must be recomputed after the resume.
+    practiceGateArmed.store(false, std::memory_order_relaxed);
+    practiceGateSample.store(0, std::memory_order_relaxed);
 
     // Stop the tablature scroll: its own 60 Hz clock must not advance while
     // the game is paused.
@@ -431,7 +456,11 @@ void MainComponent::resumeGame()
         0,
         std::memory_order_relaxed);
 
-
+    // A practice hold survives the pause. The anchors were just shifted by the
+    // pause duration, so the hold must restart from the resume sample instead
+    // of counting the paused time twice when it is released.
+    if (practiceHoldActive.load(std::memory_order_acquire))
+        practiceHoldStartSample.store(currentSample, std::memory_order_relaxed);
 
     // Resume on the shifted song grid so the metronome stays aligned with
     // the MIDI backing and the already-running external audio timeline.
@@ -458,11 +487,16 @@ void MainComponent::resumeGame()
     metronomeSamplesRemaining = 0;
 
     // Resume the tablature from the same beat. During the count-in the visual
-    // timeline stays frozen until the count-in ends.
+    // timeline stays frozen until the count-in ends; a practice hold keeps it
+    // frozen too, because the transport is still waiting for the target.
+    const bool practiceHeld =
+        practiceHoldActive.load(std::memory_order_acquire);
+
     tablatureComponent.setPlayheadBeat(
         currentPlayheadBeat.load(std::memory_order_relaxed));
     tablatureComponent.setPlayheadRunning(
-        ! countInActive.load(std::memory_order_acquire));
+        ! countInActive.load(std::memory_order_acquire)
+        && ! practiceHeld);
 
     gameState =
         stateBeforePause;
@@ -471,7 +505,7 @@ void MainComponent::resumeGame()
         "PAUSE");
 
     hitLabel.setText(
-        "READY",
+        practiceHeld ? "PLAY THE HIGHLIGHTED NOTE" : "READY",
         juce::dontSendNotification);
 
     resized();
@@ -484,7 +518,12 @@ void MainComponent::returnToSongSelect()
     practiceActive.store(false, std::memory_order_relaxed);
     practiceHoldActive.store(false, std::memory_order_relaxed);
     practiceHoldStartSample.store(0, std::memory_order_relaxed);
+    practiceGateArmed.store(false, std::memory_order_relaxed);
+    practiceGateSample.store(0, std::memory_order_relaxed);
     practicePitchSample.store(0, std::memory_order_relaxed);
+    practiceResumeSample = 0;
+    practiceChordHold = false;
+    practiceHoldUiApplied = false;
     practiceCompleted = false;
 
     countInActive.store(false, std::memory_order_release);

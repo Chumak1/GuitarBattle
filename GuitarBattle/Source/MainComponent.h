@@ -894,12 +894,29 @@ private:
     std::atomic<bool> practiceActive{ false };
     std::atomic<bool> practiceHoldActive{ false };
     std::atomic<uint64_t> practiceHoldStartSample{ 0 };
+
+    // Sample-accurate stop scheduled by the message thread and executed by
+    // the audio callback. The audio thread stops the musical layers on the
+    // exact target sample, so the freeze does not depend on the 30 Hz UI
+    // timer or on the device output latency.
+    std::atomic<uint64_t> practiceGateSample{ 0 };
+    std::atomic<bool> practiceGateArmed{ false };
+
     std::atomic<double> practiceLastPitch{ 0.0 };
     // End sample of the analysis window that produced practiceLastPitch. The
     // message thread uses it to ignore pitches captured before the current
     // freeze, so a ringing note from earlier cannot release the hold.
     std::atomic<uint64_t> practicePitchSample{ 0 };
     uint64_t practiceLastOnsetSample = 0;
+    // Sample at which the previous hold was released. A ringing note from
+    // before the resume must not release the next target.
+    uint64_t practiceResumeSample = 0;
+    // True while the hold waits for the remaining notes of a chord. A strum
+    // produces one onset for several pitches, so the live pitch may advance a
+    // chord note without a fresh attack. Every chord note has a different
+    // pitch, so a ringing note cannot skip one.
+    bool practiceChordHold = false;
+    bool practiceHoldUiApplied = false;
     bool practiceCompleted = false;
 
     juce::TextButton practiceModeButton{ "PRACTICE MODE" };
@@ -907,7 +924,8 @@ private:
     void setPracticeMode(bool enabled);
     void beginPracticeRun();
     void updatePracticeMode();
-    void freezePracticeTransport();
+    void schedulePracticeFreeze();
+    void applyPracticeHoldUi();
     void releasePracticeTransport();
     void evaluatePracticeNote();
     void advancePracticeTarget(int index);
