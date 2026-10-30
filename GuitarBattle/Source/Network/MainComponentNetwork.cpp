@@ -1714,3 +1714,397 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
     });
 }
 
+
+//==============================================================================
+// Self-update
+//==============================================================================
+
+namespace
+{
+    /** "1.2.10" > "1.2.9". Missing components count as 0 ("1.2" == "1.2.0")
+        and a leading "v" is ignored, so the server may use either form.
+    */
+    int compareVersionStrings (const juce::String& left, const juce::String& right)
+    {
+        auto normalise = [] (juce::String value)
+        {
+            value = value.trim();
+
+            if (value.startsWithIgnoreCase ("v"))
+                value = value.substring (1);
+
+            return value;
+        };
+
+        const auto leftParts = juce::StringArray::fromTokens (normalise (left), ".", "");
+        const auto rightParts = juce::StringArray::fromTokens (normalise (right), ".", "");
+        const int numParts = juce::jmax (leftParts.size(), rightParts.size());
+
+        for (int i = 0; i < numParts; ++i)
+        {
+            const int a = i < leftParts.size() ? leftParts[i].getIntValue() : 0;
+            const int b = i < rightParts.size() ? rightParts[i].getIntValue() : 0;
+
+            if (a != b)
+                return a < b ? -1 : 1;
+        }
+
+        return 0;
+    }
+
+    /** Turns the API path ("/api/v1/downloads/game") or an absolute URL into
+        a URL the download thread can open. The origin comes from ApiClient so
+        a domain change only has to touch one constant.
+    */
+    juce::String resolveUpdateUrl (const juce::String& urlOrPath)
+    {
+        if (urlOrPath.startsWithIgnoreCase ("http://")
+            || urlOrPath.startsWithIgnoreCase ("https://"))
+            return urlOrPath;
+
+        return juce::String (ApiClient::serverOrigin)
+            + (urlOrPath.startsWithChar ('/') ? urlOrPath : "/" + urlOrPath);
+    }
+
+    juce::String skippedUpdateVersion (juce::ApplicationProperties& properties)
+    {
+        if (auto* settings = properties.getUserSettings())
+            return settings->getValue ("SkippedUpdateVersion").trim();
+
+        return {};
+    }
+
+    /** Never trust a server-supplied name as a path: keep it a plain file name. */
+    juce::String safeInstallerFileName (const juce::String& serverName,
+                                        const juce::String& version)
+    {
+        auto name = juce::File::createLegalFileName (serverName.trim());
+
+        if (name.isEmpty() || name.startsWithChar ('.'))
+            name = "FretFightSetup-" + version + ".exe";
+
+        return name;
+    }
+
+    /** Downloads the installer on a worker thread and reports progress in a
+        modal progress window. The window owns itself and deletes itself when
+        the thread finishes, following the JUCE ThreadWithProgressWindow
+        pattern. Nothing here touches the audio thread.
+    */
+    class UpdateDownloadTask final : public juce::ThreadWithProgressWindow
+    {
+    public:
+        UpdateDownloadTask (juce::File target,
+                            juce::String sourceUrl,
+                            juce::String versionToInstall,
+                            juce::int64 expectedBytes,
+                            std::function<void (bool, juce::File)> onFinished)
+            : juce::ThreadWithProgressWindow ("FretFight update", true, true,
+                                              3000, "CANCEL"),
+              targetFile (std::move (target)),
+              url (std::move (sourceUrl)),
+              version (std::move (versionToInstall)),
+              expectedSize (expectedBytes),
+              completion (std::move (onFinished))
+        {
+            setStatusMessage ("Downloading FretFight " + version + "...");
+        }
+
+        void run() override
+        {
+            juce::int64 totalBytes = 0;
+
+            {
+                int statusCode = 0;
+
+                auto stream = juce::URL (url).createInputStream (
+                    juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress)
+                        .withConnectionTimeoutMs (15000)
+                        .withStatusCode (&statusCode));
+
+                // A 404/500 body must never be saved as an installer.
+                if (stream == nullptr
+                    || (statusCode != 0 && statusCode != 200))
+                {
+                    failed = true;
+                    return;
+                }
+
+                targetFile.deleteFile();
+
+                juce::FileOutputStream output (targetFile);
+
+                if (! output.openedOk())
+                {
+                    failed = true;
+                    return;
+                }
+
+                constexpr int bufferSize = 64 * 1024;
+                juce::HeapBlock<char> buffer (bufferSize);
+
+                for (;;)
+                {
+                    if (threadShouldExit())
+                    {
+                        cancelled = true;
+                        break;
+                    }
+
+                    const int numRead = stream->read (buffer.getData(), bufferSize);
+
+                    if (numRead <= 0)
+                        break;
+
+                    if (! output.write (buffer.getData(),
+                                        static_cast<size_t> (numRead)))
+                    {
+                        failed = true;
+                        break;
+                    }
+
+                    totalBytes += numRead;
+
+                    if (expectedSize > 0)
+                        setProgress (juce::jlimit (0.0, 1.0,
+                                                   static_cast<double> (totalBytes)
+                                                       / static_cast<double> (expectedSize)));
+
+                    juce::String status = "Downloading FretFight " + version + ": "
+                        + juce::File::descriptionOfSizeInBytes (totalBytes);
+
+                    if (expectedSize > 0)
+                        status << " of " << juce::File::descriptionOfSizeInBytes (expectedSize);
+
+                    setStatusMessage (status);
+                }
+
+                if (! output.getStatus().wasOk())
+                    failed = true;
+            }
+
+            // A connection dropped mid-stream produces a short file: never hand
+            // a truncated installer to the shell.
+            if (expectedSize > 0 && totalBytes != expectedSize)
+                failed = true;
+
+            if (totalBytes <= 0)
+                failed = true;
+
+            if (cancelled || failed)
+                targetFile.deleteFile();
+        }
+
+        void threadComplete (bool userPressedCancel) override
+        {
+            if (userPressedCancel)
+            {
+                cancelled = true;
+                targetFile.deleteFile();
+            }
+
+            if (completion != nullptr)
+                completion (! cancelled && ! failed, targetFile);
+
+            delete this;
+        }
+
+    private:
+        juce::File targetFile;
+        juce::String url;
+        juce::String version;
+        juce::int64 expectedSize = 0;
+        std::function<void (bool, juce::File)> completion;
+        bool failed = false;
+        bool cancelled = false;
+    };
+}
+
+void MainComponent::checkForUpdatesOnLaunch()
+{
+    if (updateCheckStarted)
+        return;
+
+    updateCheckStarted = true;
+
+    const auto localVersion = juce::String (ProjectInfo::versionString).trim();
+
+    if (localVersion.isEmpty())
+        return;
+
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+
+    // Runs on ApiClient's worker pool; the callback is delivered on the
+    // message thread. Being offline is a normal state and stays silent.
+    apiClient.getJson ("/landing", {}, 6000,
+        [safeThis, localVersion] (ApiClient::Response response)
+        {
+            auto* self = safeThis.getComponent();
+
+            if (self == nullptr || ! response.isJsonObject())
+                return;
+
+            const auto download = response.json.getProperty ("download", {});
+
+            if (! static_cast<bool> (download.getProperty ("available", false)))
+                return;
+
+            const auto remoteVersion = download.getProperty ("version", {}).toString().trim();
+            const auto downloadUrl = download.getProperty ("url", {}).toString().trim();
+
+            if (remoteVersion.isEmpty() || downloadUrl.isEmpty())
+                return;
+
+            if (compareVersionStrings (remoteVersion, localVersion) <= 0)
+                return;
+
+            if (remoteVersion == skippedUpdateVersion (self->appProperties))
+                return;
+
+            self->promptForUpdate (remoteVersion,
+                                   downloadUrl,
+                                   download.getProperty ("filename", {}).toString(),
+                                   static_cast<juce::int64> (download.getProperty ("size_bytes", 0)));
+        });
+}
+
+void MainComponent::promptForUpdate (const juce::String& version,
+                                     const juce::String& downloadUrl,
+                                     const juce::String& filename,
+                                     juce::int64 sizeBytes)
+{
+    juce::String message;
+    message << "FretFight " << version << " is available. You are running "
+            << ProjectInfo::versionString << ".";
+
+    if (sizeBytes > 0)
+        message << "\n\nDownload size: "
+                << juce::File::descriptionOfSizeInBytes (sizeBytes) << ".";
+
+    message << "\n\nDownload and install the update now?";
+
+    auto* prompt = new juce::AlertWindow ("Update available", message,
+                                          juce::AlertWindow::InfoIcon);
+    prompt->addButton ("UPDATE NOW", 1);
+    prompt->addButton ("LATER", 0);
+    prompt->addButton ("SKIP VERSION", 2);
+
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+
+    prompt->enterModalState (true,
+        juce::ModalCallbackFunction::create (
+            [safeThis, version, downloadUrl, filename, sizeBytes] (int result)
+            {
+                auto* self = safeThis.getComponent();
+
+                if (self == nullptr)
+                    return;
+
+                if (result == 1)
+                {
+                    self->startUpdateDownload (version, downloadUrl,
+                                               filename, sizeBytes);
+                }
+                else if (result == 2)
+                {
+                    if (auto* settings = self->appProperties.getUserSettings())
+                        settings->setValue ("SkippedUpdateVersion", version);
+                }
+            }),
+        true);
+}
+
+void MainComponent::startUpdateDownload (const juce::String& version,
+                                         const juce::String& downloadUrl,
+                                         const juce::String& filename,
+                                         juce::int64 sizeBytes)
+{
+    auto updateDirectory = juce::File::getSpecialLocation (juce::File::tempDirectory)
+                               .getChildFile ("FretFightUpdate");
+    updateDirectory.deleteRecursively();
+    updateDirectory.createDirectory();
+
+    const auto targetFile = updateDirectory.getChildFile (
+        safeInstallerFileName (filename, version));
+
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+
+    auto* task = new UpdateDownloadTask (
+        targetFile,
+        resolveUpdateUrl (downloadUrl),
+        version,
+        sizeBytes,
+        [safeThis] (bool success, juce::File installerFile)
+        {
+            // The progress window has already closed; defer the follow-up
+            // dialog so it is not created from inside the window's teardown.
+            juce::MessageManager::callAsync ([safeThis, success, installerFile]
+            {
+                auto* self = safeThis.getComponent();
+
+                if (self == nullptr)
+                    return;
+
+                if (! success)
+                {
+                    juce::AlertWindow::showMessageBoxAsync (
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Update download failed",
+                        "FretFight could not download the update. "
+                        "Check the connection and try again later.",
+                        "OK");
+                    return;
+                }
+
+                self->installDownloadedUpdate (installerFile);
+            });
+        });
+
+    task->launchThread();
+}
+
+void MainComponent::installDownloadedUpdate (const juce::File& installerFile)
+{
+    if (! installerFile.existsAsFile())
+        return;
+
+    auto* prompt = new juce::AlertWindow (
+        "Update downloaded",
+        "The installer has been downloaded.\n\n"
+        "FretFight will close and the installer will start.",
+        juce::AlertWindow::InfoIcon);
+    prompt->addButton ("INSTALL NOW", 1);
+    prompt->addButton ("LATER", 0);
+
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+
+    prompt->enterModalState (true,
+        juce::ModalCallbackFunction::create (
+            [safeThis, installerFile] (int result)
+            {
+                if (result != 1)
+                    return;
+
+                if (! installerFile.startAsProcess())
+                {
+                    juce::AlertWindow::showMessageBoxAsync (
+                        juce::MessageBoxIconType::WarningIcon,
+                        "Could not start the installer",
+                        "The installer was downloaded to:\n"
+                            + installerFile.getFullPathName()
+                            + "\n\nStart it manually to finish the update.",
+                        "OK");
+                    return;
+                }
+
+                // Quit after the modal callback returns: the installer replaces
+                // the running executable and needs this process gone.
+                juce::MessageManager::callAsync ([]()
+                {
+                    if (auto* app = juce::JUCEApplication::getInstance())
+                        app->systemRequestedQuit();
+                });
+            }),
+        true);
+}
+

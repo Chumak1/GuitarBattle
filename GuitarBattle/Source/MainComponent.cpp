@@ -90,6 +90,16 @@ MainComponent::MainComponent()
     // Restore a saved sign-in (if any) before the player types a password again.
     tryRestoreSavedSession();
 
+    // One update check per launch. Deferred so the main window is already on
+    // screen and a restored-session dialog is not overlapped; the request runs
+    // on ApiClient's worker pool and the result arrives on the message thread.
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+    juce::Timer::callAfterDelay(4000, [safeThis]()
+    {
+        if (auto* self = safeThis.getComponent())
+            self->checkForUpdatesOnLaunch();
+    });
+
     // Added last so pause/count-in cards paint above the HUD and mixer. The
     // component is transparent and does not intercept mouse input.
     addAndMakeVisible(modalOverlayComponent);
