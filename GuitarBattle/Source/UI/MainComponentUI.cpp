@@ -2047,7 +2047,7 @@ void MainComponent::resized()
     {
         accountStatusLabel.setJustificationType(juce::Justification::centredLeft);
 
-        // Top-right account row: plain username label, then SUPPORT, SETTINGS,
+        // Top-right account row: plain username label, then SUPPORT, PROFILE,
         // VST, AUDIO SETTINGS and EXIT. Signing out lives only inside the
         // profile window.
         const int topRight = width - 44;
@@ -5405,8 +5405,8 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(quitButton);
 
     // The username is a plain label. This visible button opens the personal
-    // account/settings window without covering the name.
-    accountSettingsButton.setButtonText("SETTINGS");
+    // account/profile window without covering the name.
+    accountSettingsButton.setButtonText("PROFILE");
     accountSettingsButton.setColour(juce::TextButton::buttonColourId,
                                     UiColors::surface2);
     accountSettingsButton.setColour(juce::TextButton::buttonOnColourId,
@@ -5416,7 +5416,7 @@ void MainComponent::initialiseUi()
     accountSettingsButton.setColour(juce::TextButton::textColourOnId,
                                     UiColors::onAccent);
     accountSettingsButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    accountSettingsButton.setTooltip("Open account settings");
+    accountSettingsButton.setTooltip("Open your profile");
     accountSettingsButton.onClick = [this] { openAccountWindow(); };
     addAndMakeVisible(accountSettingsButton);
 
