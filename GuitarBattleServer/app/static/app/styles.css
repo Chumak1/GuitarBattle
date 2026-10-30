@@ -77,15 +77,10 @@ a:hover { text-decoration: underline; }
 .brand:hover { text-decoration: none; }
 
 .brand__mark {
-  display: grid;
-  place-items: center;
+  display: block;
   width: 30px;
   height: 30px;
-  border-radius: 9px;
-  background: linear-gradient(160deg, var(--gold), #c98f12);
-  color: #1a1204;
-  font-size: 1rem;
-  letter-spacing: 0;
+  flex: 0 0 auto;
 }
 
 .topbar__spacer { margin-left: auto; }

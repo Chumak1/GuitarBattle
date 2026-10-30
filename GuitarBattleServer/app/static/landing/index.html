@@ -13,7 +13,7 @@
   <meta property="og:locale" content="ru_RU" data-i18n-content="landing.ogLocale">
   <link rel="canonical" href="https://fretfight.online/">
   <title>fretfight — первая гитарная битва онлайн</title>
-  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b10'/%3E%3Cpath d='M24 16h25v9H34v7h13v9H34v17h-10z' fill='%23f3c451'/%3E%3C/svg%3E">
+  <link rel="icon" type="image/svg+xml" href="/app/logo.svg">
   <style>
     :root {
       color-scheme: dark;
@@ -88,15 +88,10 @@
     }
 
     .brand .mark {
-      display: grid;
-      place-items: center;
-      width: 30px;
-      height: 30px;
-      border-radius: 9px;
-      background: linear-gradient(160deg, var(--gold), #c98f12);
-      color: #1a1204;
-      font-size: 1rem;
-      letter-spacing: 0;
+      display: block;
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
     }
 
     .nav {
@@ -214,6 +209,13 @@
     .hero .wrap {
       position: relative;
       z-index: 2;
+    }
+
+    .hero-logo {
+      display: block;
+      width: 64px;
+      height: 64px;
+      margin: 0 0 14px;
     }
 
     .kicker {
@@ -779,7 +781,7 @@
 
 <header class="site-header">
   <div class="wrap">
-    <a class="brand" href="#top"><span class="mark">♪</span>fretfight</a>
+    <a class="brand" href="#top"><img class="mark" src="/app/logo.svg" alt="" width="28" height="28">fretfight</a>
     <nav class="nav" aria-label="Основная навигация" data-i18n-aria-label="landing.navLabel">
       <a href="#about" data-i18n="landing.nav.about">О проекте</a>
       <a href="#how" data-i18n="landing.nav.how">Как играть</a>
@@ -802,6 +804,7 @@
     <div class="hero-bg" id="heroBg" hidden></div>
     <div class="wrap">
       <div>
+        <img class="hero-logo" src="/app/logo.svg" alt="" width="64" height="64">
         <p class="kicker" data-i18n="landing.hero.kicker">first guitar battle online</p>
         <h1 class="wordmark" id="hero-title">fretfight</h1>
         <p class="lead" data-i18n-html="landing.hero.lead">
