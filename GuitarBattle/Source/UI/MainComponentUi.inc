@@ -31,5 +31,9 @@
     // account window with rating summary, global top-50, attempt history,
     // profile/password forms and sign-out.
     juce::TextButton accountSettingsButton;
+
+    // Opens the public support page in the default browser. Lives in the
+    // song-select header next to SETTINGS / AUDIO SETTINGS / EXIT.
+    juce::TextButton supportButton;
     juce::Component::SafePointer<juce::DialogWindow> accountDialog;
     void openAccountWindow();

@@ -1922,6 +1922,7 @@ void MainComponent::resized()
     logoutButton.setVisible(false);
     accountSettingsButton.setVisible(songSelect && currentUsername.isNotEmpty());
     quitButton.setVisible(songSelect);
+    supportButton.setVisible(songSelect);
     gameSongTitleLabel.setVisible(showGame || readyScreen);
 
     songPridumayButton.setVisible(songSelect);
@@ -2065,10 +2066,12 @@ void MainComponent::resized()
         const int exitX = topRight - accountButtonW;
         const int audioX = exitX - topGap - accountButtonW;
         const int settingsX = audioX - topGap - accountButtonW;
-        const int usernameX = settingsX - 12 - usernameW;
+        const int supportX = settingsX - topGap - accountButtonW;
+        const int usernameX = supportX - 12 - usernameW;
 
         currentUserLabel.setBounds(usernameX, 48, usernameW, 22);
         currentUserLabel.setJustificationType(juce::Justification::centredLeft);
+        supportButton.setBounds(supportX, 42, accountButtonW, accountButtonH);
         accountSettingsButton.setBounds(settingsX, 42, accountButtonW, accountButtonH);
         audioSettingsButton.setButtonText("AUDIO SETTINGS");
         audioSettingsButton.setBounds(audioX, 42, accountButtonW, accountButtonH);
@@ -5400,6 +5403,28 @@ void MainComponent::initialiseUi()
     accountSettingsButton.setTooltip("Open account settings");
     accountSettingsButton.onClick = [this] { openAccountWindow(); };
     addAndMakeVisible(accountSettingsButton);
+
+    // Support: one click opens the public support page in the default browser.
+    // The accent tint separates it from the neutral SETTINGS/AUDIO/EXIT row.
+    supportButton.setButtonText("SUPPORT");
+    supportButton.setColour(juce::TextButton::buttonColourId,
+                            UiColors::accent.withAlpha(0.16f));
+    supportButton.setColour(juce::TextButton::buttonOnColourId,
+                            UiColors::accent);
+    supportButton.setColour(juce::TextButton::textColourOffId,
+                            UiColors::accent);
+    supportButton.setColour(juce::TextButton::textColourOnId,
+                            UiColors::onAccent);
+    supportButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    supportButton.setTooltip("Open the Fretfight support page in your browser");
+    supportButton.onClick = []
+    {
+        // Same origin as every other link in the client, so a future domain
+        // change only has to touch ApiClient::serverOrigin.
+        juce::URL(juce::String(ApiClient::serverOrigin) + "/support")
+            .launchInDefaultBrowser();
+    };
+    addAndMakeVisible(supportButton);
 
     retryConnectionButton.setColour(juce::TextButton::buttonColourId,
                                     UiColors::surface2);
