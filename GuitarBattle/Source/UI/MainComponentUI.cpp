@@ -5409,14 +5409,15 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(accountSettingsButton);
 
     // Support: one click opens the public support page in the default browser.
-    // The accent tint separates it from the neutral SETTINGS/AUDIO/EXIT row.
+    // Same accent fill as START SONG so it reads as a primary action in the
+    // header instead of a faded secondary button.
     supportButton.setButtonText("SUPPORT");
     supportButton.setColour(juce::TextButton::buttonColourId,
-                            UiColors::accent.withAlpha(0.16f));
+                            UiColors::accent);
     supportButton.setColour(juce::TextButton::buttonOnColourId,
-                            UiColors::accent);
+                            UiColors::accentStrong);
     supportButton.setColour(juce::TextButton::textColourOffId,
-                            UiColors::accent);
+                            UiColors::onAccent);
     supportButton.setColour(juce::TextButton::textColourOnId,
                             UiColors::onAccent);
     supportButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
