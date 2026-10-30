@@ -146,6 +146,12 @@
       white-space: nowrap;
     }
 
+    .header-support {
+      padding: 9px 16px;
+      font-size: 0.86rem;
+      white-space: nowrap;
+    }
+
     /* ---------- language switch ---------- */
 
     .lang-switch {
@@ -325,6 +331,21 @@
     .btn-ghost:focus-visible {
       border-color: rgba(243, 196, 81, 0.42);
       color: var(--gold);
+      transform: translateY(-1px);
+    }
+
+    /* Support link: gold outline so it reads as an action, not navigation. */
+    .btn-support {
+      border-color: rgba(243, 196, 81, 0.42);
+      color: var(--gold);
+      background: rgba(243, 196, 81, 0.06);
+    }
+
+    .btn-support:hover,
+    .btn-support:focus-visible {
+      border-color: var(--gold);
+      background: rgba(243, 196, 81, 0.14);
+      color: var(--gold-strong);
       transform: translateY(-1px);
     }
 
@@ -734,16 +755,28 @@
 
     /* ---------- motion / small screens ---------- */
 
+    @media (max-width: 1200px) {
+      .status-chip { display: none; }
+    }
+
+    /* The header row cannot hold brand + nav + language switch + SUPPORT +
+       LOG IN on narrow screens; the support link stays in the hero and the
+       final CTA, so hiding it here costs nothing. */
+    @media (max-width: 1100px) {
+      .header-support { display: none; }
+    }
+
     @media (max-width: 960px) {
       .status-chip { display: none; }
       .site-header .wrap { gap: 16px; }
       .nav { gap: 16px; }
     }
 
-    @media (max-width: 760px) {
+    @media (max-width: 800px) {
       .nav { display: none; }
       .site-header .wrap { justify-content: space-between; gap: 12px; }
       .header-login { margin-left: auto; }
+      .header-support { display: none; }
     }
 
     @media (prefers-reduced-motion: reduce) {
@@ -791,6 +824,7 @@
       <span class="lang-switch__sep" aria-hidden="true">/</span>
       <button type="button" data-lang="en" aria-pressed="false">EN</button>
     </div>
+    <a class="btn btn-ghost btn-support header-support" href="/support" data-i18n="landing.support">Поддержать</a>
     <a class="btn btn-ghost header-login" href="/login" data-i18n="common.login">Войти</a>
     <span class="status-chip"><span class="dot"></span><span data-i18n="landing.status">в разработке</span></span>
   </div>
@@ -813,6 +847,7 @@
           <a class="btn btn-primary" href="/api/v1/downloads/game" data-download hidden data-i18n="landing.download">Скачать для Windows</a>
           <a class="btn btn-primary" href="/register" data-i18n="landing.cta">Создать аккаунт</a>
           <a class="btn btn-ghost" href="#how" data-i18n="landing.how">Как это работает</a>
+          <a class="btn btn-ghost btn-support" href="/support" data-i18n="landing.supportCta">Поддержать проект</a>
         </div>
       </div>
     </div>
@@ -966,6 +1001,7 @@
           <a class="btn btn-primary" href="/api/v1/downloads/game" data-download hidden data-i18n="landing.download">Скачать для Windows</a>
           <a class="btn btn-primary" href="/register" data-i18n="landing.cta">Создать аккаунт</a>
           <a class="btn btn-ghost" href="#how" data-i18n="landing.how">Как это работает</a>
+          <a class="btn btn-ghost btn-support" href="/support" data-i18n="landing.supportCta">Поддержать проект</a>
         </div>
       </div>
     </div>

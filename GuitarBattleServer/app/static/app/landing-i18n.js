@@ -24,6 +24,8 @@ window.FFI18N.add({
     'landing.download': 'Скачать для Windows',
     'landing.cta': 'Создать аккаунт',
     'landing.how': 'Как это работает',
+    'landing.support': 'Поддержать',
+    'landing.supportCta': 'Поддержать проект',
 
     'landing.hero.kicker': 'first guitar battle online',
     'landing.hero.title': 'fretfight',
@@ -120,6 +122,8 @@ window.FFI18N.add({
     'landing.download': 'Download for Windows',
     'landing.cta': 'Create an account',
     'landing.how': 'How it works',
+    'landing.support': 'Support',
+    'landing.supportCta': 'Support the project',
 
     'landing.hero.kicker': 'first guitar battle online',
     'landing.hero.title': 'fretfight',
