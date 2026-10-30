@@ -399,6 +399,24 @@ Administrator endpoints (`Bearer` token with `is_admin`, same as `/admin/songs`)
 - `POST /api/v1/admin/site/landing/background` (multipart `file`), `DELETE /api/v1/admin/site/landing/background` — hero JPEG/PNG/WebP/GIF/MP4/WebM.
 - `GET /api/v1/admin/site/game-builds`, `POST /api/v1/admin/site/game-builds` (multipart `file` + optional `version`), `POST /api/v1/admin/site/game-builds/{id}/activate`, `DELETE /api/v1/admin/site/game-builds/{id}`.
 
+### Support page CMS (`/support`)
+
+The public page is `app/static/app/support.html`; the page itself is an empty shell and all content comes from the API. `/donate` redirects to `/support` (308). The admin editor lives in **Страница поддержки** next to the landing CMS.
+
+Content is stored as a JSONB document (`support_page.draft_content` / `published_content`) with `order`, `sections` (hero, duels, usage, help, why, faq, cta; every section and field has a `visible` flag) and `code` (`custom_html`, `custom_css`). Saving a draft never changes the public page; `publish` copies the draft and writes a row to `support_page_versions` (history + restore). `revision` is an optimistic lock: a stale value returns `409 Conflict` with the editor name and time.
+
+- `GET /api/v1/support?lang=ru|en` — published content only, one language, hidden sections removed, text fields rendered to allow-listed HTML.
+- `POST /api/v1/support/events` — `support_view`, `support_click` (with `method_key`), `support_faq_open`; aggregated per day, no IP/account/cookie.
+- `GET /api/v1/admin/support` — draft, methods and publish state.
+- `PUT /api/v1/admin/support/draft` — `{revision, content}`; `PUT /api/v1/admin/support/code` — `{revision, custom_html, custom_css}`.
+- `POST /api/v1/admin/support/publish` — publish the current draft with an optional comment.
+- `GET /api/v1/admin/support/preview?lang=` — the draft rendered exactly like the public page (administrators only).
+- `GET /api/v1/admin/support/versions`, `POST /api/v1/admin/support/versions/{id}/restore` — history and rollback (rollback creates a draft, never publishes).
+- `GET/POST /api/v1/admin/support/methods`, `PUT/DELETE /api/v1/admin/support/methods/{id}`, `PUT /api/v1/admin/support/methods/order` — Boosty/DALink-style buttons.
+- `GET /api/v1/admin/support/stats?days=30` — aggregated counters for the admin panel.
+
+Text fields accept only `**bold**`, `*italic*`, `[label](https://…)` and `- list` markup; raw HTML is escaped. The `custom_html` fragment is sanitised with an allow-list (`p`, `br`, lists, links, `b/strong`, `i/em`, `h2–h4`), `custom_css` rejects `@import`, `@font-face`, `url()`, `expression(`, `javascript:` and `</style>`; size limits are 64 KiB per code field and 512 KiB for the document. Support URLs must be absolute `http(s)` (no `javascript:`, `data:`, `file:` or credentials). The page and `/admin` receive `Content-Security-Policy: default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; frame-src 'self'; object-src 'none'; base-uri 'none'`; code previews run in `<iframe sandbox="" srcdoc>` and JavaScript is never accepted. Defaults (including `https://boosty.to/fretfight/donate` and `https://dalink.to/fretfight`) are seeded once (`support_page.seed_version`), so edited or deleted rows are never re-created.
+
 `GET /api/v1/geo` returns `{"country": "DE", "language": "en"}` for a public client IP (CIS countries get `ru`). Without the database it returns `null` values and the page falls back to its default language. Download or refresh the database with:
 
 ```powershell

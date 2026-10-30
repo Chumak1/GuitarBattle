@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ru" data-title="support.docTitle">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#070b10">
+  <meta name="description" content="Поддержать Fretfight: помощь развитию игровой платформы для гитаристов, музыкального каталога и будущих гитарных дуэлей." data-i18n-content="support.meta">
+  <meta property="og:type" content="website">
+  <meta property="og:site_name" content="fretfight">
+  <meta property="og:title" content="Поддержать Fretfight" data-i18n-content="support.ogTitle">
+  <meta property="og:description" content="Помоги развивать Fretfight: игровой процесс, музыкальный каталог, соревновательные возможности и инфраструктуру." data-i18n-content="support.ogDescription">
+  <meta property="og:url" content="https://fretfight.online/support">
+  <meta property="og:locale" content="ru_RU" data-i18n-content="support.ogLocale">
+  <link rel="canonical" href="https://fretfight.online/support">
+  <title>Поддержка Fretfight — fretfight</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23070b10'/%3E%3Cpath d='M24 16h25v9H34v7h13v9H34v17h-10z' fill='%23f3c451'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/app/styles.css">
+  <link rel="stylesheet" href="/app/support.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="topbar__inner">
+    <a class="brand" href="/"><span class="brand__mark">F</span>fretfight</a>
+    <span class="topbar__spacer"></span>
+    <nav aria-label="fretfight">
+      <a class="btn btn--ghost btn--sm" href="/" data-i18n="support.navHome">На главную</a>
+    </nav>
+    <div class="lang-switch" data-lang-switch aria-label="Язык страницы / Page language">
+      <button type="button" data-lang="ru" aria-pressed="true">RU</button>
+      <span class="lang-switch__sep" aria-hidden="true">/</span>
+      <button type="button" data-lang="en" aria-pressed="false">EN</button>
+    </div>
+  </div>
+</header>
+
+<main class="shell support-shell" id="supportMain">
+  <div id="supportRoot" class="support-root" aria-busy="true">
+    <p class="support-state" role="status" data-i18n="support.loading">Загружаем страницу…</p>
+  </div>
+
+  <div id="supportError" class="support-state" role="alert" hidden>
+    <h2 data-i18n="support.errorTitle">Не удалось загрузить страницу</h2>
+    <p data-i18n="support.errorText">Проверьте соединение и попробуйте ещё раз. Контакты проекта остаются доступны ниже.</p>
+    <button id="supportRetry" class="btn btn--primary" type="button" data-i18n="support.retry">Попробовать снова</button>
+  </div>
+
+  <p class="support-footer-note" data-i18n="support.footerNote">
+    Fretfight — игра на настоящей гитаре. Поддержка не является покупкой и не даёт игровых преимуществ.
+  </p>
+
+  <noscript>
+    <p class="support-state" data-i18n="support.noscript">
+      Для отображения страницы поддержки требуется JavaScript.
+    </p>
+  </noscript>
+</main>
+
+<footer class="shell support-footer">
+  <section class="contacts" aria-labelledby="contacts-title">
+    <h2 class="contacts__eyebrow" id="contacts-title" data-i18n="contacts.title">Контакты</h2>
+    <p class="contacts__title" data-contacts-name data-i18n="contacts.name">Чумак Евгений Александрович</p>
+    <ul class="contacts__links">
+      <li class="contacts__link">
+        <span class="contacts__label" data-i18n="contacts.emailLabel">Email</span>
+        <a class="contacts__value" data-contacts-email href="mailto:chumakevgeny@gmail.com">chumakevgeny@gmail.com</a>
+      </li>
+      <li class="contacts__link">
+        <span class="contacts__label" data-i18n="contacts.telegramLabel">Telegram</span>
+        <a class="contacts__value" data-contacts-telegram href="https://t.me/chumakevgene" target="_blank" rel="noopener noreferrer">@chumakevgene</a>
+      </li>
+    </ul>
+    <ul class="contacts__socials" data-contacts-socials aria-label="Мы в соцсетях" data-i18n-aria-label="contacts.socialsLabel">
+      <li>
+        <span class="contacts__social is-placeholder" data-social="youtube" aria-disabled="true" tabindex="-1" title="Скоро" aria-label="YouTube">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="currentColor"><path fill-rule="evenodd" d="M23 12s0-3.8-.5-5.6a2.9 2.9 0 0 0-2-2C18.7 4 12 4 12 4s-6.7 0-8.5.4a2.9 2.9 0 0 0-2 2C1 8.2 1 12 1 12s0 3.8.5 5.6a2.9 2.9 0 0 0 2 2C5.3 20 12 20 12 20s6.7 0 8.5-.4a2.9 2.9 0 0 0 2-2C23 15.8 23 12 23 12zM9.8 15.5v-7l6 3.5-6 3.5z"/></svg>
+        </span>
+      </li>
+      <li>
+        <span class="contacts__social is-placeholder" data-social="instagram" aria-disabled="true" tabindex="-1" title="Скоро" aria-label="Instagram">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4.2"/><circle cx="17.3" cy="6.7" r="1.1" fill="currentColor" stroke="none"/></svg>
+        </span>
+      </li>
+      <li>
+        <span class="contacts__social is-placeholder" data-social="twitter" aria-disabled="true" tabindex="-1" title="Скоро" aria-label="Twitter / X">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="currentColor"><path d="M18.24 2.25h3.31l-7.23 8.26 8.5 11.24h-6.65l-5.21-6.82-5.97 6.82H1.68l7.73-8.84L1.25 2.25h6.83l4.71 6.23 5.45-6.23zm-1.16 17.52h1.83L7.08 4.13H5.12l11.96 15.64z"/></svg>
+        </span>
+      </li>
+      <li>
+        <span class="contacts__social is-placeholder" data-social="vk" aria-disabled="true" tabindex="-1" title="Скоро" aria-label="VK">
+          <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 7.4 7 16.6l3.6-9.2"/><path d="M14.4 7.4v9.2"/><path d="M14.4 12.2 18.9 7.4"/><path d="M15.2 11.9l4.4 4.7"/></svg>
+        </span>
+      </li>
+    </ul>
+  </section>
+  <div class="footer">
+    © 2026 fretfight — <a href="/">fretfight.online</a> —
+    <a href="/policy" data-i18n="common.policy">Политика конфиденциальности</a>
+  </div>
+</footer>
+
+<script src="/app/i18n.js"></script>
+<script src="/app/support-i18n.js"></script>
+<script src="/app/support-render.js"></script>
+<script src="/app/support.js"></script>
+<script src="/app/contacts.js"></script>
+</body>
+</html>

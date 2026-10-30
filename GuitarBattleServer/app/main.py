@@ -2,8 +2,8 @@ import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, Request, status
+from fastapi.responses import FileResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.api.health import router as health_router
@@ -38,9 +38,23 @@ def _sync_reference_data() -> None:
         db.close()
 
 
+def _seed_support_page() -> None:
+    """Create the default support page once; existing content is never touched."""
+    from app.services.support_content import ensure_support_seed
+
+    db = SessionLocal()
+    try:
+        ensure_support_seed(db)
+        logger.info("Support page seed checked")
+    except Exception:  # pragma: no cover - startup must survive a cold database
+        db.rollback()
+        logger.exception("Could not seed the support page")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     _sync_reference_data()
+    _seed_support_page()
     yield
 
 
@@ -96,8 +110,38 @@ app.mount(
 auth_page = web_static_dir / "auth.html"
 account_page = web_static_dir / "account.html"
 policy_page = web_static_dir / "policy.html"
+support_page = web_static_dir / "support.html"
 
 landing_page = Path(__file__).resolve().parent / "static" / "landing" / "index.html"
+
+# The support page and the admin console load no third-party scripts (the
+# landing pages keep their analytics and therefore no strict policy). The
+# sandboxed preview iframes are same-origin ``srcdoc`` documents.
+CONTENT_SECURITY_POLICY = (
+    "default-src 'self'; "
+    "img-src 'self' data:; "
+    "style-src 'self' 'unsafe-inline'; "
+    "script-src 'self'; "
+    "frame-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'none'"
+)
+
+
+@app.middleware("http")
+async def csp_headers(request: Request, call_next):
+    """Send a strict CSP to the support page and the admin console."""
+    response = await call_next(request)
+    path = request.url.path
+    if (
+        path == "/support"
+        or path == "/donate"
+        or path == "/admin"
+        or path.startswith("/admin/")
+    ):
+        response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.middleware("http")
@@ -105,12 +149,14 @@ async def html_no_cache(request: Request, call_next):
     """Always revalidate the landing page and the web apps."""
     response = await call_next(request)
     path = request.url.path
-    if path == "/" or path.startswith(("/admin", "/app", "/login", "/register", "/account", "/policy")):
+    if path == "/" or path.startswith(
+        ("/admin", "/app", "/login", "/register", "/account", "/policy", "/support")
+    ):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
     return response
 
 
-PUBLIC_HTML_PATHS = {"/", "/login", "/register", "/account", "/policy"}
+PUBLIC_HTML_PATHS = {"/", "/login", "/register", "/account", "/policy", "/support"}
 
 
 @app.middleware("http")
@@ -165,3 +211,17 @@ def policy_route() -> FileResponse:
 @app.get("/account", include_in_schema=False)
 def account_page_route() -> FileResponse:
     return FileResponse(account_page, media_type="text/html")
+
+
+@app.get("/support", include_in_schema=False)
+def support_page_route() -> FileResponse:
+    """Public support page. All of its content comes from the API."""
+    return FileResponse(support_page, media_type="text/html")
+
+
+@app.get("/donate", include_in_schema=False)
+def donate_redirect() -> RedirectResponse:
+    """Keep the old short link working without a second copy of the page."""
+    return RedirectResponse(
+        url="/support", status_code=status.HTTP_308_PERMANENT_REDIRECT
+    )

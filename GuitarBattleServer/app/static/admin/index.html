@@ -118,6 +118,11 @@
           </button>
         </li>
         <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="support">
+            <i class="bi bi-heart me-1"></i>Страница поддержки
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
           <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="contacts">
             <i class="bi bi-person-lines-fill me-1"></i>Контакты
           </button>
@@ -366,6 +371,175 @@
 
         <div id="landingBlocks" class="vstack gap-3"></div>
         <p class="form-hint mt-3 mb-0">Пустое поле означает стандартный текст. Изменения появятся на сайте сразу после сохранения.</p>
+      </div>
+
+      <div id="sectionSupport" data-admin-panel="support" hidden>
+        <div class="page-heading d-flex flex-column flex-xl-row justify-content-between gap-3 align-items-xl-end">
+          <div>
+            <div class="eyebrow">Публичный сайт</div>
+            <h1 class="page-title">Страница поддержки</h1>
+            <p class="page-subtitle">Публичная страница <code>/support</code>. Сохранение меняет только черновик; посетители видят опубликованную версию до нажатия «Опубликовать».</p>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button id="supportReload" class="btn btn-outline-light" type="button">
+              <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+            </button>
+            <button id="supportPreview" class="btn btn-outline-light" type="button">
+              <i class="bi bi-eye me-1"></i>Предпросмотр
+            </button>
+            <button id="supportSave" class="btn btn-warning fw-semibold" type="button">
+              <span id="supportSaveSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+              <i class="bi bi-check2 me-1"></i>Сохранить черновик
+            </button>
+            <button id="supportPublish" class="btn btn-success fw-semibold" type="button">
+              <span id="supportPublishSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+              <i class="bi bi-upload me-1"></i>Опубликовать
+            </button>
+          </div>
+        </div>
+
+        <div id="supportAlert" class="alert alert-danger" role="alert" hidden></div>
+        <div id="supportStatus" class="support-status"></div>
+
+        <ul class="nav admin-sections support-tabs mb-3" id="supportTabs" role="tablist">
+          <li class="nav-item" role="presentation">
+            <button class="nav-link active" type="button" role="tab" aria-selected="true" data-support-tab="sections">
+              <i class="bi bi-layout-text-window-reverse me-1"></i>Секции
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" type="button" role="tab" aria-selected="false" data-support-tab="methods">
+              <i class="bi bi-heart-arrow me-1"></i>Способы поддержки
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" type="button" role="tab" aria-selected="false" data-support-tab="history">
+              <i class="bi bi-clock-history me-1"></i>История
+            </button>
+          </li>
+          <li class="nav-item" role="presentation">
+            <button class="nav-link" type="button" role="tab" aria-selected="false" data-support-tab="code">
+              <i class="bi bi-code-slash me-1"></i>Код
+            </button>
+          </li>
+        </ul>
+
+        <div data-support-panel="sections">
+          <p class="form-hint mt-0">
+            Порядок секций задаётся стрелками. Внутри каждой секции можно скрыть отдельные элементы.
+            Разметка в текстах: <code>**жирный**</code>, <code>*курсив*</code>, <code>[ссылка](https://example.com)</code>,
+            строки, начинающиеся с <code>- </code>, превращаются в список.
+          </p>
+          <div id="supportSections" class="vstack gap-3"></div>
+        </div>
+
+        <div data-support-panel="methods" hidden>
+          <section class="card content-card mb-4">
+            <div class="card-body p-4">
+              <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-1">
+                <div>
+                  <h2 class="h5 mb-1">Способы поддержки</h2>
+                  <p class="form-hint mb-0">Кнопки ведут на внешние сервисы. Платёжных форм на сайте нет. Разрешены только http(s)-ссылки.</p>
+                </div>
+                <button id="supportAddMethod" class="btn btn-warning btn-sm" type="button">
+                  <i class="bi bi-plus-lg me-1"></i>Добавить способ
+                </button>
+              </div>
+              <div id="supportMethodsList" class="vstack gap-3 mt-3"></div>
+            </div>
+          </section>
+        </div>
+
+        <div data-support-panel="history" hidden>
+          <section class="card content-card">
+            <div class="card-body p-0">
+              <div class="toolbar">
+                <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap w-100">
+                  <div>
+                    <h2 class="h6 mb-0">Опубликованные версии</h2>
+                    <div class="text-secondary small">Откат создаёт черновик; публикация выполняется отдельно.</div>
+                  </div>
+                  <button id="supportHistoryReload" class="btn btn-sm btn-outline-light" type="button">
+                    <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+                  </button>
+                </div>
+              </div>
+              <div class="table-responsive">
+                <table class="table songs-table align-middle mb-0">
+                  <thead>
+                    <tr>
+                      <th scope="col">Ревизия</th>
+                      <th scope="col">Опубликована</th>
+                      <th scope="col" class="d-none d-md-table-cell">Автор</th>
+                      <th scope="col" class="d-none d-lg-table-cell">Комментарий</th>
+                      <th scope="col" class="text-end">Действия</th>
+                    </tr>
+                  </thead>
+                  <tbody id="supportHistoryBody">
+                    <tr><td colspan="5" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div id="supportHistoryEmpty" class="empty-state" hidden>
+                <div class="empty-icon"><i class="bi bi-clock-history"></i></div>
+                <h2>Публикаций пока нет</h2>
+                <p>История появится после первой публикации страницы.</p>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <div data-support-panel="code" hidden>
+          <div class="alert alert-warning small" role="note">
+            <i class="bi bi-shield-exclamation me-1"></i>
+            JavaScript отключён по соображениям безопасности: скрипты не принимаются и не выполняются.
+            HTML очищается по белому списку тегов, CSS не может загружать внешние ресурсы (<code>@import</code>,
+            <code>url()</code>, <code>@font-face</code> запрещены).
+          </div>
+          <div class="row g-3">
+            <div class="col-12 col-xl-6">
+              <section class="card content-card">
+                <div class="card-body p-4">
+                  <h2 class="h5 mb-1">HTML-фрагмент</h2>
+                  <p class="form-hint mt-0 mb-2">Вставляется в конце страницы поддержки. Разрешены абзацы, списки, ссылки, выделение и заголовки h2–h4.</p>
+                  <div class="code-editor">
+                    <div id="supportHtmlGutter" class="code-gutter" aria-hidden="true">1</div>
+                    <textarea id="supportCustomHtml" class="code-input" rows="14" spellcheck="false"
+                              aria-label="HTML-фрагмент страницы поддержки"></textarea>
+                  </div>
+                  <div class="form-hint mt-2"><span id="supportHtmlCount">0</span> / 65536 символов</div>
+                </div>
+              </section>
+            </div>
+            <div class="col-12 col-xl-6">
+              <section class="card content-card">
+                <div class="card-body p-4">
+                  <h2 class="h5 mb-1">CSS</h2>
+                  <p class="form-hint mt-0 mb-2">Дополнительные стили страницы. Без внешних шрифтов, картинок и импортов.</p>
+                  <div class="code-editor">
+                    <div id="supportCssGutter" class="code-gutter" aria-hidden="true">1</div>
+                    <textarea id="supportCustomCss" class="code-input" rows="14" spellcheck="false"
+                              aria-label="CSS страницы поддержки"></textarea>
+                  </div>
+                  <div class="form-hint mt-2"><span id="supportCssCount">0</span> / 65536 символов</div>
+                </div>
+              </section>
+            </div>
+          </div>
+          <div class="d-flex flex-wrap gap-2 mt-3">
+            <button id="supportSaveCode" class="btn btn-warning fw-semibold" type="button">
+              <span id="supportSaveCodeSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+              Сохранить код в черновик
+            </button>
+            <button id="supportPreviewCode" class="btn btn-outline-light" type="button">
+              <i class="bi bi-eye me-1"></i>Предпросмотр кода
+            </button>
+          </div>
+          <div class="mt-3">
+            <iframe id="supportCodePreview" class="support-preview-frame support-preview-frame--short"
+                    sandbox="" title="Предпросмотр HTML и CSS" srcdoc=""></iframe>
+          </div>
+        </div>
       </div>
 
       <div id="sectionContacts" data-admin-panel="contacts" hidden>
@@ -916,6 +1090,40 @@
     </div>
   </div>
 
+  <div class="modal fade" id="supportPreviewModal" tabindex="-1" aria-labelledby="supportPreviewTitle" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header align-items-start">
+          <div>
+            <h2 class="modal-title fs-5" id="supportPreviewTitle">Предпросмотр страницы поддержки</h2>
+            <div class="text-secondary small mt-1">
+              Показан сохранённый черновик (ревизия <span id="supportPreviewRevision">—</span>). Несохранённые изменения не видны.
+            </div>
+            <div class="d-flex align-items-center gap-2 mt-2">
+              <label class="form-label mb-0 small" for="supportPreviewLang">Язык</label>
+              <select id="supportPreviewLang" class="form-select form-select-sm support-preview-lang">
+                <option value="ru">Русский</option>
+                <option value="en">English</option>
+              </select>
+            </div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+        </div>
+        <div class="modal-body p-0">
+          <div id="supportPreviewLoading" class="p-4 text-secondary small">
+            <span class="spinner-border spinner-border-sm me-2"></span>Загрузка предпросмотра…
+          </div>
+          <iframe id="supportPreviewFrame" class="support-preview-frame" sandbox=""
+                  title="Предпросмотр страницы поддержки" srcdoc=""></iframe>
+        </div>
+        <div class="modal-footer">
+          <span class="form-hint mb-0 me-auto">Скрипты в предпросмотре отключены: iframe без allow-scripts.</span>
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div id="toastContainer" class="toast-container position-fixed bottom-0 end-0 p-3" aria-live="polite"></div>
 
   <noscript>
@@ -929,5 +1137,7 @@
   <script src="./admin-statistics.js?v=20261026-2"></script>
   <script src="./admin-daily.js?v=20261027-1"></script>
   <script src="./admin-site.js?v=20261029-1"></script>
+  <script src="/app/support-render.js"></script>
+  <script src="./admin-support.js?v=20261030-1"></script>
 </body>
 </html>

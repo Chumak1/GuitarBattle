@@ -872,6 +872,10 @@
     if (name === "landing" && !state.loaded) loadLanding();
     if (name === "contacts" && !state.contactsLoaded) loadContacts();
     if (name === "builds" && !state.buildsLoaded) loadBuilds();
+    if (name === "support") {
+      const support = window.FFAdminSupport;
+      if (support) support.show();
+    }
     if (name === "daily") {
       const daily = window.FFAdminDaily;
       if (daily) daily.show();
@@ -888,7 +892,10 @@
     if (state.section === "landing") loadLanding();
     else if (state.section === "contacts") loadContacts();
     else if (state.section === "builds") loadBuilds();
-    else if (state.section === "daily") {
+    else if (state.section === "support") {
+      const support = window.FFAdminSupport;
+      if (support) support.refresh();
+    } else if (state.section === "daily") {
       const daily = window.FFAdminDaily;
       if (daily) daily.refresh();
     } else if (state.section === "statistics") {

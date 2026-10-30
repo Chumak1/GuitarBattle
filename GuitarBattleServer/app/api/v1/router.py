@@ -7,6 +7,8 @@ from app.api.v1.games import router as games_router
 from app.api.v1.client_assets import router as client_assets_router
 from app.api.v1.site import router as site_router
 from app.api.v1.admin_site import router as admin_site_router
+from app.api.v1.support import router as support_router
+from app.api.v1.admin_support import router as admin_support_router
 from app.api.v1.activity import router as activity_router
 from app.api.v1.admin_statistics import router as admin_statistics_router
 from app.api.v1.admin_users import router as admin_users_router
@@ -24,6 +26,8 @@ router.include_router(progression_router)
 router.include_router(client_assets_router)
 router.include_router(site_router)
 router.include_router(admin_site_router)
+router.include_router(support_router)
+router.include_router(admin_support_router)
 router.include_router(activity_router)
 router.include_router(admin_statistics_router)
 router.include_router(admin_users_router)
