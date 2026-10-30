@@ -931,7 +931,13 @@ void MainComponent::refreshGlobalLeaderboard()
             }
 
             if (self->leaderboardModel != nullptr)
+            {
+                // Highlight the signed-in player the same way the account
+                // window does. Set on every refresh so a login or rename is
+                // reflected without recreating the table.
+                self->leaderboardModel->setCurrentUsername(self->currentUsername);
                 self->leaderboardModel->setRows(std::move(rows));
+            }
 
             self->leaderboardTable.updateContent();
             self->leaderboardTable.repaint();

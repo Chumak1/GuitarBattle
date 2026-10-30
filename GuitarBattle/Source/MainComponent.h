@@ -72,6 +72,13 @@ public:
 
     std::function<void(const juce::String&)> onRowClicked;
 
+    // The signed-in player is highlighted exactly like in the account window's
+    // global rating table.
+    void setCurrentUsername(juce::String username)
+    {
+        meUsername = std::move(username);
+    }
+
     void setRows(std::vector<Row> newRows)
     {
         rows = std::move(newRows);
@@ -82,14 +89,24 @@ public:
         return static_cast<int>(rows.size());
     }
 
-    void paintRowBackground(juce::Graphics& g, int rowNumber, int width,
-                            int height, bool rowIsSelected) override
+    void paintRowBackground(juce::Graphics& g, int rowNumber, int, int, bool) override
     {
-        juce::ignoreUnused(rowNumber);
+        if (! juce::isPositiveAndBelow(rowNumber,
+                                       static_cast<int>(rows.size())))
+        {
+            g.fillAll(juce::Colours::transparentBlack);
+            return;
+        }
 
-        g.setColour(rowIsSelected ? juce::Colour(0xFF2A3140)
-                                  : juce::Colour(0xFF161B24).withAlpha(0.55f));
-        g.fillRect(0, 0, width, height);
+        const auto& row = rows[static_cast<size_t>(rowNumber)];
+        const bool isMe = meUsername.isNotEmpty()
+            && row.username == meUsername;
+
+        g.fillAll(isMe
+                      ? UiColors::accent.withAlpha(0.08f)
+                      : (rowNumber % 2 == 0
+                             ? UiColors::surface.withAlpha(0.35f)
+                             : UiColors::surface2.withAlpha(0.25f)));
     }
 
     void paintCell(juce::Graphics& g, int rowNumber, int columnId,
@@ -100,27 +117,44 @@ public:
             return;
 
         const auto& row = rows[static_cast<size_t>(rowNumber)];
+        const bool isMe = meUsername.isNotEmpty()
+            && row.username == meUsername;
 
         juce::String text;
+        auto justification = juce::Justification::centredLeft;
+        auto colour = isMe ? UiColors::accent : UiColors::text;
 
         switch (columnId)
         {
-        case 1: text = juce::String(row.rank); break;
-        case 2: text = row.displayName.isNotEmpty()
-                        ? row.displayName
-                        : row.username; break;
-        case 3: text = "LVL " + juce::String(row.level); break;
-        case 4: text = juce::String(row.rating); break;
-        default: break;
+        case 1:
+            text = juce::String(row.rank);
+            justification = juce::Justification::centred;
+            colour = row.rank <= 3 ? UiColors::accent : UiColors::muted;
+            break;
+        case 2:
+            text = row.displayName.isNotEmpty()
+                       ? row.displayName
+                       : row.username;
+
+            if (row.displayName.isNotEmpty() && row.displayName != row.username)
+                text += "  @" + row.username;
+            break;
+        case 3:
+            text = "LVL " + juce::String(row.level);
+            justification = juce::Justification::centred;
+            colour = UiColors::secondaryText;
+            break;
+        case 4:
+            text = formatPoints(row.rating);
+            justification = juce::Justification::centredRight;
+            break;
+        default:
+            break;
         }
 
-        g.setColour(juce::Colour(0xFFE8ECF4));
-        g.setFont(juce::Font(juce::FontOptions().withHeight(columnId == 3 ? 11.0f : 12.0f)));
-        g.drawText(text, 8, 0, width - 12, height,
-                   columnId == 1 || columnId == 4
-                       ? juce::Justification::centredRight
-                       : juce::Justification::centredLeft,
-                   true);
+        g.setColour(colour);
+        g.setFont(GameUi::font(12.0f, isMe && columnId == 2));
+        g.drawText(text, 6, 0, width - 12, height, justification, true);
     }
 
     void cellClicked(int rowNumber, int, const juce::MouseEvent&) override
@@ -136,7 +170,19 @@ public:
     }
 
 private:
+    // Same thousands separator the account window uses for rating points.
+    static juce::String formatPoints(int value)
+    {
+        auto text = juce::String(value);
+
+        for (int i = text.length() - 3; i > 0; i -= 3)
+            text = text.substring(0, i) + " " + text.substring(i);
+
+        return text;
+    }
+
     std::vector<Row> rows;
+    juce::String meUsername;
 };
 
 class MainComponent : public juce::AudioAppComponent,

@@ -5286,19 +5286,40 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(leaderboardLabel);
 
     // Global rating table: columns are rank, player, level and rating points.
-    // Clicking a row opens that player's public card.
+    // Clicking a row opens that player's public card. Styling matches the
+    // account window's GLOBAL RATING card: same header, row striping, rank
+    // colours and point formatting.
     leaderboardModel = std::make_unique<MainLeaderboardModel>();
     leaderboardTable.setModel(leaderboardModel.get());
-    leaderboardTable.setRowHeight(28);
-    leaderboardTable.getHeader().addColumn("#", 1, 44, 36, 60);
-    leaderboardTable.getHeader().addColumn("PLAYER", 2, 180, 120, -1);
-    leaderboardTable.getHeader().addColumn("LEVEL", 3, 74, 60, 110);
-    leaderboardTable.getHeader().addColumn("RATING", 4, 86, 60, 140);
     leaderboardTable.setColour(juce::ListBox::backgroundColourId,
                                juce::Colours::transparentBlack);
-    leaderboardTable.setColour(juce::ListBox::outlineColourId, UiColors::border);
-    leaderboardTable.setOutlineThickness(1);
+    leaderboardTable.setColour(juce::ListBox::outlineColourId,
+                               juce::Colours::transparentBlack);
+    leaderboardTable.setOutlineThickness(0);
+    leaderboardTable.setRowHeight(32);
+    leaderboardTable.setHeaderHeight(28);
     leaderboardTable.getViewport()->setScrollBarsShown(true, false);
+
+    auto& leaderboardHeader = leaderboardTable.getHeader();
+    leaderboardHeader.setColour(juce::TableHeaderComponent::backgroundColourId,
+                                UiColors::surface2);
+    leaderboardHeader.setColour(juce::TableHeaderComponent::textColourId,
+                                UiColors::muted);
+    leaderboardHeader.setColour(juce::TableHeaderComponent::outlineColourId,
+                                UiColors::border);
+    leaderboardHeader.setColour(juce::TableHeaderComponent::highlightColourId,
+                                UiColors::accent.withAlpha(0.25f));
+    leaderboardHeader.setStretchToFitActive(true);
+
+    leaderboardTable.getHeader().addColumn(
+        "#", 1, 46, 40, 70, juce::TableHeaderComponent::notSortable);
+    leaderboardTable.getHeader().addColumn(
+        "PLAYER", 2, 220, 120, -1, juce::TableHeaderComponent::notSortable);
+    leaderboardTable.getHeader().addColumn(
+        "LEVEL", 3, 84, 70, 120, juce::TableHeaderComponent::notSortable);
+    leaderboardTable.getHeader().addColumn(
+        "RATING", 4, 110, 80, 160, juce::TableHeaderComponent::notSortable);
+
     leaderboardModel->onRowClicked = [this](const juce::String& userId)
     {
         openPublicProfile(userId);
