@@ -354,7 +354,8 @@ private:
     void promptForUpdate(const juce::String& version,
                          const juce::String& downloadUrl,
                          const juce::String& filename,
-                         juce::int64 sizeBytes);
+                         juce::int64 sizeBytes,
+                         const juce::String& releaseNotes);
     void startUpdateDownload(const juce::String& version,
                              const juce::String& downloadUrl,
                              const juce::String& filename,

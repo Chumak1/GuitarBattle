@@ -1961,18 +1961,29 @@ void MainComponent::checkForUpdatesOnLaunch()
             if (remoteVersion == skippedUpdateVersion (self->appProperties))
                 return;
 
+            // Optional "what's new" text edited in the admin panel. Older
+            // servers do not send the field; the dialog falls back to the
+            // plain version prompt when it is empty.
+            const auto releaseNotes = download.getProperty ("release_notes", {}).toString().trim();
+
             self->promptForUpdate (remoteVersion,
                                    downloadUrl,
                                    download.getProperty ("filename", {}).toString(),
-                                   static_cast<juce::int64> (download.getProperty ("size_bytes", 0)));
+                                   static_cast<juce::int64> (download.getProperty ("size_bytes", 0)),
+                                   releaseNotes);
         });
 }
 
 void MainComponent::promptForUpdate (const juce::String& version,
                                      const juce::String& downloadUrl,
                                      const juce::String& filename,
-                                     juce::int64 sizeBytes)
+                                     juce::int64 sizeBytes,
+                                     const juce::String& releaseNotes)
 {
+    const auto notes = releaseNotes.replace ("\r\n", "\n")
+                                   .replace ("\r", "\n")
+                                   .trim();
+
     juce::String message;
     message << "FretFight " << version << " is available. You are running "
             << ProjectInfo::versionString << ".";
@@ -1981,10 +1992,45 @@ void MainComponent::promptForUpdate (const juce::String& version,
         message << "\n\nDownload size: "
                 << juce::File::descriptionOfSizeInBytes (sizeBytes) << ".";
 
-    message << "\n\nDownload and install the update now?";
+    if (notes.isEmpty())
+        message << "\n\nDownload and install the update now?";
 
     auto* prompt = new juce::AlertWindow ("Update available", message,
                                           juce::AlertWindow::InfoIcon);
+
+    // The release notes are authored in the admin panel and are read-only in
+    // the dialog: the player can scroll and copy them, but the text is never
+    // editable on the client. Capturing the editor in the modal callback keeps
+    // it alive for as long as the alert window needs it.
+    std::shared_ptr<juce::TextEditor> notesBox;
+
+    if (notes.isNotEmpty())
+    {
+        notesBox = std::make_shared<juce::TextEditor>();
+        // AlertWindow paints a non-empty component name as a caption above it.
+        notesBox->setName ("What's new in " + version);
+        notesBox->setMultiLine (true, true);
+        notesBox->setReadOnly (true);
+        notesBox->setScrollbarsShown (true);
+        notesBox->setCaretVisible (false);
+        notesBox->setPopupMenuEnabled (true);
+        notesBox->setEscapeAndReturnKeysConsumed (false);
+        notesBox->setFont (GameUi::font (14.0f));
+        notesBox->setColour (juce::TextEditor::backgroundColourId, UiColors::surface2);
+        notesBox->setColour (juce::TextEditor::textColourId, UiColors::text);
+        notesBox->setColour (juce::TextEditor::outlineColourId, UiColors::border);
+        notesBox->setColour (juce::TextEditor::focusedOutlineColourId, UiColors::borderStrong);
+        notesBox->setColour (juce::TextEditor::highlightColourId, UiColors::accent.withAlpha (0.28f));
+        notesBox->setColour (juce::TextEditor::highlightedTextColourId, UiColors::text);
+        notesBox->setIndents (10, 8);
+        notesBox->setText (notes, false);
+        // AlertWindow derives its own width from this size (at 80%) and places
+        // the component as-is, so the height also caps the scroll area.
+        notesBox->setSize (420, 150);
+        prompt->addCustomComponent (notesBox.get());
+        prompt->addTextBlock ("Download and install the update now?");
+    }
+
     prompt->addButton ("UPDATE NOW", 1);
     prompt->addButton ("LATER", 0);
     prompt->addButton ("SKIP VERSION", 2);
@@ -1993,7 +2039,7 @@ void MainComponent::promptForUpdate (const juce::String& version,
 
     prompt->enterModalState (true,
         juce::ModalCallbackFunction::create (
-            [safeThis, version, downloadUrl, filename, sizeBytes] (int result)
+            [safeThis, version, downloadUrl, filename, sizeBytes, notesBox] (int result)
             {
                 auto* self = safeThis.getComponent();
 
