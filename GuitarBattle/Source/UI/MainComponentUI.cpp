@@ -676,7 +676,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         GameUi::drawCard(g, nav, 18.0f);
         drawBrand(44.0f, 40.0f);
 
-        if (currentUsername.isNotEmpty())
+        if (currentUsername.isNotEmpty() && currentUserLabel.isVisible())
         {
             const auto userBounds = currentUserLabel.getBounds().toFloat();
             const float avatarSize = 30.0f;
@@ -2069,6 +2069,10 @@ void MainComponent::resized()
         const int supportX = settingsX - topGap - accountButtonW;
         const int usernameX = supportX - 12 - usernameW;
 
+        // Four header buttons plus the name no longer fit at the minimum
+        // window width (900 px). The name stays available in the account
+        // window, so hide the label before it can collide with the brand.
+        currentUserLabel.setVisible(currentUsername.isNotEmpty() && usernameX >= 230);
         currentUserLabel.setBounds(usernameX, 48, usernameW, 22);
         currentUserLabel.setJustificationType(juce::Justification::centredLeft);
         supportButton.setBounds(supportX, 42, accountButtonW, accountButtonH);
