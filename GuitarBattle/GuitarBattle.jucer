@@ -48,6 +48,20 @@
               file="Source/UI/GuitarInputMonitor.cpp"/>
         <FILE id="gIm02b" name="GuitarInputMonitor.h" compile="0" resource="0"
               file="Source/UI/GuitarInputMonitor.h"/>
+        <FILE id="VstP01" name="VstPanel.cpp" compile="1" resource="0"
+              file="Source/UI/VstPanel.cpp"/>
+        <FILE id="VstP02" name="VstPanel.h" compile="0" resource="0"
+              file="Source/UI/VstPanel.h"/>
+        <FILE id="BrAs01" name="BrandAssets.cpp" compile="1" resource="0"
+              file="Source/UI/BrandAssets.cpp"/>
+        <FILE id="BrAs02" name="BrandAssets.h" compile="0" resource="0"
+              file="Source/UI/BrandAssets.h"/>
+        <GROUP id="{6C1D2A54-8F3E-4B7A-9C21-5D0E8B4A7F13}" name="Assets">
+          <FILE id="LogDk1" name="LogoDark.svg" compile="0" resource="1"
+                file="Source/UI/Assets/LogoDark.svg"/>
+          <FILE id="LogLt1" name="LogoLight.svg" compile="0" resource="1"
+                file="Source/UI/Assets/LogoLight.svg"/>
+        </GROUP>
       </GROUP>
       <GROUP id="{A35EFB33-1A02-30F8-880B-74B0F642A9AB}" name="Game"/>
       <GROUP id="{D979068A-8FDE-55FB-384B-D6AEAAF8B1A2}" name="Midi">
@@ -74,6 +88,10 @@
               file="Source/Audio/MusicTrackPlayer.cpp"/>
         <FILE id="MtPly2" name="MusicTrackPlayer.h" compile="0" resource="0"
               file="Source/Audio/MusicTrackPlayer.h"/>
+        <FILE id="VstH01" name="VstHost.cpp" compile="1" resource="0"
+              file="Source/Audio/VstHost.cpp"/>
+        <FILE id="VstH02" name="VstHost.h" compile="0" resource="0"
+              file="Source/Audio/VstHost.h"/>
       </GROUP>
       <GROUP id="{4B2A6C1E-7F3D-4A9B-8C2E-1D5F6A7B8C9D}" name="Network">
         <FILE id="SesSt1" name="SessionStore.cpp" compile="1" resource="0"
@@ -112,7 +130,7 @@
     <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
   </MODULES>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_ASIO="1" JUCE_WASAPI="1"
-               JUCE_DIRECTSOUND="1"/>
+               JUCE_DIRECTSOUND="1" JUCE_PLUGINHOST_VST3="1"/>
   <EXPORTFORMATS>
     <VS2026 targetFolder="Builds/VisualStudio2026">
       <CONFIGURATIONS>

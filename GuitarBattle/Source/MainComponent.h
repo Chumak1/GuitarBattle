@@ -13,6 +13,7 @@
 #include "Midi/TablatureComponent.h"
 #include "Audio/PitchDetector.h"
 #include "Audio/MusicTrackPlayer.h"
+#include "Audio/VstHost.h"
 #include "Tuner/Tuner.h"
 #include "Gameplay/Metronome.h"
 #include "Gameplay/GameSession.h"
@@ -969,6 +970,14 @@ private:
     // Application properties
 
     juce::ApplicationProperties appProperties;
+
+    //==========================================================================
+    // VST3 monitor plugin
+
+    // Processes only the monitored guitar output. The audio callback fills the
+    // pitch-analysis buffers from the dry input before this insert runs, so
+    // note detection and scoring never see the processed signal.
+    VstHost vstHost;
 
     //==========================================================================
     // Frontend extension point. The frontend agent owns MainComponentUi.inc and

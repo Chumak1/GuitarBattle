@@ -8,6 +8,9 @@
     <Filter Include="GuitarBattle\Source\Gameplay">
       <UniqueIdentifier>{9A37E119-D6D0-B341-2DED-67F448EB5DCF}</UniqueIdentifier>
     </Filter>
+    <Filter Include="GuitarBattle\Source\UI\Assets">
+      <UniqueIdentifier>{6C0F0A87-61DB-9867-5039-DBD92D28C079}</UniqueIdentifier>
+    </Filter>
     <Filter Include="GuitarBattle\Source\UI">
       <UniqueIdentifier>{36EB7C22-0F1A-E5F8-144F-9AC78821ECD7}</UniqueIdentifier>
     </Filter>
@@ -907,6 +910,12 @@
     <ClCompile Include="..\..\Source\UI\GuitarInputMonitor.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\UI\VstPanel.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\BrandAssets.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\Midi\MidiParser.cpp">
       <Filter>GuitarBattle\Source\Midi</Filter>
     </ClCompile>
@@ -926,6 +935,9 @@
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Audio\MusicTrackPlayer.cpp">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Audio\VstHost.cpp">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Network\SessionStore.cpp">
@@ -4102,6 +4114,9 @@
     <ClCompile Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_gui_extra\juce_gui_extra.mm">
       <Filter>JUCE Modules\juce_gui_extra</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\JuceLibraryCode\BinaryData.cpp">
+      <Filter>JUCE Library Code</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\JuceLibraryCode\include_juce_audio_basics.cpp">
       <Filter>JUCE Library Code</Filter>
     </ClCompile>
@@ -4224,6 +4239,12 @@
     <ClInclude Include="..\..\Source\UI\GuitarInputMonitor.h">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\UI\VstPanel.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\BrandAssets.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\Midi\MidiParser.h">
       <Filter>GuitarBattle\Source\Midi</Filter>
     </ClInclude>
@@ -4243,6 +4264,9 @@
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Audio\MusicTrackPlayer.h">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Audio\VstHost.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Network\SessionStore.h">
@@ -9186,6 +9210,9 @@
     <ClInclude Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_gui_extra\juce_gui_extra.h">
       <Filter>JUCE Modules\juce_gui_extra</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\JuceLibraryCode\BinaryData.h">
+      <Filter>JUCE Library Code</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\JuceLibraryCode\JuceHeader.h">
       <Filter>JUCE Library Code</Filter>
     </ClInclude>
@@ -9193,6 +9220,12 @@
   <ItemGroup>
     <None Include="..\..\Source\UI\MainComponentUi.inc">
       <Filter>GuitarBattle\Source\UI</Filter>
+    </None>
+    <None Include="..\..\Source\UI\Assets\LogoDark.svg">
+      <Filter>GuitarBattle\Source\UI\Assets</Filter>
+    </None>
+    <None Include="..\..\Source\UI\Assets\LogoLight.svg">
+      <Filter>GuitarBattle\Source\UI\Assets</Filter>
     </None>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_audio_devices\native\asio\LICENSE.txt">
       <Filter>JUCE Modules\juce_audio_devices\native\asio</Filter>

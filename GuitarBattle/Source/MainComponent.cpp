@@ -60,6 +60,11 @@ MainComponent::MainComponent()
     inputMonitor->setSensitivityNormalised(
         inputSensitivity.load(std::memory_order_relaxed));
 
+    // VST monitor host: settings paths and the cached plugin list are ready
+    // before the audio device starts. The saved plugin itself is restored after
+    // initialiseAudio(), once the real sample rate and block size are known.
+    vstHost.initialise(appProperties.getUserSettings());
+
     setSize(
         1000,
         950);
@@ -83,6 +88,13 @@ MainComponent::MainComponent()
     restoreMusicSettings();
 
     initialiseAudio();
+
+    // The audio device is running now, so the VST host knows the real sample
+    // rate and block size. Loading is asynchronous; the main screen refreshes
+    // through vstHost.onStateChanged.
+    vstHost.onStateChanged = [this] { updateVstButton(); };
+    vstHost.restoreSavedPlugin();
+    updateVstButton();
 
     // Optional global track: absence is a normal state and never blocks startup.
     fetchBackgroundMusic();
@@ -317,6 +329,10 @@ void MainComponent::timerCallback()
 
 MainComponent::~MainComponent()
 {
+    // The VST host outlives the UI members declared below it; drop the
+    // callback before any of them are destroyed.
+    vstHost.onStateChanged = nullptr;
+
     // Best-effort: close the activity session while the API client is still
     // alive. The request is queued on the worker pool; the client's destructor
     // waits for the running job, and nothing here touches the UI thread.

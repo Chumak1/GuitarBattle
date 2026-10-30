@@ -126,7 +126,16 @@ bool MainComponent::ensureInputChannelEnabled(int hardwareChannel)
 void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
 {
     if (source == &deviceManager)
+    {
         refreshGuitarInputCombo();
+
+        // Sample rate / block size may have changed (device switch, buffer
+        // size selection, driver restart). The VST host reloads the plugin
+        // asynchronously when the configuration differs.
+        if (auto* device = deviceManager.getCurrentAudioDevice())
+            vstHost.prepareForDevice(device->getCurrentSampleRate(),
+                                     device->getCurrentBufferSizeSamples());
+    }
 }
 
 void MainComponent::startAudioDevice(const juce::XmlElement* savedState)
@@ -161,6 +170,13 @@ void MainComponent::startAudioDevice(const juce::XmlElement* savedState)
                 deviceManager.initialise(32, 2, savedState, true);
         }
     }
+
+    // The plugin must be prepared for the real device configuration. This runs
+    // after setAudioChannels(), so prepareToPlay() has already been called and
+    // the plugin is never prepared from the audio callback.
+    if (auto* device = deviceManager.getCurrentAudioDevice())
+        vstHost.prepareForDevice(device->getCurrentSampleRate(),
+                                 device->getCurrentBufferSizeSamples());
 
     refreshGuitarInputCombo();
 }
@@ -1490,6 +1506,22 @@ void MainComponent::getNextAudioBlock(
     }
 
     //==========================================================================
+    // VST monitor insert
+    //
+    // The dry guitar has already been copied to the pitch-analysis buffers
+    // above, so note detection and scoring stay clean. The plugin processes
+    // only the monitored output copy; stems, backing and the metronome are
+    // mixed in afterwards and never pass through it.
+    //
+    // Realtime safety: VstHost::processBlock only reads atomics and a
+    // pre-prepared slot. No allocation, locks or I/O.
+
+    vstHost.processBlock(*bufferToFill.buffer,
+                         bufferToFill.startSample,
+                         bufferToFill.numSamples,
+                         outputChannelCount);
+
+    //==========================================================================
     // Start metronome
 
     int metronomeBlockOffset = 0;
@@ -1942,6 +1974,9 @@ void MainComponent::getNextAudioBlock(
 
 void MainComponent::releaseResources()
 {
+    // The audio callback is shutting down; the VST host must stop touching the
+    // plugin until the next prepareForDevice(). Atomic store only.
+    vstHost.suspendProcessing();
 }
 
 void MainComponent::initialiseAudio()

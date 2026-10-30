@@ -9,6 +9,8 @@
 #include <vector>
 
 #include "GameStyle.h"
+#include "BrandAssets.h"
+#include "VstPanel.h"
 
 // UI-only implementation for MainComponent. Frontend work belongs in this
 // file and in UI/MainComponentUi.inc; do not add audio, network or gameplay
@@ -609,12 +611,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
 
     auto drawBrand = [&g](float x, float y)
     {
-        g.setColour(UiColors::accent);
-        g.fillRoundedRectangle(x, y, 32.0f, 32.0f, 10.0f);
-        g.setColour(UiColors::onAccent);
-        g.setFont(GameUi::heading(14.0f));
-        g.drawText("FF", juce::Rectangle<float>(x, y, 32.0f, 32.0f),
-                   juce::Justification::centred, false);
+        BrandAssets::drawLogo(g, { x, y, 32.0f, 32.0f });
 
         g.setColour(UiColors::text);
         g.setFont(GameUi::heading(16.0f));
@@ -646,13 +643,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                                           cardY + 30.0f, iconSize, iconSize);
         g.setColour(UiColors::accent.withAlpha(0.08f));
         g.fillEllipse(icon.expanded(8.0f));
-        g.setColour(UiColors::surface2);
-        g.fillEllipse(icon);
-        g.setColour(UiColors::accent.withAlpha(0.55f));
-        g.drawEllipse(icon, 1.2f);
-        g.setColour(UiColors::accent);
-        g.setFont(GameUi::heading(20.0f));
-        g.drawText("FF", icon, juce::Justification::centred, false);
+        BrandAssets::drawLogo(g, icon);
 
         g.setColour(UiColors::accent);
         g.setFont(GameUi::eyebrow(10.0f));
@@ -1914,6 +1905,7 @@ void MainComponent::resized()
     songTitleLabel.setVisible(false);
     previewButton.setVisible(false);
     practiceModeButton.setVisible(false);
+    vstButton.setVisible(false);
     retryConnectionButton.setVisible(sessionOfflineRetryAvailable && authScreen);
     loginScreenTitleLabel.setVisible(authScreen);
     currentUserLabel.setVisible(songSelect && currentUsername.isNotEmpty());
@@ -2144,6 +2136,10 @@ void MainComponent::resized()
         // Mode switch above START SONG: the player always sees what starts.
         practiceModeButton.setVisible(songSelect);
         practiceModeButton.setBounds(48 + leftW - 24 - 170, contentY + 96, 170, 34);
+
+        // VST monitor insert: sits under the practice switch in the same card.
+        vstButton.setVisible(songSelect);
+        vstButton.setBounds(48 + leftW - 24 - 170, contentY + 136, 170, 34);
     }
 
     //==========================================================================
@@ -3011,12 +3007,7 @@ public:
         g.fillAll(UiColors::background);
 
         // Top bar.
-        g.setColour(UiColors::accent);
-        g.fillRoundedRectangle(24.0f, 20.0f, 34.0f, 34.0f, 10.0f);
-        g.setColour(UiColors::onAccent);
-        g.setFont(GameUi::heading(14.0f));
-        g.drawText("FF", juce::Rectangle<float>(24.0f, 20.0f, 34.0f, 34.0f),
-                   juce::Justification::centred, false);
+        BrandAssets::drawLogo(g, { 24.0f, 20.0f, 34.0f, 34.0f });
 
         g.setColour(UiColors::text);
         g.setFont(GameUi::heading(18.0f));
@@ -4620,6 +4611,17 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(practiceModeButton);
     setPracticeMode(false);
 
+    // VST monitor plugin: opens the plugin chooser. The plugin only processes
+    // the monitored guitar; note detection reads the dry input.
+    vstButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    vstButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
+    vstButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
+    vstButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    vstButton.setTooltip("Load a VST3 effect for the monitored guitar. Note detection stays dry.");
+    vstButton.onClick = [this] { openVstPanel(); };
+    addAndMakeVisible(vstButton);
+    updateVstButton();
+
     // Compact input selector shown on the tuner screen. The guitar may be
     // connected to any interface input, so the player can switch the capture
     // channel without entering a song and opening the full audio settings.
@@ -5736,4 +5738,66 @@ void MainComponent::initialiseUi()
             difficulty =
                 Difficulty::Hard;
         };
+}
+
+//==============================================================================
+// VST monitor plugin
+//==============================================================================
+
+void MainComponent::openVstPanel()
+{
+    if (vstDialogWindow != nullptr)
+    {
+        vstDialogWindow->setVisible(true);
+        vstDialogWindow->toFront(true);
+        return;
+    }
+
+    juce::DialogWindow::LaunchOptions options;
+    options.content.setOwned(new VstPanel(vstHost));
+    options.dialogTitle = "VST Plugin";
+    options.dialogBackgroundColour = UiColors::background;
+    options.escapeKeyTriggersCloseButton = true;
+    options.useNativeTitleBar = true;
+    options.resizable = true;
+    options.componentToCentreAround = this;
+
+    // create() instead of launchAsync(): the chooser must not be modal, because
+    // the plugin editor is a separate top-level window that has to stay
+    // interactive while the chooser is open. The window is owned here and its
+    // close button only hides it, so reopening is instant.
+    vstDialogWindow.reset(options.create());
+
+    if (vstDialogWindow != nullptr)
+    {
+        vstDialogWindow->setVisible(true);
+        vstDialogWindow->toFront(true);
+    }
+}
+
+void MainComponent::updateVstButton()
+{
+    const auto name = vstHost.getLoadedPluginName();
+
+    if (name.isEmpty())
+    {
+        vstButton.setButtonText("VST: OFF");
+        vstButton.setToggleState(false, juce::dontSendNotification);
+        return;
+    }
+
+    if (vstHost.isBypassed())
+    {
+        vstButton.setButtonText("VST: BYPASS");
+        vstButton.setToggleState(false, juce::dontSendNotification);
+        return;
+    }
+
+    auto label = name.toUpperCase();
+
+    if (label.length() > 14)
+        label = label.substring(0, 13) + "...";
+
+    vstButton.setButtonText("VST: " + label);
+    vstButton.setToggleState(true, juce::dontSendNotification);
 }

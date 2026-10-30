@@ -8,6 +8,7 @@
 
 #include <JuceHeader.h>
 #include "MainComponent.h"
+#include "UI/BrandAssets.h"
 #include "UI/GameStyle.h"
 
 //==============================================================================
@@ -68,6 +69,7 @@ public:
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent(), true);
             setBackgroundColour (UiColors::background);
+            setIcon (BrandAssets::createLogoImage (256));
 
             // Allow the window to cover the whole desktop, including displays
             // larger than 1920x1200, while keeping the original minimum size.
