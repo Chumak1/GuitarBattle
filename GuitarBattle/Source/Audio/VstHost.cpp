@@ -1,5 +1,7 @@
 #include "VstHost.h"
 
+#include "Vst3ScanWorker.h"
+
 #include <algorithm>
 
 namespace
@@ -34,6 +36,124 @@ namespace
 }
 
 //==============================================================================
+// VST3 scanner that inspects every plugin file in a separate helper process.
+//
+// JUCE's VST3 implementation asserts that plugin initialisation runs on the
+// message thread, and the VST3 spec agrees: many plugins call message-thread
+// only functions while their factory is enumerated. Scanning in a background
+// thread therefore trips JUCE_ASSERT_MESSAGE_THREAD (and can deadlock a real
+// plugin). The helper process gives us a message thread that is free to block
+// for minutes, and it isolates crashes: a broken shell only kills the helper.
+//
+// The helper is the same executable started with Vst3ScanWorker arguments. The
+// scan thread blocks until the helper exits, but it can kill it at any moment,
+// so CANCEL stays instant even when a plugin hangs.
+
+namespace
+{
+    class OutOfProcessVst3Scanner final : public juce::KnownPluginList::CustomScanner
+    {
+    public:
+        OutOfProcessVst3Scanner (juce::File executableToUse,
+                                 juce::File tempDirectoryToUse,
+                                 std::function<bool()> shouldStopToUse)
+            : executable (std::move (executableToUse)),
+              tempDirectory (std::move (tempDirectoryToUse)),
+              shouldStop (std::move (shouldStopToUse))
+        {
+            tempDirectory.createDirectory();
+        }
+
+        bool findPluginTypesFor (juce::AudioPluginFormat& format,
+                                 juce::OwnedArray<juce::PluginDescription>& result,
+                                 const juce::String& fileOrIdentifier) override
+        {
+            juce::ignoreUnused (format);
+
+            // The user cancelled: report success with no types so the file is
+            // not blacklisted. The scan loop stops on its own afterwards.
+            if (shouldStop())
+                return true;
+
+            const auto outputFile = tempDirectory.getChildFile (
+                "scan_" + juce::String (juce::Time::currentTimeMillis())
+                    + "_" + juce::String (++fileCounter) + ".xml");
+
+            outputFile.deleteFile();
+
+            juce::StringArray arguments;
+            arguments.add (executable.getFullPathName());
+            arguments.add (juce::String (Vst3ScanWorker::fileArgument)
+                               + fileOrIdentifier);
+            arguments.add (juce::String (Vst3ScanWorker::outputArgument)
+                               + outputFile.getFullPathName());
+
+            juce::ChildProcess helper;
+
+            if (! helper.start (arguments, 0))
+            {
+                // The helper could not be launched at all. That says nothing
+                // about the plugin, so do not blacklist it.
+                return true;
+            }
+
+            while (helper.isRunning())
+            {
+                if (shouldStop())
+                {
+                    // TerminateProcess: a plugin that hangs inside the helper
+                    // must not keep the scan alive after CANCEL.
+                    helper.kill();
+                    helper.waitForProcessToFinish (2000);
+                    outputFile.deleteFile();
+                    return true;
+                }
+
+                juce::Thread::sleep (20);
+            }
+
+            // A plugin that crashed the helper leaves no result file behind.
+            // Returning false makes KnownPluginList blacklist it, so the rest
+            // of the scan can continue.
+            if (! outputFile.existsAsFile())
+                return false;
+
+            if (auto xml = juce::parseXML (outputFile))
+            {
+                for (int i = 0; i < xml->getNumChildElements(); ++i)
+                {
+                    if (const auto* element = xml->getChildElement (i))
+                    {
+                        juce::PluginDescription description;
+
+                        if (description.loadFromXml (*element))
+                            result.add (new juce::PluginDescription (description));
+                    }
+                }
+            }
+
+            outputFile.deleteFile();
+            return true;
+        }
+
+        void scanFinished() override
+        {
+            // The directory belongs to this scan only, so it is safe to remove
+            // even when a newer scan is already running in its own directory.
+            tempDirectory.deleteRecursively();
+        }
+
+    private:
+        const juce::File executable;
+        const juce::File tempDirectory;
+        const std::function<bool()> shouldStop;
+        int fileCounter = 0;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OutOfProcessVst3Scanner)
+    };
+}
+
+//==============================================================================
 // Background VST3 scanner. Scanning can take minutes and must never run on the
 // message thread. The worker owns its progress counter and only reports back
 // through a weak lifetime token, so it never dereferences the host directly.
@@ -61,11 +181,27 @@ public:
     void run() override
     {
         std::unique_ptr<juce::XmlElement> scanned;
+        int failedCount = 0;
 
        #if JUCE_PLUGINHOST_VST3
         {
             juce::KnownPluginList found;
             juce::VST3PluginFormat format;
+
+            // Every plugin file is inspected by a helper process. The helper
+            // has a free message thread (the VST3 spec requires one) and its
+            // crashes cannot reach this process.
+            //
+            // Each scan owns a private subdirectory: a cancelled scan can be
+            // reaped while the next one is already running, and its cleanup
+            // must never delete the new scan's in-flight result files.
+            found.setCustomScanner (std::make_unique<OutOfProcessVst3Scanner> (
+                juce::File::getSpecialLocation (juce::File::currentExecutableFile),
+                juce::File::getSpecialLocation (juce::File::tempDirectory)
+                    .getChildFile ("GuitarBattleVst3Scan")
+                    .getChildFile ("scan_" + juce::String (generation)),
+                [this] { return threadShouldExit(); }));
+
             juce::PluginDirectoryScanner scanner (
                 found,
                 format,
@@ -87,6 +223,7 @@ public:
                 return;
 
             progress.store (1.0f, std::memory_order_relaxed);
+            failedCount = scanner.getFailedFiles().size();
             scanned = found.createXml();
         }
        #endif
@@ -94,6 +231,7 @@ public:
         juce::MessageManager::callAsync (
             [hostToUse = host, token = lifetimeToken,
              generationToUse = generation,
+             failedCountToUse = failedCount,
              scanned = std::move (scanned)]() mutable
             {
                 // The host may have been destroyed while the scan was running,
@@ -101,7 +239,9 @@ public:
                 if (token.expired() || hostToUse == nullptr)
                     return;
 
-                hostToUse->scanFinished (generationToUse, scanned.get());
+                hostToUse->scanFinished (generationToUse,
+                                         scanned.get(),
+                                         failedCountToUse);
             });
     }
 
@@ -369,6 +509,11 @@ void VstHost::scanPlugins()
         return;
     }
 
+    // A file that crashed the helper during an earlier manual scan is retried
+    // now: scanning is out-of-process, so the retry cannot hurt the app. The
+    // dead-man's pedal is only used to skip it for the rest of this scan.
+    scanCrashedFile.deleteFile();
+
     ++scanGeneration;
     scanning = true;
 
@@ -438,7 +583,8 @@ void VstHost::reapAbandonedScans()
 }
 
 void VstHost::scanFinished (int generation,
-                            const juce::XmlElement* scannedTypes)
+                            const juce::XmlElement* scannedTypes,
+                            int failedCount)
 {
     // A cancelled or superseded scan must never overwrite the plugin list.
     if (generation != scanGeneration || ! scanning)
@@ -452,6 +598,13 @@ void VstHost::scanFinished (int generation,
     if (scannedTypes != nullptr)
     {
         knownPlugins.recreateFromXml (*scannedTypes);
+
+        // The out-of-process scanner survives plugin crashes, so a failed file
+        // is retried on the next manual RESCAN instead of being hidden
+        // permanently. The scan itself still skips it via the blacklist.
+        knownPlugins.clearBlacklistedFiles();
+        scanCrashedFile.deleteFile();
+
         saveKnownPluginCache();
     }
 
@@ -459,7 +612,12 @@ void VstHost::scanFinished (int generation,
 
     statusMessage = "Scan finished: "
                     + juce::String (getScannedPlugins().size())
-                    + " effect plugin(s).";
+                    + " effect plugin(s)";
+
+    if (failedCount > 0)
+        statusMessage += ", " + juce::String (failedCount) + " could not be read";
+
+    statusMessage += ".";
 
     startTimer (250);
     notifyStateChanged();

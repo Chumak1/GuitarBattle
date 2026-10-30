@@ -122,7 +122,9 @@ private:
     void restorePluginState (juce::AudioPluginInstance& plugin,
                              const juce::String& identifier);
     juce::File stateFileFor (const juce::String& identifier) const;
-    void scanFinished (int generation, const juce::XmlElement* scannedTypes);
+    void scanFinished (int generation,
+                       const juce::XmlElement* scannedTypes,
+                       int failedCount);
     void reapAbandonedScans();
 
     // Blocks the message thread until the audio callback is outside

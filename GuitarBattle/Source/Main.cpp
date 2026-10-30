@@ -8,6 +8,7 @@
 
 #include <JuceHeader.h>
 #include "MainComponent.h"
+#include "Audio/Vst3ScanWorker.h"
 #include "UI/BrandAssets.h"
 #include "UI/GameStyle.h"
 
@@ -26,7 +27,17 @@ public:
     void initialise (const juce::String& commandLine) override
     {
         juce::ignoreUnused(commandLine);
-        // This method is where you should put your application's initialisation code..
+
+        // VST3 scan helper: the VST host launches this executable with a single
+        // plugin file to inspect. It must not open a window, start audio or
+        // touch any user settings - it only writes the scan result and exits.
+        const auto arguments = getCommandLineParameterArray();
+
+        if (Vst3ScanWorker::isWorkerCommandLine (arguments))
+        {
+            Vst3ScanWorker::runAndQuit (arguments);
+            return;
+        }
 
         mainWindow.reset (new MainWindow (getApplicationName()));
     }

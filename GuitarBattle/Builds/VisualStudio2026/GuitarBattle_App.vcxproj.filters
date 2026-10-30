@@ -4269,6 +4269,9 @@
     <ClInclude Include="..\..\Source\Audio\VstHost.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\Audio\Vst3ScanWorker.h">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\Network\SessionStore.h">
       <Filter>GuitarBattle\Source\Network</Filter>
     </ClInclude>

@@ -92,6 +92,8 @@
               file="Source/Audio/VstHost.cpp"/>
         <FILE id="VstH02" name="VstHost.h" compile="0" resource="0"
               file="Source/Audio/VstHost.h"/>
+        <FILE id="VstH03" name="Vst3ScanWorker.h" compile="0" resource="0"
+              file="Source/Audio/Vst3ScanWorker.h"/>
       </GROUP>
       <GROUP id="{4B2A6C1E-7F3D-4A9B-8C2E-1D5F6A7B8C9D}" name="Network">
         <FILE id="SesSt1" name="SessionStore.cpp" compile="1" resource="0"
