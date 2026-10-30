@@ -45,6 +45,7 @@ from app.schemas.site import (
     AdminLandingUpdate,
     GameBuildItem,
     GameBuildListResponse,
+    GameBuildUpdate,
     HeroBackground,
     HeroBackgroundResponse,
     SiteContactsUpdate,
@@ -394,6 +395,7 @@ def list_game_builds(db: Session = Depends(get_db), _: User = Depends(require_ad
 async def upload_game_build(
     file: UploadFile = File(..., description="Desktop build (.exe, .zip or .msi)"),
     version: str | None = Form(default=None, max_length=64),
+    release_notes: str | None = Form(default=None, max_length=8000),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> GameBuildItem:
@@ -412,6 +414,7 @@ async def upload_game_build(
         size = await _write_upload(file, target, settings.max_game_build_bytes)
         build = GameBuild(
             version=(version or "").strip(),
+            release_notes=(release_notes or "").strip(),
             filename=original_name,
             stored_name=stored_name,
             content_type=content_type,
@@ -446,6 +449,34 @@ def activate_game_build(
         )
     db.execute(update(GameBuild).values(is_active=False))
     build.is_active = True
+    db.commit()
+    db.refresh(build)
+    return serialize_build(build)
+
+
+@router.patch(
+    "/game-builds/{build_id}",
+    response_model=GameBuildItem,
+    summary="Edit the description of a game build",
+)
+def update_game_build(
+    build_id: int,
+    payload: GameBuildUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> GameBuildItem:
+    """Update editable metadata without touching the installer on disk.
+
+    Works for both the active and inactive builds: publishing is controlled by
+    ``is_active`` alone, so editing the notes of the current build does not
+    unpublish it and editing an old build does not activate it.
+    """
+    build = db.get(GameBuild, build_id)
+    if build is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Game build not found"
+        )
+    build.release_notes = payload.release_notes.strip()
     db.commit()
     db.refresh(build)
     return serialize_build(build)

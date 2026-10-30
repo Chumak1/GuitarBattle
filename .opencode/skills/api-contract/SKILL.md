@@ -62,7 +62,7 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/daily/history` | Bearer, `limit` (1–100, по умолчанию 20), `offset` | официальные результаты игрока по дням с `rank` и `participants` |
 | GET | `/client-assets/manifest` | — (публичный) | `schema`, `version`, `archive_url`, `archive_size_bytes`, `archive_sha256`, `files[]`; 503, если manifest или bundle отсутствует |
 | GET/HEAD | `/client-assets/bundle.zip` | — (публичный) | zip `guitarbattle-sounds.zip`; 503, если архив отсутствует |
-| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` для лендинга |
+| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` для лендинга (`available`, `version`, `filename`, `size_bytes`, `url`, `release_notes`) |
 | GET | `/downloads/game` | — (публичный) | активная сборка игры; 404, если активной сборки нет |
 | GET | `/geo` | — (публичный) | `country`, `language` (`ru`/`en`/`null`) по IP из локальной DB-IP Lite |
 | GET | `/site/contacts` | — (публичный) | `name` (`ru`/`en`), `email`, `telegram` (`@handle`), `telegram_url`, `socials` (`youtube`/`instagram`/`twitter`/`vk`; `null` — заглушка «Скоро»); без записи в CMS отдаёт дефолты |
@@ -79,7 +79,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/admin/site/contacts` | Bearer admin | `name_ru`, `name_en`, `email`, `telegram`, `socials` (сохранённые значения или дефолты) |
 | PUT | `/admin/site/contacts` | Bearer admin, те же поля | сохранённые нормализованные значения; 422 с именем поля в `detail` для битого email/telegram/URL соцсети; пишет `content["contacts"]`, не трогая `blocks`/`hero_background` |
 | GET | `/admin/site/game-builds` | Bearer admin | список загруженных сборок |
-| POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `version?` | 201, сборка создаётся неактивной; `.exe/.zip/.msi` |
+| POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `version?`, `release_notes?` (≤8000) | 201, сборка создаётся неактивной; `.exe/.zip/.msi` |
+| PATCH | `/admin/site/game-builds/{id}` | Bearer admin, JSON `{release_notes}` (≤8000) | 200, обновлённая сборка; меняет только описание, файл и `is_active` не трогает |
 | POST | `/admin/site/game-builds/{id}/activate` | Bearer admin | 200, сборка становится единственной активной |
 | DELETE | `/admin/site/game-builds/{id}` | Bearer admin | 204 |
 | GET | `/app/background-music` | — (публичный) | всегда 200: `{url: str \| null, content_type: str \| null, size_bytes: int}`; без файла — `null`/`null`/`0` |
@@ -115,6 +116,17 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 - Сборки игры лежат в `GAME_BUILDS_DIR` (`/data/game_builds`), лимит 500 МиБ.
   Активна максимум одна сборка; `/downloads/game` отдаёт её с
   `Content-Disposition: attachment`.
+- `game_builds.release_notes` (Text, NOT NULL, default `''`, миграция
+  `0016_game_build_release_notes`) — текст «что нового», который администратор
+  пишет в админке. Отдаётся в `GET /landing` как `download.release_notes`
+  (пустая строка, если описания нет) и в админском `GameBuildItem`.
+  `PATCH /admin/site/game-builds/{id}` меняет описание без повторной загрузки
+  установщика; `POST` принимает `release_notes` в multipart-форме.
+- Клиент (`MainComponent::checkForUpdatesOnLaunch`) читает
+  `download.release_notes`; если текст непустой, `promptForUpdate` показывает
+  его в read-only многострочном `TextEditor` внутри `AlertWindow`
+  («What's new in <version>»), иначе остаётся прежний короткий диалог.
+  Поле аддитивное: старый сервер без него не ломает обновление.
 - Язык публичного сайта — cookie `ff_lang` (`ru`/`en`). Middleware на первом HTML-
   запросе определяет страну по локальной базе DB-IP Lite (`GEOIP_DB_PATH`,
   обновляется `scripts/fetch_geoip.py`) и ставит cookie для России/СНГ → `ru`,

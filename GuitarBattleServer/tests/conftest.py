@@ -66,6 +66,7 @@ TEST_DATABASE_DSN = TEST_DATABASE_URL.render_as_string(hide_password=False)
 _TEST_URL_IS_DEFAULT = _RAW_TEST_URL is None
 SONG_STORAGE = Path(tempfile.mkdtemp(prefix="guitarbattle-test-files-"))
 APP_AUDIO_STORAGE = Path(tempfile.mkdtemp(prefix="guitarbattle-test-app-audio-"))
+GAME_BUILDS_STORAGE = Path(tempfile.mkdtemp(prefix="guitarbattle-test-game-builds-"))
 
 # Configure the application through the environment *before* importing it, so
 # settings.database_url and the SQLAlchemy engine point at the test database.
@@ -75,6 +76,7 @@ os.environ["SECRET_KEY"] = "guitarbattle-test-secret-key-not-for-production"
 os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "60"
 os.environ["SONG_FILES_DIR"] = str(SONG_STORAGE)
 os.environ["APP_AUDIO_DIR"] = str(APP_AUDIO_STORAGE)
+os.environ["GAME_BUILDS_DIR"] = str(GAME_BUILDS_STORAGE)
 os.environ["POSTGRES_USER"] = TEST_DATABASE_URL.username or ""
 os.environ["POSTGRES_PASSWORD"] = TEST_DATABASE_URL.password or ""
 os.environ["POSTGRES_HOST"] = TEST_DATABASE_URL.host or "127.0.0.1"
@@ -294,6 +296,13 @@ def app_audio_storage():
     APP_AUDIO_STORAGE.mkdir(parents=True, exist_ok=True)
     yield APP_AUDIO_STORAGE
     shutil.rmtree(APP_AUDIO_STORAGE, ignore_errors=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def game_builds_storage():
+    GAME_BUILDS_STORAGE.mkdir(parents=True, exist_ok=True)
+    yield GAME_BUILDS_STORAGE
+    shutil.rmtree(GAME_BUILDS_STORAGE, ignore_errors=True)
 
 
 # ---------------------------------------------------------------------------

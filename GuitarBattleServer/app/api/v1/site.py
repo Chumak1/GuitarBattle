@@ -77,6 +77,7 @@ def serialize_build(build: GameBuild) -> GameBuildItem:
         is_active=build.is_active,
         uploaded_at=build.uploaded_at,
         url=download_url(),
+        release_notes=build.release_notes or "",
     )
 
 
@@ -114,6 +115,7 @@ def get_landing(db: Session = Depends(get_db)) -> LandingResponse:
             filename=build.filename,
             size_bytes=build.size_bytes,
             url=download_url(),
+            release_notes=build.release_notes or "",
         )
 
     return LandingResponse(

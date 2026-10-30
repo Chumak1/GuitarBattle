@@ -81,6 +81,8 @@
     loaded: false,
     builds: [],
     buildsLoaded: false,
+    buildNotesId: null,
+    buildNotesModal: null,
     contacts: null,
     contactsLoaded: false,
     section: "songs",
@@ -678,6 +680,19 @@
       filename.textContent = build.filename || "—";
       row.appendChild(filename);
 
+      const notes = document.createElement("td");
+      notes.className = "text-secondary";
+      const notesText = String(build.release_notes || "").trim();
+      if (!notesText) {
+        notes.textContent = "—";
+      } else {
+        const firstLine = (notesText.split(/\r?\n/)[0] || "").trim() || notesText;
+        notes.textContent =
+          firstLine.length > 80 ? firstLine.slice(0, 80) + "…" : firstLine;
+        notes.title = notesText;
+      }
+      row.appendChild(notes);
+
       const size = document.createElement("td");
       size.textContent = formatBytes(build.size_bytes);
       row.appendChild(size);
@@ -697,6 +712,9 @@
       actions.className = "text-end";
       actions.innerHTML =
         '<div class="d-inline-flex gap-2">' +
+        '<button class="btn btn-sm btn-outline-light" data-build-notes="' +
+        escapeHtml(build.id) +
+        '">Описание</button>' +
         (build.is_active
           ? ""
           : '<button class="btn btn-sm btn-outline-light" data-build-activate="' +
@@ -743,6 +761,7 @@
       const form = new FormData();
       form.append("file", file);
       form.append("version", el("buildVersion").value.trim());
+      form.append("release_notes", el("buildReleaseNotes").value.trim());
       await api("/admin/site/game-builds", { method: "POST", body: form });
       el("buildForm").reset();
       await loadBuilds();
@@ -775,6 +794,46 @@
       showAlert("buildAlert", "Сборка удалена.", "success");
     } catch (error) {
       showAlert("buildAlert", errorText(error));
+    }
+  }
+
+  function openBuildNotes(id) {
+    const build = (state.builds || []).find((item) => String(item.id) === String(id));
+    if (!build) return;
+    const modalEl = el("buildNotesModal");
+    if (!modalEl || typeof window.bootstrap === "undefined") return;
+
+    state.buildNotesId = build.id;
+    const text = el("buildNotesText");
+    if (text) text.value = build.release_notes || "";
+    showAlert("buildNotesAlert", "");
+    if (!state.buildNotesModal) {
+      state.buildNotesModal = window.bootstrap.Modal.getOrCreateInstance(modalEl);
+    }
+    state.buildNotesModal.show();
+  }
+
+  async function saveBuildNotes() {
+    if (state.buildNotesId === null || state.buildNotesId === undefined) return;
+    const button = el("buildNotesSave");
+    const spinner = el("buildNotesSpinner");
+    if (button) button.disabled = true;
+    if (spinner) spinner.hidden = false;
+    showAlert("buildNotesAlert", "");
+
+    try {
+      await api("/admin/site/game-builds/" + encodeURIComponent(state.buildNotesId), {
+        method: "PATCH",
+        body: { release_notes: el("buildNotesText").value.trim() },
+      });
+      if (state.buildNotesModal) state.buildNotesModal.hide();
+      await loadBuilds();
+      showAlert("buildAlert", "Описание сборки сохранено.", "success");
+    } catch (error) {
+      showAlert("buildNotesAlert", errorText(error));
+    } finally {
+      if (button) button.disabled = false;
+      if (spinner) spinner.hidden = true;
     }
   }
 
@@ -919,7 +978,13 @@
     el("landingBgRemove")?.addEventListener("click", removeBackground);
     el("buildsReload")?.addEventListener("click", loadBuilds);
     el("buildForm")?.addEventListener("submit", uploadBuild);
+    el("buildNotesSave")?.addEventListener("click", saveBuildNotes);
     el("buildsBody")?.addEventListener("click", (event) => {
+      const notes = event.target.closest("[data-build-notes]");
+      if (notes) {
+        openBuildNotes(notes.getAttribute("data-build-notes"));
+        return;
+      }
       const activate = event.target.closest("[data-build-activate]");
       if (activate) {
         activateBuild(activate.getAttribute("data-build-activate"));

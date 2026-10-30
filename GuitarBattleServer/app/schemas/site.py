@@ -22,6 +22,7 @@ class DownloadInfo(BaseModel):
     filename: str = ""
     size_bytes: int = 0
     url: str = ""
+    release_notes: str = ""
 
 
 class LandingResponse(BaseModel):
@@ -104,6 +105,15 @@ class GameBuildItem(BaseModel):
     is_active: bool
     uploaded_at: datetime
     url: str
+    release_notes: str = ""
+
+
+class GameBuildUpdate(BaseModel):
+    """Editable fields of an uploaded build; the installer itself is immutable."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    release_notes: str = Field(default="", max_length=8000)
 
 
 class GameBuildListResponse(BaseModel):

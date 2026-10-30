@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, func, text
+from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, Text, func, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +42,12 @@ class GameBuild(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     version: Mapped[str] = mapped_column(
         String(64), nullable=False, default="", server_default=""
+    )
+    # "What's new" text shown by the desktop client and the landing page. It is
+    # editable without re-uploading the installer, so it lives next to the file
+    # metadata instead of inside the file.
+    release_notes: Mapped[str] = mapped_column(
+        Text, nullable=False, default="", server_default=""
     )
     # Original client-facing file name; never used as a storage path.
     filename: Mapped[str] = mapped_column(String(255), nullable=False)

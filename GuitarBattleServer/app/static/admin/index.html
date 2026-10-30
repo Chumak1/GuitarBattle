@@ -648,6 +648,10 @@
                   Загрузить
                 </button>
               </div>
+              <div class="col-12">
+                <label class="form-label" for="buildReleaseNotes">Что нового</label>
+                <textarea id="buildReleaseNotes" class="form-control" rows="3" maxlength="8000" placeholder="Что нового в этой версии…"></textarea>
+              </div>
             </form>
             <p class="form-hint mt-2 mb-0">ZIP, EXE или MSI. До 500 МБ. Новая сборка не публикуется автоматически.</p>
           </div>
@@ -661,6 +665,7 @@
                   <tr>
                     <th scope="col">Версия</th>
                     <th scope="col">Файл</th>
+                    <th scope="col">Описание</th>
                     <th scope="col">Размер</th>
                     <th scope="col" class="d-none d-lg-table-cell">Загружена</th>
                     <th scope="col">Статус</th>
@@ -668,7 +673,7 @@
                   </tr>
                 </thead>
                 <tbody id="buildsBody">
-                  <tr><td colspan="6" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                  <tr><td colspan="7" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -679,6 +684,30 @@
             </div>
           </div>
         </section>
+      </div>
+
+      <div class="modal fade" id="buildNotesModal" tabindex="-1" aria-labelledby="buildNotesTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2 class="modal-title fs-5" id="buildNotesTitle">Описание сборки</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+              <div id="buildNotesAlert" class="alert alert-danger py-2 small" role="alert" hidden></div>
+              <label class="form-label" for="buildNotesText">Что нового в этой версии</label>
+              <textarea id="buildNotesText" class="form-control" rows="6" maxlength="8000" placeholder="Что нового в этой версии…"></textarea>
+              <p class="form-hint mb-0 mt-2">Текст показывается в клиенте и на лендинге. До 8000 символов.</p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+              <button id="buildNotesSave" type="button" class="btn btn-warning fw-semibold">
+                <span id="buildNotesSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                Сохранить
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div id="sectionStatistics" data-admin-panel="statistics" hidden>
