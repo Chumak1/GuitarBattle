@@ -2047,28 +2047,40 @@ void MainComponent::resized()
     {
         accountStatusLabel.setJustificationType(juce::Justification::centredLeft);
 
-        // Top-right account row: plain username label, then SETTINGS and
-        // AUDIO SETTINGS, with EXIT in the slot that used to hold LOG OUT.
-        // Signing out now lives only inside the profile window.
+        // Top-right account row: plain username label, then SUPPORT, SETTINGS,
+        // VST, AUDIO SETTINGS and EXIT. Signing out lives only inside the
+        // profile window.
         const int topRight = width - 44;
-        const int accountButtonW = 128;
-        const int accountButtonH = 32;
         const int topGap = 8;
+        const int accountButtonH = 32;
         const int usernameW = 150;
+
+        // Five header buttons no longer fit at 128 px each: at the minimum
+        // window width (900 px) the row would collide with the wordmark. Let
+        // the width shrink down to 104 px, which still fits "VST: BYPASS".
+        constexpr int headerButtonCount = 5;
+        constexpr int headerRowMinX = 300;
+        const int accountButtonW = juce::jlimit(
+            104, 128,
+            (topRight - headerRowMinX - topGap * (headerButtonCount - 1))
+                / headerButtonCount);
+
         const int exitX = topRight - accountButtonW;
         const int audioX = exitX - topGap - accountButtonW;
-        const int settingsX = audioX - topGap - accountButtonW;
+        const int vstX = audioX - topGap - accountButtonW;
+        const int settingsX = vstX - topGap - accountButtonW;
         const int supportX = settingsX - topGap - accountButtonW;
         const int usernameX = supportX - 12 - usernameW;
 
-        // Four header buttons plus the name no longer fit at the minimum
-        // window width (900 px). The name stays available in the account
-        // window, so hide the label before it can collide with the brand.
+        // The name stays available in the account window, so hide the label
+        // before it can collide with the brand.
         currentUserLabel.setVisible(currentUsername.isNotEmpty() && usernameX >= 230);
         currentUserLabel.setBounds(usernameX, 48, usernameW, 22);
         currentUserLabel.setJustificationType(juce::Justification::centredLeft);
         supportButton.setBounds(supportX, 42, accountButtonW, accountButtonH);
         accountSettingsButton.setBounds(settingsX, 42, accountButtonW, accountButtonH);
+        vstButton.setVisible(true);
+        vstButton.setBounds(vstX, 42, accountButtonW, accountButtonH);
         audioSettingsButton.setButtonText("AUDIO SETTINGS");
         audioSettingsButton.setBounds(audioX, 42, accountButtonW, accountButtonH);
         quitButton.setBounds(exitX, 42, accountButtonW, accountButtonH);
@@ -2136,10 +2148,6 @@ void MainComponent::resized()
         // Mode switch above START SONG: the player always sees what starts.
         practiceModeButton.setVisible(songSelect);
         practiceModeButton.setBounds(48 + leftW - 24 - 170, contentY + 96, 170, 34);
-
-        // VST monitor insert: sits under the practice switch in the same card.
-        vstButton.setVisible(songSelect);
-        vstButton.setBounds(48 + leftW - 24 - 170, contentY + 136, 170, 34);
     }
 
     //==========================================================================
@@ -4611,12 +4619,14 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(practiceModeButton);
     setPracticeMode(false);
 
-    // VST monitor plugin: opens the plugin chooser. The plugin only processes
-    // the monitored guitar; note detection reads the dry input.
+    // VST monitor plugin: sits in the header next to SETTINGS / AUDIO
+    // SETTINGS and opens the plugin chooser. The plugin only processes the
+    // monitored guitar; note detection reads the dry input.
     vstButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
     vstButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
     vstButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accentStrong);
     vstButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    vstButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     vstButton.setTooltip("Load a VST3 effect for the monitored guitar. Note detection stays dry.");
     vstButton.onClick = [this] { openVstPanel(); };
     addAndMakeVisible(vstButton);
@@ -5779,10 +5789,14 @@ void MainComponent::updateVstButton()
 {
     const auto name = vstHost.getLoadedPluginName();
 
+    // The header slot is narrow, so the button only carries the state and the
+    // loaded plugin name lives in the tooltip and in the VST window.
     if (name.isEmpty())
     {
         vstButton.setButtonText("VST: OFF");
         vstButton.setToggleState(false, juce::dontSendNotification);
+        vstButton.setTooltip("Load a VST3 effect for the monitored guitar. "
+                             "Note detection stays dry.");
         return;
     }
 
@@ -5790,14 +5804,11 @@ void MainComponent::updateVstButton()
     {
         vstButton.setButtonText("VST: BYPASS");
         vstButton.setToggleState(false, juce::dontSendNotification);
+        vstButton.setTooltip("Bypassed: " + name + ". Click to choose another plugin.");
         return;
     }
 
-    auto label = name.toUpperCase();
-
-    if (label.length() > 14)
-        label = label.substring(0, 13) + "...";
-
-    vstButton.setButtonText("VST: " + label);
+    vstButton.setButtonText("VST: ON");
     vstButton.setToggleState(true, juce::dontSendNotification);
+    vstButton.setTooltip("Active: " + name + ". Click to choose another plugin.");
 }

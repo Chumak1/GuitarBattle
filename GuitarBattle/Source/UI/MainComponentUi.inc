@@ -39,8 +39,8 @@
     void openAccountWindow();
 
     // --- VST monitor plugin ----------------------------------------------
-    // The button lives in the selected-song card under PRACTICE MODE. It opens
-    // a non-modal window so the plugin editor can stay interactive.
+    // The button sits in the header next to SETTINGS / AUDIO SETTINGS. It
+    // opens a non-modal window so the plugin editor can stay interactive.
     juce::TextButton vstButton{ "VST" };
     std::unique_ptr<juce::DialogWindow> vstDialogWindow;
     void openVstPanel();
