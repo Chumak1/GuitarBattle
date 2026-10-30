@@ -116,39 +116,11 @@
     .nav a:hover,
     .nav a:focus-visible { color: var(--text); }
 
-    .status-chip {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 7px 13px;
-      border: 1px solid rgba(243, 196, 81, 0.34);
-      border-radius: 999px;
-      color: var(--gold);
-      background: rgba(243, 196, 81, 0.08);
-      font-size: 0.74rem;
-      font-weight: 600;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      white-space: nowrap;
-    }
-
-    .status-chip .dot {
-      width: 7px;
-      height: 7px;
-      border-radius: 50%;
-      background: var(--gold);
-      box-shadow: 0 0 10px rgba(243, 196, 81, 0.9);
-    }
-
-    .header-login {
-      padding: 9px 16px;
-      font-size: 0.86rem;
-      white-space: nowrap;
-    }
-
+    /* Header actions stay compact: same box height as the old status chip. */
+    .header-login,
     .header-support {
-      padding: 9px 16px;
-      font-size: 0.86rem;
+      padding: 7px 13px;
+      font-size: 0.74rem;
       white-space: nowrap;
     }
 
@@ -755,10 +727,6 @@
 
     /* ---------- motion / small screens ---------- */
 
-    @media (max-width: 1200px) {
-      .status-chip { display: none; }
-    }
-
     /* The header row cannot hold brand + nav + language switch + SUPPORT +
        LOG IN on narrow screens; the support link stays in the hero and the
        final CTA, so hiding it here costs nothing. */
@@ -767,7 +735,6 @@
     }
 
     @media (max-width: 960px) {
-      .status-chip { display: none; }
       .site-header .wrap { gap: 16px; }
       .nav { gap: 16px; }
     }
@@ -826,7 +793,6 @@
     </div>
     <a class="btn btn-ghost btn-support header-support" href="/support" data-i18n="landing.support">Поддержать</a>
     <a class="btn btn-ghost header-login" href="/login" data-i18n="common.login">Войти</a>
-    <span class="status-chip"><span class="dot"></span><span data-i18n="landing.status">в разработке</span></span>
   </div>
 </header>
 
