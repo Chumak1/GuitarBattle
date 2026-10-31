@@ -21,4 +21,8 @@ namespace BrandAssets
 
     // Rasterises the mark for the window/taskbar icon.
     juce::Image createLogoImage (int size);
+
+    // The square app icon (brand mark on its own dark plate), rasterised once
+    // at 256 px. Used for the window icon and wherever a song has no artwork.
+    const juce::Image& getAppIconImage();
 }

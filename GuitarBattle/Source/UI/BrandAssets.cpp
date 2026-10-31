@@ -64,4 +64,12 @@ namespace BrandAssets
         drawLogo (g, image.getBounds().toFloat());
         return image;
     }
+
+    const juce::Image& getAppIconImage()
+    {
+        // 256 px covers the 118 px header tile at 2x scaling without resampling
+        // a 600 px source on every repaint.
+        static const juce::Image image = createLogoImage (256);
+        return image;
+    }
 }

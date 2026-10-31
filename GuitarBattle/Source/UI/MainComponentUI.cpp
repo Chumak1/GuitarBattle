@@ -818,21 +818,37 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         GameUi::drawCard(g, leftCard, 20.0f, true);
         GameUi::drawCard(g, rightCard, 20.0f);
 
-        // Album artwork placeholder, made from the same brand mark as the nav.
+        // Song artwork. The server stores only an optional cover key and the
+        // client does not download cover art yet, so the brand icon stands in
+        // for every song: it is the same picture the executable and the
+        // desktop shortcut carry.
         const juce::Rectangle<float> art(leftCard.getX() + 24.0f,
                                          leftCard.getY() + 24.0f,
                                          118.0f, 118.0f);
-        juce::ColourGradient artGradient(
-            UiColors::accentStrong, art.getX(), art.getY(),
-            UiColors::accent.darker(0.45f), art.getRight(), art.getBottom(),
-            false);
-        g.setGradientFill(artGradient);
-        g.fillRoundedRectangle(art, 18.0f);
-        g.setColour(UiColors::onAccent.withAlpha(0.12f));
-        g.drawRoundedRectangle(art.reduced(1.0f), 18.0f, 1.0f);
-        g.setColour(UiColors::onAccent);
-        g.setFont(GameUi::heading(40.0f));
-        g.drawText("FF", art, juce::Justification::centred, false);
+
+        if (const auto& artwork = BrandAssets::getAppIconImage(); artwork.isValid())
+        {
+            // drawImage multiplies the artwork by the alpha of the current
+            // colour, and the card left a 3.5% white brush behind. Reset it to
+            // an opaque brush so the icon is drawn at full strength.
+            g.setColour(juce::Colours::white);
+            g.drawImage(artwork, art, juce::RectanglePlacement::fillDestination);
+        }
+        else
+        {
+            // Fallback when the icon cannot be decoded: the old gold plate.
+            juce::ColourGradient artGradient(
+                UiColors::accentStrong, art.getX(), art.getY(),
+                UiColors::accent.darker(0.45f), art.getRight(), art.getBottom(),
+                false);
+            g.setGradientFill(artGradient);
+            g.fillRoundedRectangle(art, 18.0f);
+            g.setColour(UiColors::onAccent.withAlpha(0.12f));
+            g.drawRoundedRectangle(art.reduced(1.0f), 18.0f, 1.0f);
+            g.setColour(UiColors::onAccent);
+            g.setFont(GameUi::heading(40.0f));
+            g.drawText("FF", art, juce::Justification::centred, false);
+        }
 
         // The header shows whichever catalogue row is highlighted, so the card
         // always previews the song START SONG will load.
