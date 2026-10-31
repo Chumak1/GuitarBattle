@@ -468,11 +468,50 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
     meta.add(juce::String(juce::roundToInt(song.bpm)) + " BPM");
     meta.add(song.downloaded ? "ONLINE / CACHED" : "ONLINE");
 
+    const auto titleFont = GameUi::font(14.0f, true);
+    auto titleLine = textArea.removeFromTop(juce::jmax(18, height * 3 / 5));
+
     g.setColour(UiColors::text);
-    g.setFont(GameUi::font(14.0f, true));
-    g.drawFittedText(song.title,
-                     textArea.removeFromTop(juce::jmax(18, height * 3 / 5)).toNearestInt(),
-                     juce::Justification::centredLeft, 1, 0.8f);
+    g.setFont(titleFont);
+
+    // Difficulty tag sits right after the title. The slot is reserved first so a
+    // long title can never run underneath it.
+    constexpr int levelTagWidth = 46;
+    constexpr int levelTagGap = 10;
+
+    if (titleLine.getWidth() > levelTagWidth * 3)
+    {
+        auto levelSlot = titleLine.removeFromRight(levelTagWidth);
+        const auto titleArea = titleLine.withTrimmedRight(levelTagGap);
+
+        g.drawFittedText(song.title, titleArea,
+                         juce::Justification::centredLeft, 1, 0.8f);
+
+        // A short title keeps the tag next to the text; a long one pushes it to
+        // the end of the reserved slot.
+        const auto titleWidth = juce::roundToInt(
+            juce::GlyphArrangement::getStringWidth(titleFont, song.title));
+        const int tagX = juce::jlimit(titleArea.getX(), levelSlot.getX(),
+                                      titleArea.getX() + titleWidth + levelTagGap);
+
+        const auto tag = juce::Rectangle<int>(tagX, levelSlot.getY(),
+                                              levelTagWidth, levelSlot.getHeight())
+                             .toFloat()
+                             .reduced(0.0f, 1.0f);
+
+        g.setColour(UiColors::accent.withAlpha(rowIsSelected ? 0.22f : 0.14f));
+        g.fillRoundedRectangle(tag, 6.0f);
+        g.setColour(UiColors::accent);
+        g.setFont(GameUi::font(9.5f, true));
+        g.drawFittedText("LVL " + juce::String(juce::jlimit(1, 10, song.difficulty)),
+                         tag.toNearestInt().reduced(3, 0),
+                         juce::Justification::centred, 1, 0.8f);
+    }
+    else
+    {
+        g.drawFittedText(song.title, titleLine,
+                         juce::Justification::centredLeft, 1, 0.8f);
+    }
 
     g.setColour(UiColors::muted);
     g.setFont(GameUi::font(10.5f));

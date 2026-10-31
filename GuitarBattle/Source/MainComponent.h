@@ -438,6 +438,7 @@ private:
         juce::String artist;
         juce::String previewUrl; // full-song MP3 for the in-app preview, optional
         double bpm = 120.0;
+        int difficulty = 1;      // server difficulty, 1-10
         int version = 0;
         bool online = false;
         bool downloaded = false; // assets present in the local cache
