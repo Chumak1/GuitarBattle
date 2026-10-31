@@ -1272,7 +1272,7 @@ void MainComponent::refreshDailyChallenge()
                 self->dailyChallengeButton.setColour(
                     juce::TextButton::textColourOffId, UiColors::muted);
                 self->dailyChallengeStatusLabel.setText(
-                    "No challenge scheduled for " + dayName + ".",
+                    "No challenge scheduled for " + dayName + " (UTC).",
                     juce::dontSendNotification);
                 self->repaint();
                 return;
@@ -1327,7 +1327,7 @@ void MainComponent::refreshDailyChallenge()
             else
             {
                 self->dailyChallengeStatusLabel.setText(
-                    dayName + " challenge - one official attempt.",
+                    dayName + " (UTC) challenge - one official attempt.",
                     juce::dontSendNotification);
             }
         });
