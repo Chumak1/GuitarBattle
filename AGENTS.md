@@ -38,6 +38,16 @@
 
 Результат: `GuitarBattle/Builds/VisualStudio2026/x64/Debug/App/GuitarBattle.exe`.
 
+### Патч JUCE
+
+После установки или обновления JUCE 9.0.2 выполните
+`GuitarBattle\scripts\patch-juce-vst3-restart-assert.ps1`. Он убирает ложный
+`JUCE_ASSERT_MESSAGE_THREAD` в `VST3HostContextHeadless::restartComponent`:
+Neural DSP и подобные плагины вызывают `restartComponent` не из message
+thread, а JUCE штатно переносит работу через `ComponentRestarter`. Скрипт
+идемпотентен, `-Revert` возвращает исходный файл. После применения или
+отката пересоберите проект. Подробности: `docs/JUCE_PATCHES.md`.
+
 ## Сервер
 
 ```powershell

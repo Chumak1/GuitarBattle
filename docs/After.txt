@@ -1,0 +1,68 @@
+# FretFight УСПЕШНО УСТАНОВЛЕН!
+# FretFight HAS BEEN SUCCESSFULLY INSTALLED!
+
+## Русский
+
+Поздравляем! Установка fretFight завершена.
+
+Теперь вы можете запустить игру и приступить к тренировкам.
+
+### Первый запуск
+
+1. Подключите электрогитару к компьютеру через аудиоинтерфейс.
+2. Запустите fretFight.
+3. Выберите подходящий аудиодрайвер и входное устройство.
+4. Зарегистрируйте новую учётную запись или войдите в существующую.
+5. Выберите доступную композицию.
+6. Начните игру и зарабатывайте очки за правильно сыгранные ноты!
+
+### Рекомендации по настройке звука
+
+- Используйте ASIO-драйвер аудиоинтерфейса, если он доступен.
+- Выберите правильный входной канал гитары.
+- Проверьте уровень входного сигнала.
+- Убедитесь, что звук не перегружается и не искажается.
+
+### Онлайн-возможности
+
+Для использования учётной записи, сохранения результатов и глобального рейтинга необходимо подключение к интернету.
+
+**Удачи в игре!**
+
+Играйте точно. Зарабатывайте очки. Становитесь лучше!
+
+---
+
+## English
+
+Congratulations! fretFight has been successfully installed.
+
+You can now launch the game and start practicing.
+
+### First Launch
+
+1. Connect your electric guitar to your computer through an audio interface.
+2. Launch fretFight.
+3. Select the appropriate audio driver and input device.
+4. Create a new account or log in to your existing account.
+5. Choose an available song.
+6. Start playing and earn points for hitting the correct notes!
+
+### Audio Setup Recommendations
+
+- Use your audio interface's ASIO driver, if available.
+- Select the correct guitar input channel.
+- Check your input signal level.
+- Make sure the audio signal is not clipping or distorted.
+
+### Online Features
+
+An internet connection is required to use your account, save game results, and access the global leaderboard.
+
+**Good luck and enjoy the game!**
+
+Play accurately. Earn points. Get better!
+
+---
+
+© 2026 fretFight. All rights reserved.

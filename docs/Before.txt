@@ -1,0 +1,64 @@
+# ДОБРО ПОЖАЛОВАТЬ В FretFight!
+# WELCOME TO FretFight!
+
+## Русский
+
+**FretFight** — музыкальная игра для гитаристов, в которой вы проверяете свои навыки игры, исполняете музыкальные партии и зарабатываете очки за точность исполнения нот.
+
+### Возможности игры
+
+- Игра по гитарным табулатурам.
+- Распознавание сыгранных нот в реальном времени.
+- Начисление очков за правильность исполнения.
+- Музыкальное сопровождение и инструментальные дорожки.
+- Регистрация и авторизация пользователей.
+- Сохранение игровых результатов.
+- Глобальный рейтинг игроков.
+
+### Системные требования
+
+- Windows 10 или Windows 11 (64-bit).
+- Звуковая карта или аудиоинтерфейс.
+- Электрогитара или совместимое устройство ввода аудиосигнала.
+- Подключение к интернету для онлайн-функций.
+- Достаточно свободного места на диске.
+
+### Перед установкой
+
+Для корректной работы рекомендуется подключить гитару через аудиоинтерфейс и проверить настройки входного аудиоустройства.
+
+Нажмите «Далее», чтобы продолжить установку.
+
+**Приятной игры!**
+
+---
+
+## English
+
+**fretFight** is a music game for guitarists where you can test your playing skills, perform guitar parts, and earn points for playing notes accurately.
+
+### Game Features
+
+- Play using guitar tablature.
+- Real-time note detection.
+- Score points for accurate playing.
+- Backing tracks and instrumental audio.
+- User registration and login.
+- Game result saving.
+- Global player leaderboard.
+
+### System Requirements
+
+- Windows 10 or Windows 11 (64-bit).
+- Sound card or audio interface.
+- Electric guitar or compatible audio input device.
+- Internet connection for online features.
+- Sufficient free disk space.
+
+### Before Installation
+
+For the best experience, connect your guitar through an audio interface and check your audio input settings.
+
+Click "Next" to continue with the installation.
+
+**Enjoy the game!**

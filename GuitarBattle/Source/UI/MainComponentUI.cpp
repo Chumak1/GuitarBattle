@@ -1591,8 +1591,8 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     g.setColour(juce::Colours::black.withAlpha(0.25f));
     g.fillRoundedRectangle(24.0f, tabY + 3.0f, width - 48.0f, tabH, 16.0f);
 
-    // Guitar-effect pedals are intentionally not shown yet; the backing-track
-    // mixer uses the full width until the effects UI is implemented.
+    // Guitar-effect pedals are intentionally not shown yet; the track mixer
+    // uses the full width until the effects UI is implemented.
     const juce::Rectangle<float> mixer(24.0f, studioY,
                                        width - 48.0f, studioH);
 
@@ -1603,7 +1603,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                                                180.0f, 14.0f));
     g.setColour(UiColors::text);
     g.setFont(GameUi::heading(17.0f));
-    g.drawText("BACKING TRACK",
+    g.drawText("TRACK MIX",
                juce::Rectangle<float>(mixer.getX() + 22.0f,
                                       mixer.getY() + 29.0f,
                                       mixer.getWidth() - 190.0f, 22.0f),
@@ -1612,7 +1612,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                      juce::Rectangle<float>(mixer.getRight() - 122.0f,
                                             mixer.getY() + 17.0f,
                                             100.0f, 20.0f),
-                     "6 CHANNELS",
+                     "7 CHANNELS",
                      UiColors::green,
                      false);
     GameUi::drawDivider(g, mixer.getX() + 22.0f,
@@ -1620,11 +1620,13 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                         mixer.getY() + 54.0f);
 
     {
-        const float cellWidth = (mixer.getWidth() - 28.0f - 8.0f * 5.0f) / 6.0f;
-        for (int i = 1; i < 6; ++i)
+        const int mixerCellGap = 8;
+        const int mixerCellWidth =
+            (juce::roundToInt(mixer.getWidth()) - 28 - mixerCellGap * 6) / 7;
+        for (int i = 1; i < 7; ++i)
         {
             const float dividerX = mixer.getX() + 14.0f
-                + static_cast<float>(i) * (cellWidth + 8.0f) - 4.0f;
+                + static_cast<float>(i * (mixerCellWidth + mixerCellGap)) - 4.0f;
             g.setColour(UiColors::border.withAlpha(0.55f));
             g.fillRect(dividerX, mixer.getY() + 60.0f, 1.0f,
                        mixer.getHeight() - 72.0f);
@@ -1981,6 +1983,9 @@ void MainComponent::resized()
     menuButton.setVisible((showGame && !preparingScreen)
                           || finishedScreen || readyScreen);
     distortionButton.setVisible(false);
+    liveGuitarButton.setVisible(showGame);
+    liveGuitarVolumeSlider.setVisible(showGame);
+    liveGuitarVolumeLabel.setVisible(showGame);
     midiBackingButton.setVisible(showGame);
     midiBackingVolumeSlider.setVisible(showGame);
     midiBackingVolumeLabel.setVisible(showGame);
@@ -2324,7 +2329,7 @@ void MainComponent::resized()
         const int channelX = mixerX + 14;
         const int channelTop = studioY + 60;
         const int cellGap = 8;
-        const int cellW = (mixerW - 28 - cellGap * 5) / 6;
+        const int cellW = (mixerW - 28 - cellGap * 6) / 7;
 
         auto layoutMixerChannel = [&](juce::TextButton& button, juce::Label& label,
                                       juce::Slider& slider, int column)
@@ -2335,18 +2340,20 @@ void MainComponent::resized()
             label.setBounds(x, channelTop + 46, cellW, 14);
         };
 
+        layoutMixerChannel(liveGuitarButton, liveGuitarVolumeLabel,
+                           liveGuitarVolumeSlider, 0);
         layoutMixerChannel(midiBackingButton, midiBackingVolumeLabel,
-                           midiBackingVolumeSlider, 0);
+                           midiBackingVolumeSlider, 1);
         layoutMixerChannel(midiDrumsButton, midiDrumsVolumeLabel,
-                           midiDrumsVolumeSlider, 1);
+                           midiDrumsVolumeSlider, 2);
         layoutMixerChannel(midiBassButton, midiBassVolumeLabel,
-                           midiBassVolumeSlider, 2);
+                           midiBassVolumeSlider, 3);
         layoutMixerChannel(midiRhythmGuitarButton, midiRhythmGuitarVolumeLabel,
-                           midiRhythmGuitarVolumeSlider, 3);
+                           midiRhythmGuitarVolumeSlider, 4);
         layoutMixerChannel(midiPianoButton, midiPianoVolumeLabel,
-                           midiPianoVolumeSlider, 4);
+                           midiPianoVolumeSlider, 5);
         layoutMixerChannel(metronomeMixerButton, metronomeMixerVolumeLabel,
-                           metronomeMixerVolumeSlider, 5);
+                           metronomeMixerVolumeSlider, 6);
 
         const int bottomW = width - 48;
         const int judgementW = bottomW * 40 / 100;
@@ -2416,7 +2423,7 @@ public:
                        bool initialBackgroundEnabled,
                        std::function<void(float)> onBackgroundVolumeChanged,
                        std::function<void(bool)> onBackgroundEnabledChanged)
-        : selector(manager, 0, 32, 0, 2, true, true, true, false),
+        : selector(manager, 0, 32, 0, 2, false, false, true, false),
           deviceManager(manager),
           inputChannelChanged(onInputChannelChanged),
           backgroundVolumeChanged(onBackgroundVolumeChanged),
@@ -2436,7 +2443,9 @@ public:
 
         backgroundVolume.setSliderStyle(juce::Slider::LinearHorizontal);
         backgroundVolume.setTextBoxStyle(juce::Slider::TextBoxRight, false, 48, 20);
+        backgroundVolume.setTextValueSuffix(" %");
         backgroundVolume.setRange(0.0, 100.0, 1.0);
+        backgroundVolume.setNumDecimalPlacesToDisplay(0);
         backgroundVolume.setValue(initialBackgroundVolume * 100.0,
                                   juce::dontSendNotification);
         backgroundVolume.setTooltip("Volume of the looped menu music. "
@@ -2453,6 +2462,7 @@ public:
         backgroundToggle.setToggleState(initialBackgroundEnabled,
                                         juce::dontSendNotification);
         backgroundToggle.setButtonText(initialBackgroundEnabled ? "ON" : "OFF");
+        backgroundToggle.setTooltip("Enable or disable the looped menu music.");
         backgroundToggle.setColour(juce::TextButton::buttonOnColourId,
                                    UiColors::accentStrong);
         backgroundToggle.setColour(juce::TextButton::textColourOnId,
@@ -2467,7 +2477,7 @@ public:
         };
         addAndMakeVisible(backgroundToggle);
 
-        backgroundStatusLabel.setText("Loops while browsing songs and in settings.",
+        backgroundStatusLabel.setText("Menu screens only.",
                                       juce::dontSendNotification);
         backgroundStatusLabel.setJustificationType(juce::Justification::centredLeft);
         backgroundStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
@@ -2571,7 +2581,7 @@ public:
 
         g.setColour(UiColors::muted);
         g.setFont(GameUi::font(13.0f));
-        g.drawText("Choose your guitar input and configure audio performance.",
+        g.drawText("Choose your guitar input, buffer size and menu music.",
                    48, 59, getWidth() - 80, 24, juce::Justification::centredLeft);
 
         GameUi::drawPill(g,
@@ -2582,31 +2592,32 @@ public:
 
         g.setColour(UiColors::border);
         g.drawLine(30.0f, 96.0f, static_cast<float>(getWidth() - 30), 96.0f, 1.0f);
-        g.drawLine(30.0f, static_cast<float>(getHeight() - 92),
+        g.drawLine(30.0f, 156.0f, static_cast<float>(getWidth() - 30), 156.0f, 1.0f);
+        g.drawLine(30.0f, static_cast<float>(getHeight() - 80),
                    static_cast<float>(getWidth() - 30),
-                   static_cast<float>(getHeight() - 92), 1.0f);
+                   static_cast<float>(getHeight() - 80), 1.0f);
 
         g.setColour(UiColors::muted);
         g.setFont(GameUi::font(10.5f));
         g.drawText("Auto follows the loudest active input. Enable extra inputs above for other channels.",
-                   30, getHeight() - 44, getWidth() - 60, 20,
+                   30, getHeight() - 34, getWidth() - 60, 20,
                    juce::Justification::centredLeft, false);
     }
 
     void resized() override
     {
-        selector.setBounds(30, 108, getWidth() - 60,
-                           juce::jmax(80, getHeight() - 268));
-        backgroundLabel.setBounds(30, getHeight() - 198, 170, 24);
-        backgroundVolume.setBounds(204, getHeight() - 200, 280, 28);
-        backgroundToggle.setBounds(496, getHeight() - 200, 90, 28);
-        backgroundStatusLabel.setBounds(596, getHeight() - 198,
-                                        getWidth() - 626, 24);
-        bufferLabel.setBounds(30, getHeight() - 146, 130, 24);
-        bufferBox.setBounds(168, getHeight() - 148, 200, 28);
-        bufferStatusLabel.setBounds(380, getHeight() - 148, getWidth() - 410, 28);
-        inputChannelLabel.setBounds(30, getHeight() - 76, 130, 24);
-        inputChannelBox.setBounds(168, getHeight() - 78, 320, 28);
+        backgroundLabel.setBounds(30, 112, 150, 24);
+        backgroundToggle.setBounds(190, 110, 72, 28);
+        backgroundVolume.setBounds(272, 110, 300, 28);
+        backgroundStatusLabel.setBounds(582, 112, getWidth() - 612, 24);
+
+        selector.setBounds(30, 164, getWidth() - 60,
+                           juce::jmax(80, getHeight() - 324));
+        bufferLabel.setBounds(30, getHeight() - 110, 130, 24);
+        bufferBox.setBounds(168, getHeight() - 112, 200, 28);
+        bufferStatusLabel.setBounds(380, getHeight() - 112, getWidth() - 410, 28);
+        inputChannelLabel.setBounds(30, getHeight() - 64, 130, 24);
+        inputChannelBox.setBounds(168, getHeight() - 66, 320, 28);
     }
 
 private:
@@ -3035,12 +3046,12 @@ public:
                                           static_cast<float>(getWidth()) - 280.0f, 18.0f),
                    juce::Justification::centredLeft, true);
 
-        // Rating summary cards.
-        const juce::String statLabels[] = { "RATING", "RANK", "SONGS", "ATTEMPTS",
+        // Score summary cards.
+        const juce::String statLabels[] = { "SCORES", "RANK", "SONGS", "ATTEMPTS",
                                             "LEVEL", "XP", "ACCURACY", "TIMING" };
         const juce::String statValues[] = { ratingValue, rankValue, songsValue, attemptsValue,
                                             levelValue, xpValue, accuracyValue, timingValue };
-        const juce::String statNotes[] = { "best result per song", rankNote,
+        const juce::String statNotes[] = { "best score per song", rankNote,
                                            "songs with an attempt", "total attempts",
                                            xpNote, "total experience",
                                            "last 100 attempts", "avg timing error" };
@@ -3096,8 +3107,8 @@ public:
         };
 
         GameUi::drawCard(g, ratingCard.toFloat(), 16.0f);
-        drawCardHeader(ratingCard, "GLOBAL RATING",
-                       "Sum of the best result on every song. Top 50 players.");
+        drawCardHeader(ratingCard, "GLOBAL SCORES",
+                       "Sum of the best score on every song. Top 50 players.");
 
         GameUi::drawCard(g, historyCard.toFloat(), 16.0f);
         drawCardHeader(historyCard, "ATTEMPT HISTORY",
@@ -3522,7 +3533,7 @@ private:
         ratingTable.getHeader().addColumn(
             "PLAYER", 2, 220, 120, 420, juce::TableHeaderComponent::notSortable);
         ratingTable.getHeader().addColumn(
-            "RATING", 3, 100, 70, 160, juce::TableHeaderComponent::notSortable);
+            "SCORES", 3, 100, 70, 160, juce::TableHeaderComponent::notSortable);
         ratingTable.getHeader().addColumn(
             "SONGS", 4, 80, 60, 120, juce::TableHeaderComponent::notSortable);
         ratingTable.getHeader().addColumn(
@@ -3552,7 +3563,7 @@ private:
             addAndMakeVisible(label);
             label->setVisible(false);
         }
-        ratingEmptyLabel.setText("No rated attempts yet.", juce::dontSendNotification);
+        ratingEmptyLabel.setText("No scores yet.", juce::dontSendNotification);
         historyEmptyLabel.setText(
             "No attempts yet. Play a song and the result will appear here.",
             juce::dontSendNotification);
@@ -4857,16 +4868,26 @@ void MainComponent::initialiseUi()
                                 UiColors::surface2.interpolatedWith(UiColors::green, 0.20f));
     midiBackingButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
     midiBackingButton.setColour(juce::TextButton::textColourOnId, UiColors::background);
-    midiBackingButton.setToggleState(true, juce::dontSendNotification);
-    midiBackingButton.setButtonText("SOLO GUITAR ON");
+    const bool midiGuitarInitiallyEnabled =
+        midiBackingEnabled.load(std::memory_order_relaxed);
+    midiBackingButton.setToggleState(midiGuitarInitiallyEnabled,
+                                     juce::dontSendNotification);
+    midiBackingButton.setButtonText(midiGuitarInitiallyEnabled
+                                        ? "SOLO GTR ON" : "SOLO GTR OFF");
     midiBackingButton.setTooltip("Toggle the MIDI solo-guitar part generated by FretFight.");
     addAndMakeVisible(midiBackingButton);
     midiBackingButton.onClick = [this]
     {
         const bool enabled = !midiBackingEnabled.load(std::memory_order_relaxed);
         midiBackingEnabled.store(enabled, std::memory_order_relaxed);
-        midiBackingButton.setButtonText(enabled ? "SOLO GUITAR ON" : "SOLO GUITAR OFF");
+        midiBackingButton.setButtonText(enabled ? "SOLO GTR ON" : "SOLO GTR OFF");
         midiBackingButton.setToggleState(enabled, juce::dontSendNotification);
+
+        if (auto* settings = appProperties.getUserSettings())
+        {
+            settings->setValue("MidiGuitarEnabled", enabled);
+            settings->saveIfNeeded();
+        }
     };
     midiBackingVolumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     midiBackingVolumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
@@ -4878,6 +4899,11 @@ void MainComponent::initialiseUi()
         midiBackingVolume.store(static_cast<float>(midiBackingVolumeSlider.getValue()),
                                 std::memory_order_relaxed);
     };
+    // The slider is the single source of truth for the initial level: without
+    // this the audio thread kept the header default (0.22) while the UI showed
+    // 0.30 until the first drag.
+    midiBackingVolume.store(static_cast<float>(midiBackingVolumeSlider.getValue()),
+                            std::memory_order_relaxed);
     addAndMakeVisible(midiBackingVolumeSlider);
     midiBackingVolumeLabel.setText("SOLO VOL", juce::dontSendNotification);
     midiBackingVolumeLabel.setJustificationType(juce::Justification::centredLeft);
@@ -4897,18 +4923,18 @@ void MainComponent::initialiseUi()
     {
         const bool enabled = !midiRhythmGuitarEnabled.load(std::memory_order_relaxed);
         midiRhythmGuitarEnabled.store(enabled, std::memory_order_relaxed);
-        midiRhythmGuitarButton.setButtonText(enabled ? "RHYTHM GUITAR ON" : "RHYTHM GUITAR OFF");
+        midiRhythmGuitarButton.setButtonText(enabled ? "RHYTHM GTR ON" : "RHYTHM GTR OFF");
         midiRhythmGuitarButton.setToggleState(enabled, juce::dontSendNotification);
     };
     midiRhythmGuitarVolumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
     midiRhythmGuitarVolumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
     midiRhythmGuitarVolumeSlider.setRange(0.0, 0.8, 0.01);
     midiRhythmGuitarVolumeSlider.setValue(0.20, juce::dontSendNotification);
-    midiRhythmGuitarVolumeSlider.setTooltip("Guitar stem volume");
+    midiRhythmGuitarVolumeSlider.setTooltip("Rhythm-guitar stem volume");
     midiRhythmGuitarVolumeSlider.onValueChange = [this]
     { midiRhythmGuitarVolume.store(static_cast<float>(midiRhythmGuitarVolumeSlider.getValue()), std::memory_order_relaxed); };
     addAndMakeVisible(midiRhythmGuitarVolumeSlider);
-    midiRhythmGuitarVolumeLabel.setText("GUITAR VOL", juce::dontSendNotification);
+    midiRhythmGuitarVolumeLabel.setText("RHYTHM VOL", juce::dontSendNotification);
     midiRhythmGuitarVolumeLabel.setJustificationType(juce::Justification::centredLeft);
     midiRhythmGuitarVolumeLabel.setColour(juce::Label::textColourId, UiColors::text);
     midiRhythmGuitarVolumeLabel.setFont(GameUi::font(10.5f, true));
@@ -4917,28 +4943,40 @@ void MainComponent::initialiseUi()
     auto setupBackingChannel = [this](juce::TextButton& button, juce::Slider& slider,
                                       juce::Label& label, std::atomic<bool>& enabled,
                                       std::atomic<float>& volume, const juce::String& name,
-                                      float initialVolume)
+                                      float initialVolume, double maximum = 0.8,
+                                      juce::String settingsKey = {})
     {
         button.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
         button.setColour(juce::TextButton::buttonOnColourId,
                          UiColors::surface2.interpolatedWith(UiColors::green, 0.20f));
         button.setColour(juce::TextButton::textColourOffId, UiColors::text);
         button.setColour(juce::TextButton::textColourOnId, UiColors::background);
-        button.setToggleState(true, juce::dontSendNotification);
+        const bool initiallyEnabled = enabled.load(std::memory_order_relaxed);
+        button.setToggleState(initiallyEnabled, juce::dontSendNotification);
+        button.setButtonText(name + (initiallyEnabled ? " ON" : " OFF"));
         button.setTooltip("Toggle the " + name + " audio channel.");
         addAndMakeVisible(button);
         auto* buttonPtr = &button;
         auto* enabledPtr = &enabled;
-        button.onClick = [buttonPtr, enabledPtr, name]()
+        button.onClick = [this, buttonPtr, enabledPtr, name, settingsKey]()
         {
             const bool next = !enabledPtr->load(std::memory_order_relaxed);
             enabledPtr->store(next, std::memory_order_relaxed);
             buttonPtr->setButtonText(name + (next ? " ON" : " OFF"));
             buttonPtr->setToggleState(next, juce::dontSendNotification);
+
+            if (settingsKey.isNotEmpty())
+            {
+                if (auto* settings = appProperties.getUserSettings())
+                {
+                    settings->setValue(settingsKey, next);
+                    settings->saveIfNeeded();
+                }
+            }
         };
         slider.setSliderStyle(juce::Slider::LinearHorizontal);
         slider.setTextBoxStyle(juce::Slider::NoTextBox, false, 0, 0);
-        slider.setRange(0.0, 0.8, 0.01);
+        slider.setRange(0.0, maximum, 0.01);
         slider.setValue(initialVolume, juce::dontSendNotification);
         auto* sliderPtr = &slider;
         auto* volumePtr = &volume;
@@ -4951,6 +4989,10 @@ void MainComponent::initialiseUi()
         label.setFont(GameUi::font(10.5f, true));
         addAndMakeVisible(label);
     };
+    setupBackingChannel(liveGuitarButton, liveGuitarVolumeSlider, liveGuitarVolumeLabel,
+                        liveGuitarEnabled, liveGuitarVolume, "LIVE GTR", 0.5f, 1.0);
+    liveGuitarVolumeSlider.setTooltip("Volume of the guitar you are playing. "
+                                      "Note detection always uses the dry input.");
     setupBackingChannel(midiBassButton, midiBassVolumeSlider, midiBassVolumeLabel,
                         midiBassEnabled, midiBassVolume, "BASS", 0.45f);
     setupBackingChannel(midiDrumsButton, midiDrumsVolumeSlider, midiDrumsVolumeLabel,
@@ -4959,8 +5001,8 @@ void MainComponent::initialiseUi()
                         midiPianoEnabled, midiPianoVolume, "OTHERS", 0.30f);
     setupBackingChannel(metronomeMixerButton, metronomeMixerVolumeSlider,
                         metronomeMixerVolumeLabel, metronomeMixerEnabled,
-                        metronomeMixerVolume, "METRONOME", 0.70f);
-    metronomeMixerVolumeSlider.setRange(0.0, 1.0, 0.01);
+                        metronomeMixerVolume, "METRONOME", 0.70f, 1.0,
+                        "MetronomeEnabled");
     metronomeMixerVolumeSlider.setTooltip("Metronome click volume");
 
     distortionButton.onClick = [this]

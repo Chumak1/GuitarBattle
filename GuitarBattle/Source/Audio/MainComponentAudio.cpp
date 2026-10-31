@@ -1522,6 +1522,39 @@ void MainComponent::getNextAudioBlock(
                          outputChannelCount);
 
     //==========================================================================
+    // Live guitar monitoring level
+    //
+    // The fader sits after the VST insert so the plugin always receives the
+    // same dry input, and after the distortion stage below so DRIVE keeps its
+    // character at any monitoring level. Outside a round the guitar stays
+    // audible (the mixer is visible while paused), so the gain is applied
+    // before the preview/background music is added and never scales it.
+    //
+    // Realtime safety: two relaxed atomic loads and preallocated buffer
+    // arithmetic; no allocation, locks or I/O.
+
+    auto applyLiveGuitarGain = [this, &bufferToFill, outputChannelCount]()
+    {
+        const float gain = liveGuitarEnabled.load(std::memory_order_relaxed)
+            ? liveGuitarVolume.load(std::memory_order_relaxed)
+            : 0.0f;
+
+        if (gain >= 0.9995f)
+            return;
+
+        for (int channel = 0; channel < outputChannelCount; ++channel)
+        {
+            bufferToFill.buffer->applyGain(channel,
+                                           bufferToFill.startSample,
+                                           bufferToFill.numSamples,
+                                           gain);
+        }
+    };
+
+    if (gameState != GameState::Playing)
+        applyLiveGuitarGain();
+
+    //==========================================================================
     // Start metronome
 
     int metronomeBlockOffset = 0;
@@ -1578,7 +1611,8 @@ void MainComponent::getNextAudioBlock(
     }
 
     //==========================================================================
-    // No guitar monitoring or metronome outside gameplay
+    // Stop before the gameplay mix outside a round. The monitored guitar and
+    // menu music have already been rendered above.
 
     if (gameState != GameState::Playing)
         return;
@@ -1609,6 +1643,10 @@ void MainComponent::getNextAudioBlock(
             distortionFilterState[channel] = lowState;
         }
     }
+
+    // The pedal always sees the same level; the mixer fader attenuates the
+    // processed guitar only.
+    applyLiveGuitarGain();
 
     //==========================================================================
     // External music mixer. All four instrumental stems share gameplayStartSample and remain aligned.

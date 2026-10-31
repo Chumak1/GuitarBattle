@@ -52,7 +52,7 @@ void MainComponent::restoreMusicSettings()
     {
         backgroundMusicVolume.store(
             static_cast<float>(juce::jlimit(0.0, 1.0,
-                settings->getDoubleValue("BackgroundMusicVolume", 0.6))),
+                settings->getDoubleValue("BackgroundMusicVolume", 0.2))),
             std::memory_order_relaxed);
 
         backgroundMusicEnabled.store(

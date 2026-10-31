@@ -547,13 +547,22 @@ private:
 
     juce::TextButton audioSettingsButton{ "Audio Settings" };
     juce::TextButton distortionButton{ "DISTORTION OFF" };
-    juce::TextButton midiBackingButton{ "FULL MIX OFF" };
+
+    // Live monitored guitar. The fader only affects what the player hears:
+    // note detection and scoring always read the dry input.
+    juce::TextButton liveGuitarButton{ "LIVE GTR ON" };
+    juce::Slider liveGuitarVolumeSlider;
+    juce::Label liveGuitarVolumeLabel;
+    std::atomic<bool> liveGuitarEnabled{ true };
+    std::atomic<float> liveGuitarVolume{ 0.5f };
+
+    juce::TextButton midiBackingButton{ "SOLO GTR OFF" };
     juce::Slider midiBackingVolumeSlider;
     juce::Label midiBackingVolumeLabel;
-    std::atomic<bool> midiBackingEnabled{ true };
+    std::atomic<bool> midiBackingEnabled{ false };
     std::atomic<float> midiBackingVolume{ 0.22f };
 
-    juce::TextButton midiRhythmGuitarButton{ "RHYTHM GUITAR ON" };
+    juce::TextButton midiRhythmGuitarButton{ "RHYTHM GTR ON" };
     juce::Slider midiRhythmGuitarVolumeSlider;
     juce::Label midiRhythmGuitarVolumeLabel;
     std::atomic<bool> midiRhythmGuitarEnabled{ true };
@@ -575,10 +584,10 @@ private:
     std::atomic<bool> midiPianoEnabled{ true };
     std::atomic<float> midiPianoVolume{ 0.30f };
 
-    juce::TextButton metronomeMixerButton{ "METRONOME ON" };
+    juce::TextButton metronomeMixerButton{ "METRONOME OFF" };
     juce::Slider metronomeMixerVolumeSlider;
     juce::Label metronomeMixerVolumeLabel;
-    std::atomic<bool> metronomeMixerEnabled{ true };
+    std::atomic<bool> metronomeMixerEnabled{ false };
     std::atomic<float> metronomeMixerVolume{ 0.70f };
 
     struct BackingNote
@@ -693,7 +702,7 @@ private:
     juce::String backgroundMusicUrl;
     int previewRequestId = 0;
     int backgroundRequestId = 0;
-    std::atomic<float> backgroundMusicVolume{ 0.6f };
+    std::atomic<float> backgroundMusicVolume{ 0.2f };
     std::atomic<bool> backgroundMusicEnabled{ true };
     bool previewButtonPlaying = false;
     juce::TextButton previewButton{ "PREVIEW" };

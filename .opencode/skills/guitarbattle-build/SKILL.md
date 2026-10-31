@@ -37,6 +37,30 @@ description: Build and troubleshoot the JUCE GuitarBattle client with Projucer a
 
 Перед сборкой закрой запущенный `GuitarBattle.exe`, иначе MSBuild не сможет перезаписать файл.
 
+## Патчи JUCE
+
+Установка JUCE пропатчена скриптом
+`GuitarBattle\scripts\patch-juce-vst3-restart-assert.ps1`: удалён ложный
+`JUCE_ASSERT_MESSAGE_THREAD` в `VST3HostContextHeadless::restartComponent`.
+Neural DSP и подобные плагины вызывают `restartComponent` не из message
+thread, а JUCE штатно переносит работу через `ComponentRestarter`. После
+переустановки или обновления JUCE запусти скрипт снова; откат — `-Revert`.
+Подробности: `docs/JUCE_PATCHES.md`.
+
+## Иконка приложения
+
+Иконка задаётся в `.jucer`, а не правкой `Builds/VisualStudio2026/resources.rc`
+(файл генерируется и будет перезаписан):
+
+1. Картинка лежит в `Source/UI/Assets/AppIcon.png` (600×600) и описана в группе
+   `Assets`: `<FILE id="AppIc1" name="AppIcon.png" compile="0" resource="1" .../>`.
+2. У экспортёра: `<VS2026 targetFolder="Builds/VisualStudio2026" smallIcon="AppIc1" bigIcon="AppIc1">`.
+3. `--resave` создаёт `Builds/VisualStudio2026/icon.ico` (16/32/48/256) и добавляет
+   `IDI_ICON1/2 ICON DISCARDABLE "icon.ico"` в `resources.rc`. Оба файла нужны в Git:
+   `resources.rc` ссылается на `icon.ico`.
+4. Окно и таскбар используют ту же картинку через `BrandAssets::createLogoImage()`
+   (BinaryData `AppIcon_png`), поэтому иконка ярлыка и запущенного приложения совпадает.
+
 ## Типовые ошибки
 
 | Симптом | Причина | Что делать |

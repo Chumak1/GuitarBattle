@@ -50,6 +50,15 @@ namespace BrandAssets
         if (size <= 0)
             return {};
 
+        // Prefer the raster app icon. It is the same artwork the executable and
+        // the installer carry, so the taskbar button always matches the
+        // desktop shortcut instead of showing the bare vector mark.
+        if (auto icon = juce::ImageFileFormat::loadFrom (BinaryData::AppIcon_png,
+                                                        (size_t) BinaryData::AppIcon_pngSize);
+            icon.isValid())
+            return icon.rescaled (size, size, juce::Graphics::highResamplingQuality);
+
+        // Fallback when the PNG cannot be decoded: draw the vector mark.
         juce::Image image (juce::Image::ARGB, size, size, true);
         juce::Graphics g (image);
         drawLogo (g, image.getBounds().toFloat());

@@ -50,6 +50,17 @@ MainComponent::MainComponent()
                          static_cast<float>(
                              settings->getDoubleValue("InputSensitivity", 0.5))),
             std::memory_order_relaxed);
+
+        // Mixer defaults: the generated MIDI guitar and the metronome start
+        // silent until the player turns them on. The choice is remembered, so
+        // a song never re-enables them behind the player's back.
+        midiBackingEnabled.store(
+            settings->getBoolValue("MidiGuitarEnabled", false),
+            std::memory_order_relaxed);
+
+        metronomeMixerEnabled.store(
+            settings->getBoolValue("MetronomeEnabled", false),
+            std::memory_order_relaxed);
     }
 
     inputMonitor = std::make_unique<GuitarInputMonitor>(deviceManager);

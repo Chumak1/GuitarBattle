@@ -9230,6 +9230,9 @@
     <None Include="..\..\Source\UI\Assets\LogoLight.svg">
       <Filter>GuitarBattle\Source\UI\Assets</Filter>
     </None>
+    <None Include="..\..\Source\UI\Assets\AppIcon.png">
+      <Filter>GuitarBattle\Source\UI\Assets</Filter>
+    </None>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_audio_devices\native\asio\LICENSE.txt">
       <Filter>JUCE Modules\juce_audio_devices\native\asio</Filter>
     </None>
@@ -9337,6 +9340,9 @@
     </None>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_gui_extra\native\typescript\webview-interop\README.md">
       <Filter>JUCE Modules\juce_gui_extra\native\typescript\webview-interop</Filter>
+    </None>
+    <None Include=".\icon.ico">
+      <Filter>JUCE Library Code</Filter>
     </None>
   </ItemGroup>
   <ItemGroup>

@@ -4898,6 +4898,7 @@
     <None Include="..\..\Source\UI\MainComponentUi.inc"/>
     <None Include="..\..\Source\UI\Assets\LogoDark.svg"/>
     <None Include="..\..\Source\UI\Assets\LogoLight.svg"/>
+    <None Include="..\..\Source\UI\Assets\AppIcon.png"/>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_audio_devices\native\asio\LICENSE.txt"/>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_audio_devices\native\oboe\src\common\README.md"/>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_audio_devices\native\oboe\src\flowgraph\resampler\README.md"/>
@@ -4934,6 +4935,7 @@
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_gui_extra\native\typescript\webview-interop\LICENSE-JUCE.md"/>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_gui_extra\native\typescript\webview-interop\LICENSE.md"/>
     <None Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_gui_extra\native\typescript\webview-interop\README.md"/>
+    <None Include=".\icon.ico"/>
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include=".\resources.rc"/>
