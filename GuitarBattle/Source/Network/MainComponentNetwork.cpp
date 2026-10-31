@@ -2116,8 +2116,7 @@ void MainComponent::installDownloadedUpdate (const juce::File& installerFile)
 
     auto* prompt = new juce::AlertWindow (
         "Update downloaded",
-        "The installer has been downloaded.\n\n"
-        "FretFight will close and the installer will start.",
+        "FretFight will close, install the update and start again.",
         juce::AlertWindow::InfoIcon);
     prompt->addButton ("INSTALL NOW", 1);
     prompt->addButton ("LATER", 0);
@@ -2131,7 +2130,14 @@ void MainComponent::installDownloadedUpdate (const juce::File& installerFile)
                 if (result != 1)
                     return;
 
-                if (! installerFile.startAsProcess())
+                // Silent in-place upgrade. The installer keeps the same AppId,
+                // the same folder and the settings in %APPDATA%, so the wizard
+                // would only add clicks; it relaunches the game when it is done
+                // (see the [Run] section of docs/FretFight.iss).
+                const juce::String updateArguments (
+                    "/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /SP-");
+
+                if (! installerFile.startAsProcess (updateArguments))
                 {
                     juce::AlertWindow::showMessageBoxAsync (
                         juce::MessageBoxIconType::WarningIcon,

@@ -72,4 +72,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#DoubleAmp(MyAppName)}}"; Flags: nowait postinstall skipifsilent
+; An update started by the client runs in silent mode, and postinstall is
+; skipped there, so bring the game back explicitly after the files are in place.
+Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
 
