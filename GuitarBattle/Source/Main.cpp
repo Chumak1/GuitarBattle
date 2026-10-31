@@ -110,7 +110,29 @@ public:
             // leaves the native title bar and taskbar visible. Kiosk mode
             // removes the title bar and stretches the window over the whole
             // display so the app really opens full-screen.
-            juce::Desktop::getInstance().setKioskModeComponent (this, false);
+            //
+            // Applied on the next message-loop iteration and only when the
+            // window already owns a peer and sits on a display: Desktop::
+            // setKioskModeComponent() asserts (and stops the app in a Debug
+            // build) when either is not true yet, which happens when the window
+            // is created while the session is locked, the display list is still
+            // empty, or the app is started from an installer.
+            juce::Component::SafePointer<MainWindow> safeWindow (this);
+
+            juce::MessageManager::callAsync ([safeWindow]
+            {
+                auto* window = safeWindow.getComponent();
+
+                if (window == nullptr || window->getPeer() == nullptr)
+                    return;
+
+                auto& desktop = juce::Desktop::getInstance();
+
+                if (desktop.getDisplays().getDisplayForRect (window->getScreenBounds()) == nullptr)
+                    return;
+
+                desktop.setKioskModeComponent (window, false);
+            });
            #endif
         }
 
