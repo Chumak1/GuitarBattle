@@ -473,45 +473,8 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
 
     g.setColour(UiColors::text);
     g.setFont(titleFont);
-
-    // Difficulty tag sits right after the title. The slot is reserved first so a
-    // long title can never run underneath it.
-    constexpr int levelTagWidth = 46;
-    constexpr int levelTagGap = 10;
-
-    if (titleLine.getWidth() > levelTagWidth * 3)
-    {
-        auto levelSlot = titleLine.removeFromRight(levelTagWidth);
-        const auto titleArea = titleLine.withTrimmedRight(levelTagGap);
-
-        g.drawFittedText(song.title, titleArea,
-                         juce::Justification::centredLeft, 1, 0.8f);
-
-        // A short title keeps the tag next to the text; a long one pushes it to
-        // the end of the reserved slot.
-        const auto titleWidth = juce::roundToInt(
-            juce::GlyphArrangement::getStringWidth(titleFont, song.title));
-        const int tagX = juce::jlimit(titleArea.getX(), levelSlot.getX(),
-                                      titleArea.getX() + titleWidth + levelTagGap);
-
-        const auto tag = juce::Rectangle<int>(tagX, levelSlot.getY(),
-                                              levelTagWidth, levelSlot.getHeight())
-                             .toFloat()
-                             .reduced(0.0f, 1.0f);
-
-        g.setColour(UiColors::accent.withAlpha(rowIsSelected ? 0.22f : 0.14f));
-        g.fillRoundedRectangle(tag, 6.0f);
-        g.setColour(UiColors::accent);
-        g.setFont(GameUi::font(9.5f, true));
-        g.drawFittedText("LVL " + juce::String(juce::jlimit(1, 10, song.difficulty)),
-                         tag.toNearestInt().reduced(3, 0),
-                         juce::Justification::centred, 1, 0.8f);
-    }
-    else
-    {
-        g.drawFittedText(song.title, titleLine,
-                         juce::Justification::centredLeft, 1, 0.8f);
-    }
+    g.drawFittedText(song.title, titleLine,
+                     juce::Justification::centredLeft, 1, 0.8f);
 
     g.setColour(UiColors::muted);
     g.setFont(GameUi::font(10.5f));
@@ -521,11 +484,31 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
 
     const int best = owner.getBestScoreForSong(song.slug, song.title);
 
+    // Difficulty and best score share the right column: the tag sits directly
+    // above the score so both numbers read as one block.
+    auto scoreColumn = bestArea;
+    auto levelArea = scoreColumn.removeFromTop(juce::jmax(16, scoreColumn.getHeight() / 2));
+
+    const int levelTagWidth = juce::jmin(46, juce::jmax(30, levelArea.getWidth()));
+    const auto levelTag = juce::Rectangle<int>(levelArea.getRight() - levelTagWidth,
+                                               levelArea.getY() + 1,
+                                               levelTagWidth,
+                                               juce::jmax(14, levelArea.getHeight() - 2))
+                              .toFloat();
+
+    g.setColour(UiColors::accent.withAlpha(rowIsSelected ? 0.22f : 0.14f));
+    g.fillRoundedRectangle(levelTag, 6.0f);
+    g.setColour(UiColors::accent);
+    g.setFont(GameUi::font(9.5f, true));
+    g.drawFittedText("LVL " + juce::String(juce::jlimit(1, 10, song.difficulty)),
+                     levelTag.toNearestInt().reduced(3, 0),
+                     juce::Justification::centred, 1, 0.8f);
+
     // Fitted text with a horizontal-scale floor: never truncate the digits.
     g.setColour(best > 0 ? UiColors::accent : UiColors::muted.withAlpha(0.55f));
     g.setFont(GameUi::font(10.0f, true));
     g.drawFittedText(best > 0 ? "BEST: " + juce::String(best) : juce::String("NO SCORE"),
-                     bestArea, juce::Justification::centredRight, 1, 0.65f);
+                     scoreColumn, juce::Justification::centredRight, 1, 0.65f);
 }
 
 void MainComponent::SongListModel::listBoxItemClicked(int rowNumber, const juce::MouseEvent&)
