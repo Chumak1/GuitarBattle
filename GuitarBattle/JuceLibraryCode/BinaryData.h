@@ -15,7 +15,7 @@ namespace BinaryData
     const int            LogoLight_svgSize = 1932;
 
     extern const char*   AppIcon_png;
-    const int            AppIcon_pngSize = 26464;
+    const int            AppIcon_pngSize = 25445;
 
     // Number of elements in the namedResourceList and originalFileNames arrays.
     const int namedResourceListSize = 3;
