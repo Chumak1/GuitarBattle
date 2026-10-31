@@ -259,7 +259,7 @@ void MainComponent::showPasswordResetDialog(const juce::String& email)
         juce::AlertWindow::NoIcon);
 
     prompt->addTextEditor("code", "", "6-digit reset code");
-    prompt->addTextEditor("new_password", "", "New password (10+ characters)", true);
+    prompt->addTextEditor("new_password", "", "New password (6+ characters)", true);
     prompt->addTextEditor("confirm_password", "", "Repeat new password", true);
     prompt->addButton("RESET PASSWORD", 1);
     prompt->addButton("RESEND CODE", 2);

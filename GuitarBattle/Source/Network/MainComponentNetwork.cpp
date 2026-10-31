@@ -23,18 +23,39 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
 
     juce::Component::SafePointer<juce::ToggleButton> safeConsent;
 
+    // Keeps the consent row alive while the dialog is open: AlertWindow does
+    // not own components added with addCustomComponent().
+    std::shared_ptr<juce::Component> consentRow;
+
     if (createAccount)
     {
         prompt->addTextEditor("username", "", "Username");
         prompt->addTextEditor("email", "", "Email");
         prompt->addTextEditor("display_name", "", "Display name (optional)");
-        prompt->addTextEditor("password", "", "Password (10+ characters)", true);
+        prompt->addTextEditor("password", "", "Password (6+ characters)", true);
 
         // Consent is required only for a new account, never for a sign-in.
+        // The policy is a page on the site, so the dialog carries a real link:
+        // a toggle label cannot open a browser.
+        consentRow = std::make_shared<juce::Component>();
+        consentRow->setSize(420, 52);
+
         auto* consent = new juce::ToggleButton("I agree to the Privacy Policy");
-        consent->setSize(420, 24);
-        prompt->addCustomComponent(consent);
+        consent->setBounds(0, 0, 420, 24);
+        consentRow->addAndMakeVisible(consent);
         safeConsent = consent;
+
+        auto* policyLink = new juce::HyperlinkButton(
+            "Open the Privacy Policy",
+            juce::URL(juce::String(ApiClient::serverOrigin) + "/policy"));
+        policyLink->setBounds(18, 26, 300, 22);
+        policyLink->setFont(GameUi::font(13.0f), false);
+        policyLink->setColour(juce::HyperlinkButton::textColourId, UiColors::accent);
+        policyLink->setJustificationType(juce::Justification::centredLeft);
+        policyLink->setTooltip("Opens the Privacy Policy on fretfight.online in your browser.");
+        consentRow->addAndMakeVisible(policyLink);
+
+        prompt->addCustomComponent(consentRow.get());
 
         prompt->addButton("CREATE", 1);
     }
@@ -159,7 +180,7 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
 
     if (auto* submit = prompt->getButton(0))
     {
-        submit->onClick = [safeThis, safePrompt, createNewAccount, signIn, showError, setSubmitEnabled, safeConsent]()
+        submit->onClick = [safeThis, safePrompt, createNewAccount, signIn, showError, setSubmitEnabled, safeConsent, consentRow]()
         {
             auto* self = safeThis.getComponent();
             auto* dialog = safePrompt.getComponent();
@@ -300,7 +321,7 @@ void MainComponent::authenticateOnlineAccount(bool createAccount)
     }
 
     prompt->enterModalState(true,
-        juce::ModalCallbackFunction::create([safeThis](int result)
+        juce::ModalCallbackFunction::create([safeThis, consentRow](int result)
         {
             if (result != 1)
                 if (auto* self = safeThis.getComponent())
