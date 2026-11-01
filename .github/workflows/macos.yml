@@ -47,52 +47,67 @@ jobs:
           echo "Projucer: $PROJUCER"
           "$PROJUCER" --resave "$GITHUB_WORKSPACE/GuitarBattle/GuitarBattle.jucer"
 
-      - name: Build the app
+      - name: Build the app (arm64 and x86_64)
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/GuitarBattle/Builds/MacOSX"
           # The JUCE target is "<project> - App"; ad-hoc signing needs no
-          # certificate and still produces a runnable bundle.
-          xcodebuild -project GuitarBattle.xcodeproj -target "GuitarBattle - App" \
-            -configuration Release \
-            CODE_SIGN_IDENTITY="-" \
-            | tail -n 80
+          # certificate and still produces a runnable bundle. Two separate
+          # builds instead of one universal binary: the Intel and the Apple
+          # Silicon packages are a third smaller each.
+          for arch in arm64 x86_64; do
+            echo "== building $arch"
+            xcodebuild -project GuitarBattle.xcodeproj -target "GuitarBattle - App" \
+              -configuration Release \
+              ARCHS="$arch" ONLY_ACTIVE_ARCH=NO \
+              CONFIGURATION_BUILD_DIR="$PWD/build-$arch" \
+              CODE_SIGN_IDENTITY="-" \
+              | tail -n 40
+            test -d "build-$arch/GuitarBattle.app"
+          done
 
       - name: Package
         run: |
           set -euo pipefail
-          APP=$(find "$GITHUB_WORKSPACE/GuitarBattle/Builds/MacOSX" -maxdepth 5 -type d -name "*.app" | head -n 1)
-          echo "App bundle: $APP"
-          test -n "$APP"
+          cd "$GITHUB_WORKSPACE/GuitarBattle/Builds/MacOSX"
 
-          WORK="$RUNNER_TEMP/package"
-          rm -rf "$WORK"
-          mkdir -p "$WORK"
-          cp -R "$APP" "$WORK/FretFight.app"
-
-          PLIST="$WORK/FretFight.app/Contents/Info.plist"
-          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
+            build-arm64/GuitarBattle.app/Contents/Info.plist)
           echo "Version: $VERSION"
 
-          # The bundle is renamed and re-branded after the build, so the ad-hoc
-          # signature has to be renewed afterwards.
-          /usr/libexec/PlistBuddy -c "Set :CFBundleName FretFight" "$PLIST"
-          # The key already exists in the JUCE template, so Set comes first and
-          # Add is only the fallback.
-          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName FretFight" "$PLIST" 2>/dev/null \
-            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FretFight" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier online.fretfight.client" "$PLIST"
-          codesign --force --deep --sign - "$WORK/FretFight.app"
-          codesign --verify --deep --verbose=2 "$WORK/FretFight.app"
+          package_arch() {
+            local arch="$1"
+            local work="$RUNNER_TEMP/package-$arch"
+            rm -rf "$work"
+            mkdir -p "$work"
+            cp -R "build-$arch/GuitarBattle.app" "$work/FretFight.app"
 
-          # Drag-to-Applications disk image.
-          ln -s /Applications "$WORK/Applications"
-          hdiutil create -volname "FretFight" -srcfolder "$WORK" -ov -format UDZO \
-            "$GITHUB_WORKSPACE/FretFight-$VERSION.dmg"
-          rm -f "$WORK/Applications"
+            local plist="$work/FretFight.app/Contents/Info.plist"
 
-          ditto -c -k --sequesterRsrc --keepParent "$WORK/FretFight.app" \
-            "$GITHUB_WORKSPACE/FretFight-macOS.zip"
+            # The bundle is renamed and re-branded after the build, so the
+            # ad-hoc signature has to be renewed afterwards.
+            /usr/libexec/PlistBuddy -c "Set :CFBundleName FretFight" "$plist"
+            # The key already exists in the JUCE template, so Set comes first
+            # and Add is only the fallback.
+            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName FretFight" "$plist" 2>/dev/null \
+              || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FretFight" "$plist"
+            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier online.fretfight.client" "$plist"
+            codesign --force --deep --sign - "$work/FretFight.app"
+            codesign --verify --deep --verbose=2 "$work/FretFight.app"
+
+            # Drag-to-Applications disk image.
+            ln -s /Applications "$work/Applications"
+            hdiutil create -volname "FretFight" -srcfolder "$work" -ov -format UDZO \
+              "$GITHUB_WORKSPACE/FretFight-$VERSION-$arch.dmg"
+            rm -f "$work/Applications"
+
+            ditto -c -k --sequesterRsrc --keepParent "$work/FretFight.app" \
+              "$GITHUB_WORKSPACE/FretFight-$VERSION-$arch.zip"
+          }
+
+          package_arch arm64
+          package_arch x86_64
+
           ls -lh "$GITHUB_WORKSPACE"/FretFight-*
 
       - name: Upload the artifact
@@ -101,6 +116,6 @@ jobs:
           name: FretFight-macOS
           path: |
             FretFight-*.dmg
-            FretFight-macOS.zip
+            FretFight-*.zip
           if-no-files-found: error
           retention-days: 30
