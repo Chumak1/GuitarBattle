@@ -3539,9 +3539,9 @@ private:
                     colour = row.rank <= 3 ? UiColors::accent : UiColors::muted;
                     break;
                 case 2:
+                    // Same rule as the in-game leaderboard: a single name, no
+                    // "@username" suffix.
                     text = row.displayName.isNotEmpty() ? row.displayName : row.username;
-                    if (row.displayName.isNotEmpty() && row.displayName != row.username)
-                        text += "  @" + row.username;
                     break;
                 case 3:
                     text = AccountWindowDetail::formatCount(row.ratingPoints);

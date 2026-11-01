@@ -133,12 +133,11 @@ public:
             colour = row.rank <= 3 ? UiColors::accent : UiColors::muted;
             break;
         case 2:
+            // One name per row: the display name when the player set one, the
+            // username otherwise. The "@username" suffix was noise in the list.
             text = row.displayName.isNotEmpty()
                        ? row.displayName
                        : row.username;
-
-            if (row.displayName.isNotEmpty() && row.displayName != row.username)
-                text += "  @" + row.username;
             break;
         case 3:
             text = "LVL " + juce::String(row.level);
