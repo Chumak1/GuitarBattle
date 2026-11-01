@@ -312,6 +312,20 @@ private:
     juce::String dailyChallengeSongSlug;
     juce::String dailyChallengeSongId;
     bool currentSessionIsDaily = false;
+    // Admin draft preview. ``onlineIsAdmin`` mirrors ``is_admin`` from
+    // /auth/me; ``adminPreviewMode`` is the ADMIN toggle in the header and is
+    // remembered in the user settings. A draft is always played as a preview:
+    // the server stores the score as history and ranks nothing.
+    bool onlineIsAdmin = false;
+    bool adminPreviewMode = false;
+    bool currentSessionIsPreview = false;
+    juce::TextButton adminPreviewButton{ "ADMIN" };
+    void setAdminPreviewMode(bool enabled);
+    // True when the catalogue/detail requests may ask for drafts.
+    bool isAdminPreviewActive() const
+    {
+        return adminPreviewMode && onlineIsAdmin && onlineAccessToken.isNotEmpty();
+    }
     bool dailyOfficialUsed = false;
     void refreshDailyChallenge();
     void onDailyChallengeClicked();
@@ -443,6 +457,9 @@ private:
         int version = 0;
         bool online = false;
         bool downloaded = false; // assets present in the local cache
+        // ``is_published`` from the server (additive field). Older servers do
+        // not send it, so the default keeps every row a published song.
+        bool published = true;
     };
 
     // List model for the song list. Lives in this header so no new compile

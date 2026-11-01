@@ -633,6 +633,11 @@ void MainComponent::startSelectedSong()
                                         selectedCatalogIndex);
     const auto& song = catalogSongs[static_cast<size_t>(selectedCatalogIndex)];
 
+    // An unpublished draft is only playable in admin preview mode; the server
+    // records that attempt as ``preview`` and ranks nothing. The label is
+    // confirmed by the server answer in startOnlineGameSession().
+    currentSessionIsPreview = ! song.published && adminPreviewMode && onlineIsAdmin;
+
     // Cached online songs are playable without any network traffic.
     if (auto* entry = findOnlineLibraryEntry(song.slug))
     {

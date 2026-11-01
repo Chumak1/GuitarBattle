@@ -72,6 +72,12 @@ public:
         return perform ("GET", apiPath, nullptr, bearerToken, timeoutMs);
     }
 
+    /** Anonymous GET: no Authorization header. Same as get(path, {}, timeout). */
+    static Response get (const juce::String& apiPath, int timeoutMs)
+    {
+        return get (apiPath, {}, timeoutMs);
+    }
+
     /** POST a JSON document. @p apiPath is relative to baseUrl, e.g. "/auth/login". */
     static Response post (const juce::String& apiPath,
                           const juce::var& jsonBody,
@@ -93,13 +99,26 @@ public:
     /** Downloads @p urlOrServerPath into memory (small files only). Empty on failure. */
     static juce::MemoryBlock download (const juce::String& urlOrServerPath, int timeoutMs)
     {
+        return download (urlOrServerPath, {}, timeoutMs);
+    }
+
+    /** Authorised download: sends "Authorization: Bearer <token>" when the token
+        is not empty. An empty token keeps the anonymous request above, so an
+        older server that does not need the header is unaffected.
+    */
+    static juce::MemoryBlock download (const juce::String& urlOrServerPath,
+                                       const juce::String& bearerToken,
+                                       int timeoutMs)
+    {
         // Never run a blocking download on the message thread.
         jassert (! juce::MessageManager::existsAndIsCurrentThread());
 
         juce::MemoryBlock bytes;
 
         juce::URL url (resolveServerUrl (urlOrServerPath));
-        auto stream = url.createInputStream (streamOptions().withConnectionTimeoutMs (timeoutMs));
+        auto stream = url.createInputStream (
+            streamOptions().withConnectionTimeoutMs (timeoutMs)
+                           .withExtraHeaders (authorizationHeader (bearerToken)));
 
         if (stream == nullptr)
             return bytes;
@@ -117,11 +136,22 @@ public:
                                        const juce::File& targetFile,
                                        int timeoutMs)
     {
+        return downloadToFile (urlOrServerPath, targetFile, {}, timeoutMs);
+    }
+
+    /** Authorised variant of downloadToFile(); empty token = no header. */
+    static juce::int64 downloadToFile (const juce::String& urlOrServerPath,
+                                       const juce::File& targetFile,
+                                       const juce::String& bearerToken,
+                                       int timeoutMs)
+    {
         // Never run a blocking download on the message thread.
         jassert (! juce::MessageManager::existsAndIsCurrentThread());
 
         juce::URL url (resolveServerUrl (urlOrServerPath));
-        auto stream = url.createInputStream (streamOptions().withConnectionTimeoutMs (timeoutMs));
+        auto stream = url.createInputStream (
+            streamOptions().withConnectionTimeoutMs (timeoutMs)
+                           .withExtraHeaders (authorizationHeader (bearerToken)));
 
         if (stream == nullptr || ! targetFile.getParentDirectory().isDirectory())
             return -1;
@@ -244,6 +274,16 @@ private:
     static juce::URL::InputStreamOptions streamOptions()
     {
         return juce::URL::InputStreamOptions (juce::URL::ParameterHandling::inAddress);
+    }
+
+    /** "Authorization: Bearer <token>", or an empty string for an anonymous request.
+        JUCE normalises the trailing CRLF in withExtraHeaders().
+    */
+    static juce::String authorizationHeader (const juce::String& bearerToken)
+    {
+        return bearerToken.isNotEmpty()
+                   ? "Authorization: Bearer " + bearerToken
+                   : juce::String();
     }
 
     /** Resolves an API path ("/auth/me") or an absolute URL against baseUrl. */

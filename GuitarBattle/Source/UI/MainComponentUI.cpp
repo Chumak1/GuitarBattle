@@ -532,6 +532,29 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
         }
     }
 
+    // Unpublished drafts exist only in the admin preview: the DRAFT badge keeps
+    // them apart from the playable catalogue. Same pill geometry as LVL/genre.
+    if (! song.published)
+    {
+        tagLine = tagLine.withTrimmedRight(tagGap);
+
+        const int draftWidth = juce::jmin(48, tagLine.getWidth());
+
+        if (draftWidth >= 34)
+        {
+            auto draftSlot = tagLine.removeFromRight(draftWidth);
+            const auto draftPill = draftSlot.withSizeKeepingCentre(
+                draftWidth, juce::jmin(16, draftSlot.getHeight())).toFloat();
+
+            g.setColour(UiColors::red.withAlpha(rowIsSelected ? 0.26f : 0.18f));
+            g.fillRoundedRectangle(draftPill, 6.0f);
+            g.setColour(UiColors::red);
+            g.setFont(tagFont);
+            g.drawFittedText("DRAFT", draftPill.toNearestInt().reduced(3, 0),
+                             juce::Justification::centred, 1, 0.8f);
+        }
+    }
+
     // Fitted text with a horizontal-scale floor: never truncate the digits.
     g.setColour(best > 0 ? UiColors::accent : UiColors::muted.withAlpha(0.55f));
     g.setFont(GameUi::font(10.0f, true));
@@ -1290,6 +1313,19 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                                           card.getWidth() - 64.0f, 22.0f),
                    juce::Justification::centredLeft, false);
 
+        if (currentSessionIsPreview)
+        {
+            // The results screen repeats the notice: a draft attempt is saved
+            // as history only and never becomes a best score or rating row.
+            GameUi::drawPill(g,
+                             juce::Rectangle<float>(card.getRight() - 232.0f,
+                                                    card.getY() + 26.0f,
+                                                    200.0f, 24.0f),
+                             "PREVIEW - NOT RANKED",
+                             UiColors::red,
+                             false);
+        }
+
         const juce::Rectangle<float> scorePanel(
             card.getX() + 32.0f, card.getY() + 132.0f,
             card.getWidth() - 64.0f, 176.0f);
@@ -1610,11 +1646,26 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     }
     else
     {
-        GameUi::drawEyebrow(g, "LIVE PERFORMANCE",
-                            juce::Rectangle<float>(statsCard.getX() + 18.0f,
-                                                   statsCard.getY() + 9.0f,
-                                                   statsCard.getWidth() - 36.0f, 14.0f),
-                            UiColors::accent);
+        if (currentSessionIsPreview)
+        {
+            // A draft played in admin preview mode is not ranked: the strip
+            // states it instead of the usual "LIVE PERFORMANCE" caption.
+            GameUi::drawPill(g,
+                             juce::Rectangle<float>(statsCard.getX() + 16.0f,
+                                                    statsCard.getY() + 8.0f,
+                                                    196.0f, 22.0f),
+                             "PREVIEW - NOT RANKED",
+                             UiColors::red,
+                             false);
+        }
+        else
+        {
+            GameUi::drawEyebrow(g, "LIVE PERFORMANCE",
+                                juce::Rectangle<float>(statsCard.getX() + 18.0f,
+                                                       statsCard.getY() + 9.0f,
+                                                       statsCard.getWidth() - 36.0f, 14.0f),
+                                UiColors::accent);
+        }
 
         const float cellWidth = statsCard.getWidth() / 4.0f;
         const std::array<juce::String, 4> values
@@ -1817,6 +1868,20 @@ void MainComponent::paintModalOverlay(juce::Graphics& g)
                                                   static_cast<int>(cardWidth - 40.0f),
                                                   40),
                              juce::Justification::centred, 2);
+
+            if (currentSessionIsPreview)
+            {
+                // The player must know before pressing START that a draft
+                // attempt is not ranked. Sits between the hint text and the
+                // START button (card bottom - 74).
+                GameUi::drawPill(g,
+                                 juce::Rectangle<float>(countCard.getX() + 40.0f,
+                                                        countCard.getY() + 140.0f,
+                                                        cardWidth - 80.0f, 22.0f),
+                                 "PREVIEW - NOT RANKED",
+                                 UiColors::red,
+                                 false);
+            }
         }
         else
         {
@@ -1981,6 +2046,8 @@ void MainComponent::resized()
     // shows EXIT in this row instead.
     logoutButton.setVisible(false);
     accountSettingsButton.setVisible(songSelect && currentUsername.isNotEmpty());
+    // The ADMIN toggle exists only for an administrator on the song screen.
+    adminPreviewButton.setVisible(songSelect && onlineIsAdmin);
     quitButton.setVisible(songSelect);
     supportButton.setVisible(songSelect);
     gameSongTitleLabel.setVisible(showGame || readyScreen);
@@ -2119,29 +2186,32 @@ void MainComponent::resized()
         accountStatusLabel.setJustificationType(juce::Justification::centredLeft);
 
         // Top-right account row: plain username label, then SUPPORT, PROFILE,
-        // VST, AUDIO SETTINGS and EXIT. Signing out lives only inside the
-        // profile window.
+        // ADMIN (administrators only), VST, AUDIO SETTINGS and EXIT. Signing out
+        // lives only inside the profile window.
         const int topRight = width - 44;
         const int topGap = 8;
         const int accountButtonH = 32;
         const int usernameW = 150;
 
-        // Five header buttons no longer fit at 128 px each: at the minimum
-        // window width (900 px) the row would collide with the wordmark. Let
-        // the width shrink down to 104 px, which still fits "VST: BYPASS".
-        constexpr int headerButtonCount = 5;
+        // The ADMIN toggle joins the same row, but only for an administrator.
+        // Six buttons no longer fit at 128 px each: the minimum shrinks to
+        // 92 px and the gap tightens so the row still clears the wordmark.
+        const bool showAdminToggle = onlineIsAdmin;
+        const int headerButtonCount = showAdminToggle ? 6 : 5;
+        const int headerGap = showAdminToggle ? 6 : topGap;
         constexpr int headerRowMinX = 300;
         const int accountButtonW = juce::jlimit(
-            104, 128,
-            (topRight - headerRowMinX - topGap * (headerButtonCount - 1))
+            showAdminToggle ? 92 : 104, 128,
+            (topRight - headerRowMinX - headerGap * (headerButtonCount - 1))
                 / headerButtonCount);
 
         const int exitX = topRight - accountButtonW;
-        const int audioX = exitX - topGap - accountButtonW;
-        const int vstX = audioX - topGap - accountButtonW;
-        const int settingsX = vstX - topGap - accountButtonW;
-        const int supportX = settingsX - topGap - accountButtonW;
-        const int usernameX = supportX - 12 - usernameW;
+        const int audioX = exitX - headerGap - accountButtonW;
+        const int vstX = audioX - headerGap - accountButtonW;
+        const int settingsX = vstX - headerGap - accountButtonW;
+        const int supportX = settingsX - headerGap - accountButtonW;
+        const int adminX = supportX - headerGap - accountButtonW;
+        const int usernameX = (showAdminToggle ? adminX : supportX) - 12 - usernameW;
 
         // The name stays available in the account window, so hide the label
         // before it can collide with the brand.
@@ -2150,6 +2220,8 @@ void MainComponent::resized()
         currentUserLabel.setJustificationType(juce::Justification::centredLeft);
         supportButton.setBounds(supportX, 42, accountButtonW, accountButtonH);
         accountSettingsButton.setBounds(settingsX, 42, accountButtonW, accountButtonH);
+        if (showAdminToggle)
+            adminPreviewButton.setBounds(adminX, 42, accountButtonW, accountButtonH);
         vstButton.setVisible(true);
         vstButton.setBounds(vstX, 42, accountButtonW, accountButtonH);
         audioSettingsButton.setButtonText("AUDIO SETTINGS");
@@ -5527,6 +5599,31 @@ void MainComponent::initialiseUi()
     accountSettingsButton.setTooltip("Open your profile");
     accountSettingsButton.onClick = [this] { openAccountWindow(); };
     addAndMakeVisible(accountSettingsButton);
+
+    // Admin-only draft preview. The toggle is visible only when /auth/me
+    // reported is_admin; its state is remembered in the user settings so it
+    // survives a restart, and switching it reloads the catalogue with drafts.
+    adminPreviewButton.setButtonText("ADMIN");
+    adminPreviewButton.setClickingTogglesState(true);
+    adminPreviewButton.setColour(juce::TextButton::buttonColourId,
+                                 UiColors::surface2);
+    adminPreviewButton.setColour(juce::TextButton::buttonOnColourId,
+                                 UiColors::accent);
+    adminPreviewButton.setColour(juce::TextButton::textColourOffId,
+                                 UiColors::text);
+    adminPreviewButton.setColour(juce::TextButton::textColourOnId,
+                                 UiColors::onAccent);
+    adminPreviewButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
+    adminPreviewButton.setTooltip("Show drafts and play them as preview "
+                                  "(results are not ranked)");
+    adminPreviewButton.setToggleState(adminPreviewMode,
+                                      juce::dontSendNotification);
+    adminPreviewButton.onClick = [this]
+    {
+        setAdminPreviewMode(adminPreviewButton.getToggleState());
+    };
+    adminPreviewButton.setVisible(false);
+    addAndMakeVisible(adminPreviewButton);
 
     // Support: one click opens the public support page in the default browser.
     // Same accent fill as START SONG so it reads as a primary action in the

@@ -454,6 +454,7 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
 
             juce::String display = fallbackName;
             juce::String username = fallbackName;
+            bool isAdmin = false;
             if (response.transportOk)
             {
                 const auto profile = response.json;
@@ -465,7 +466,23 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
                     display = fromServer;
                 else if (serverUsername.isNotEmpty())
                     display = serverUsername;
+
+                // Additive field: an older server never sends it, so the admin
+                // tools simply stay hidden.
+                isAdmin = static_cast<bool>(
+                    profile.getProperty("is_admin", juce::var(false)));
             }
+
+            // The ADMIN toggle is restored only for an administrator. The
+            // saved preference is kept so it survives a restart and a
+            // non-admin session never re-enables it.
+            self->onlineIsAdmin = isAdmin;
+            bool savedPreviewMode = false;
+            if (auto* settings = self->appProperties.getUserSettings())
+                savedPreviewMode = settings->getBoolValue("AdminPreviewMode", false);
+            self->adminPreviewMode = isAdmin && savedPreviewMode;
+            self->adminPreviewButton.setToggleState(self->adminPreviewMode,
+                                                    juce::dontSendNotification);
 
             self->currentUsername = username;
             self->currentUserLabel.setText(self->currentUsername, juce::dontSendNotification);
@@ -499,6 +516,11 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             // Personal best scores require the freshly obtained token.
             self->refreshOnlineBestScores();
             self->refreshDailyChallenge();
+            // The catalogue was loaded anonymously at startup; an admin with the
+            // preview toggle remembered needs one authorised refresh to see the
+            // drafts in the list.
+            if (self->isAdminPreviewActive())
+                self->refreshOnlineCatalog();
             // Start a new activity session for this sign-in and report it.
             self->telemetryClientSessionId = juce::Uuid().toString();
             self->telemetryTickCounter = 0;
@@ -648,6 +670,13 @@ void MainComponent::logoutCurrentUser()
     onlineAccessToken.clear();
     onlineGameSessionUuid.clear();
     currentSessionIsDaily = false;
+    // The admin tools belong to the account, not to the machine: hide them and
+    // drop the preview mode. The saved preference stays in the settings so the
+    // next admin sign-in restores it.
+    onlineIsAdmin = false;
+    adminPreviewMode = false;
+    currentSessionIsPreview = false;
+    adminPreviewButton.setToggleState(false, juce::dontSendNotification);
     dailyChallengeSongSlug.clear();
     dailyChallengeSongId.clear();
     dailyOfficialUsed = false;
@@ -769,6 +798,15 @@ void MainComponent::startOnlineGameSession()
 
             self->onlineGameSessionUuid = response.json.getProperty("id", juce::var()).toString();
 
+            // The server is authoritative for the session kind: a draft attempt
+            // comes back as "preview" (nothing is ranked, no XP is awarded).
+            // Older servers only know "normal"/"daily", so the flag simply
+            // stays false for them.
+            const auto sessionMode =
+                response.json.getProperty("mode", juce::var()).toString();
+            if (sessionMode.isNotEmpty())
+                self->currentSessionIsPreview = sessionMode == "preview";
+
             // The daily flag applies to exactly this session; a replay starts
             // a normal session unless the daily button is used again.
             self->currentSessionIsDaily = false;
@@ -841,14 +879,19 @@ void MainComponent::submitOnlineGameResult()
 
             if (response.json.getProperty("id", juce::var()).toString().isNotEmpty())
             {
-                self->accountStatusLabel.setText("Online score submitted. Refreshing global rating...",
-                                                 juce::dontSendNotification);
+                self->accountStatusLabel.setText(
+                    self->currentSessionIsPreview
+                        ? "Preview attempt saved. This result is not ranked."
+                        : "Online score submitted. Refreshing global rating...",
+                    juce::dontSendNotification);
 
                 // Progression returned by the server: XP, level and any
-                // achievements unlocked by this attempt.
+                // achievements unlocked by this attempt. A preview attempt of
+                // an unpublished draft never awards any, so the results card
+                // keeps its progression block hidden.
                 const auto& json = response.json;
 
-                if (json.hasProperty("xp_earned"))
+                if (json.hasProperty("xp_earned") && ! self->currentSessionIsPreview)
                 {
                     self->lastProgressionValid = true;
                     self->lastXpEarned =
@@ -1036,6 +1079,10 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
             row.bpm = static_cast<double>(item.getProperty("bpm", 120));
             row.difficulty = static_cast<int>(item.getProperty("difficulty", 1));
             row.version = static_cast<int>(item.getProperty("version", 0));
+            // Additive: an older server does not send the field, and every row
+            // it returns is a published song.
+            row.published = static_cast<bool>(
+                item.getProperty("is_published", juce::var(true)));
             row.online = true;
             row.downloaded = findOnlineLibraryEntry(slug) != nullptr
                 || cacheRoot.getChildFile(slug).getChildFile("version.txt").existsAsFile();
@@ -1067,6 +1114,27 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
         selectCatalogSong(selectedCatalogIndex);
 }
 
+void MainComponent::setAdminPreviewMode(bool enabled)
+{
+    // Only an administrator with a valid token may ask the server for drafts;
+    // the server ignores the flag for everybody else anyway.
+    adminPreviewMode = enabled && onlineIsAdmin;
+
+    adminPreviewButton.setToggleState(adminPreviewMode, juce::dontSendNotification);
+
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        settings->setValue("AdminPreviewMode", adminPreviewMode);
+        settings->saveIfNeeded();
+    }
+
+    // Switching the toggle on/off changes the contents of the catalogue, so it
+    // is reloaded with the matching request. The request runs on a worker
+    // thread; only the callback touches the UI.
+    refreshOnlineCatalog();
+    repaint();
+}
+
 void MainComponent::refreshOnlineCatalog()
 {
     // The catalogue refresh is also a natural retry point when the initial
@@ -1075,12 +1143,25 @@ void MainComponent::refreshOnlineCatalog()
         startClientAssetRefresh();
 
     onlineCatalogButton.setEnabled(false);
-    onlineCatalogStatusLabel.setText("Loading song catalogue...", juce::dontSendNotification);
+
+    // An admin in preview mode asks for drafts and authenticates the request;
+    // everybody else (and an older server without the parameter) keeps the
+    // original anonymous published-only request.
+    const bool withDrafts = isAdminPreviewActive();
+    const auto cataloguePath = withDrafts
+        ? juce::String("/songs?limit=100&offset=0&include_drafts=1")
+        : juce::String("/songs?limit=100&offset=0");
+    const auto catalogueToken = withDrafts ? onlineAccessToken : juce::String();
+
+    onlineCatalogStatusLabel.setText(withDrafts
+                                         ? "Loading song catalogue (drafts included)..."
+                                         : "Loading song catalogue...",
+                                     juce::dontSendNotification);
 
     // The request runs on an ApiClient worker thread; only this callback touches
     // components. A failure keeps the last server catalogue, if one was loaded.
     juce::Component::SafePointer<MainComponent> safeThis(this);
-    apiClient.getJson("/songs?limit=100&offset=0", {}, 6000,
+    apiClient.getJson(cataloguePath, catalogueToken, 6000,
         [safeThis](ApiClient::Response response)
         {
             auto* self = safeThis.getComponent();
@@ -1103,6 +1184,14 @@ void MainComponent::refreshOnlineCatalog()
 
             self->rebuildCatalogRows(itemsValue);
 
+            // Count the drafts so the admin knows the toggle did something.
+            int draftCount = 0;
+            if (items != nullptr)
+                for (const auto& item : *items)
+                    if (! static_cast<bool>(
+                            item.getProperty("is_published", juce::var(true))))
+                        ++draftCount;
+
             if (onlineCount <= 0)
             {
                 self->onlineCatalogStatusLabel.setText(
@@ -1111,11 +1200,16 @@ void MainComponent::refreshOnlineCatalog()
             }
             else
             {
-                self->onlineCatalogStatusLabel.setText(
-                    juce::String(onlineCount) + " online song"
-                        + (onlineCount == 1 ? "" : "s")
-                        + " in the catalogue. Select a track and press START SONG.",
-                    juce::dontSendNotification);
+                juce::String status;
+                status << onlineCount << " online song"
+                       << (onlineCount == 1 ? "" : "s")
+                       << " in the catalogue";
+                if (draftCount > 0)
+                    status << " (" << draftCount << " draft"
+                           << (draftCount == 1 ? "" : "s") << ")";
+                status << ". Select a track and press START SONG.";
+                self->onlineCatalogStatusLabel.setText(status,
+                                                       juce::dontSendNotification);
             }
 
             // Personal bests need the token, so they are only fetched when the
@@ -1349,6 +1443,8 @@ void MainComponent::onDailyChallengeClicked()
     // One official attempt per day; after it is used the same song can still
     // be played as a normal practice session.
     currentSessionIsDaily = ! dailyOfficialUsed;
+    // The daily song is always published, so its attempt is never a preview.
+    currentSessionIsPreview = false;
 
     dailyChallengeStatusLabel.setText(
         currentSessionIsDaily
@@ -1425,15 +1521,21 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
     juce::Component::SafePointer<MainComponent> safeThis(this);
     auto download = std::make_shared<OnlineCatalogDownload>();
 
+    // A draft is only reachable with the admin token: the detail lookup and
+    // every file download carry it in preview mode. For a published song (or a
+    // non-admin) the token stays empty and the requests are anonymous exactly
+    // as before.
+    const auto songToken = isAdminPreviewActive() ? onlineAccessToken : juce::String();
+
     // Detail lookup and file downloads run on the ApiClient worker threads.
     // Only the message-thread callback below touches components, the song library
     // or the gameplay state.
-    auto backgroundWork = [download, slug, serverId]()
+    auto backgroundWork = [download, slug, serverId, songToken]()
     {
         if (slug.isEmpty())
             return;
 
-        const auto detailResponse = ApiClient::get("/songs/" + slug, {}, 5000);
+        const auto detailResponse = ApiClient::get("/songs/" + slug, songToken, 5000);
         if (!detailResponse.transportOk)
             return;
 
@@ -1571,6 +1673,7 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
             {
                 const auto writtenBytes = ApiClient::downloadToFile(asset.downloadUrl,
                                                                     asset.targetFile,
+                                                                    songToken,
                                                                     5000);
                 const auto sizeOk = writtenBytes > 0 && writtenBytes == asset.expectedSize;
                 const auto headerOk = !asset.isMidi || (sizeOk && hasMidiHeader(asset.targetFile));
