@@ -1,10 +1,11 @@
 name: macOS build
 
 # Builds the JUCE client for macOS on a GitHub-hosted runner, because the
-# Windows development machine has no Xcode toolchain. The result is an
-# ad-hoc signed .app: users must allow it in System Settings > Privacy &
-# Security (or run `xattr -dr com.apple.quarantine FretFight.app`) before the
-# first launch. Every disk image ships a helper that does this automatically.
+# Windows development machine has no Xcode toolchain. The result is one
+# universal .app (Apple Silicon + Intel), ad-hoc signed: users must allow it in
+# System Settings > Privacy & Security (or run
+# `xattr -dr com.apple.quarantine FretFight.app`) before the first launch.
+# The disk image ships a helper that does this automatically.
 
 on:
   workflow_dispatch:
@@ -48,24 +49,21 @@ jobs:
           echo "Projucer: $PROJUCER"
           "$PROJUCER" --resave "$GITHUB_WORKSPACE/GuitarBattle/GuitarBattle.jucer"
 
-      - name: Build the app (arm64 and x86_64)
+      - name: Build the app (universal)
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/GuitarBattle/Builds/MacOSX"
+          # One universal binary: the same DMG runs on Apple Silicon and Intel.
           # The JUCE target is "<project> - App"; ad-hoc signing needs no
-          # certificate and still produces a runnable bundle. Two separate
-          # builds instead of one universal binary: the Intel and the Apple
-          # Silicon packages are a third smaller each.
-          for arch in arm64 x86_64; do
-            echo "== building $arch"
-            xcodebuild -project GuitarBattle.xcodeproj -target "GuitarBattle - App" \
-              -configuration Release \
-              ARCHS="$arch" ONLY_ACTIVE_ARCH=NO \
-              CONFIGURATION_BUILD_DIR="$PWD/build-$arch" \
-              CODE_SIGN_IDENTITY="-" \
-              | tail -n 40
-            test -d "build-$arch/GuitarBattle.app"
-          done
+          # certificate and still produces a runnable bundle.
+          xcodebuild -project GuitarBattle.xcodeproj -target "GuitarBattle - App" \
+            -configuration Release \
+            ARCHS="arm64 x86_64" ONLY_ACTIVE_ARCH=NO \
+            CONFIGURATION_BUILD_DIR="$PWD/build-universal" \
+            CODE_SIGN_IDENTITY="-" \
+            | tail -n 60
+          test -d "build-universal/GuitarBattle.app"
+          lipo -info "build-universal/GuitarBattle.app/Contents/MacOS/GuitarBattle"
 
       - name: Package
         run: |
@@ -73,14 +71,14 @@ jobs:
           cd "$GITHUB_WORKSPACE/GuitarBattle/Builds/MacOSX"
 
           VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" \
-            build-arm64/GuitarBattle.app/Contents/Info.plist)
+            build-universal/GuitarBattle.app/Contents/Info.plist)
           echo "Version: $VERSION"
 
           # macOS 15+ blocks an ad-hoc signed, not notarized app until the
-          # quarantine attribute is removed. Both disk images ship the same
-          # helper: a one-click .command and a short note. printf is used
-          # instead of a heredoc so the YAML indentation never leaks into the
-          # generated files (the shebang has to start in column 0).
+          # quarantine attribute is removed. The disk image ships a one-click
+          # .command and a short note. printf is used instead of a heredoc so
+          # the YAML indentation never leaks into the generated files (the
+          # shebang has to start in column 0).
           HELPERS="$RUNNER_TEMP/helpers"
           rm -rf "$HELPERS"
           mkdir -p "$HELPERS"
@@ -130,41 +128,35 @@ jobs:
             > "$HELPERS/First launch.command"
           chmod +x "$HELPERS/First launch.command"
 
-          package_arch() {
-            local arch="$1"
-            local work="$RUNNER_TEMP/package-$arch"
-            rm -rf "$work"
-            mkdir -p "$work"
-            cp -R "build-$arch/GuitarBattle.app" "$work/FretFight.app"
+          WORK="$RUNNER_TEMP/package-universal"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          cp -R "build-universal/GuitarBattle.app" "$WORK/FretFight.app"
 
-            local plist="$work/FretFight.app/Contents/Info.plist"
+          PLIST="$WORK/FretFight.app/Contents/Info.plist"
 
-            # The bundle is renamed and re-branded after the build, so the
-            # ad-hoc signature has to be renewed afterwards.
-            /usr/libexec/PlistBuddy -c "Set :CFBundleName FretFight" "$plist"
-            # The key already exists in the JUCE template, so Set comes first
-            # and Add is only the fallback.
-            /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName FretFight" "$plist" 2>/dev/null \
-              || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FretFight" "$plist"
-            /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier online.fretfight.client" "$plist"
-            codesign --force --deep --sign - "$work/FretFight.app"
-            codesign --verify --deep --verbose=2 "$work/FretFight.app"
+          # The bundle is renamed and re-branded after the build, so the ad-hoc
+          # signature has to be renewed afterwards.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName FretFight" "$PLIST"
+          # The key already exists in the JUCE template, so Set comes first and
+          # Add is only the fallback.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName FretFight" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FretFight" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier online.fretfight.client" "$PLIST"
+          codesign --force --deep --sign - "$WORK/FretFight.app"
+          codesign --verify --deep --verbose=2 "$WORK/FretFight.app"
 
-            cp "$HELPERS/README.txt" "$work/README.txt"
-            cp "$HELPERS/First launch.command" "$work/First launch.command"
+          cp "$HELPERS/README.txt" "$WORK/README.txt"
+          cp "$HELPERS/First launch.command" "$WORK/First launch.command"
 
-            # Drag-to-Applications disk image.
-            ln -s /Applications "$work/Applications"
-            hdiutil create -volname "FretFight" -srcfolder "$work" -ov -format UDZO \
-              "$GITHUB_WORKSPACE/FretFight-$VERSION-$arch.dmg"
-            rm -f "$work/Applications"
+          # Drag-to-Applications disk image.
+          ln -s /Applications "$WORK/Applications"
+          hdiutil create -volname "FretFight" -srcfolder "$WORK" -ov -format UDZO \
+            "$GITHUB_WORKSPACE/FretFight-$VERSION.dmg"
+          rm -f "$WORK/Applications"
 
-            ditto -c -k --sequesterRsrc --keepParent "$work/FretFight.app" \
-              "$GITHUB_WORKSPACE/FretFight-$VERSION-$arch.zip"
-          }
-
-          package_arch arm64
-          package_arch x86_64
+          ditto -c -k --sequesterRsrc --keepParent "$WORK/FretFight.app" \
+            "$GITHUB_WORKSPACE/FretFight-$VERSION.zip"
 
           ls -lh "$GITHUB_WORKSPACE"/FretFight-*
 
