@@ -59,6 +59,8 @@ removed after the session.
 - `test_songs.py` — public catalog, admin draft/publish/unpublish, MIDI upload,
   analysis and public download.
 - `test_games.py` — sessions, score submission, history, leaderboards.
+- `test_admin_preview.py` — admin-only draft catalogue (`include_drafts`), draft
+  detail/download, `mode="preview"` sessions and their exclusion from the rating.
 - `test_midi_parser.py` — generated MIDI files and malformed input.
 - `test_achievement_catalog.py` — achievement display texts are English/ASCII,
   codes, `goal`, `xp_bonus` and `category` stay pinned.

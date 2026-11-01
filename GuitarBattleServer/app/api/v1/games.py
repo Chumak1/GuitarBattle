@@ -65,17 +65,22 @@ def _best_score_per_song_subquery():
 @router.post("/games/sessions", response_model=GameSessionResponse, status_code=status.HTTP_201_CREATED)
 def create_session(payload: GameSessionCreate, db: Session = Depends(get_db),
                    user: User = Depends(get_current_user)) -> GameSession:
+    # An archived song never starts a session. An unpublished draft starts one
+    # only for an administrator, and that session is a ``preview``: it is never
+    # ranked, never awards XP and never becomes a personal best. Published
+    # songs keep the documented behaviour.
     song = db.scalar(
         select(Song).where(
             Song.id == payload.song_id,
-            Song.is_published.is_(True),
             Song.archived_at.is_(None),
         )
     )
-    if song is None:
+    if song is None or (
+        not song.is_published and (payload.daily or not user.is_admin)
+    ):
         raise HTTPException(status_code=404, detail="Published song not found")
 
-    mode = "normal"
+    mode = "normal" if song.is_published else "preview"
     if payload.daily:
         # The song of the day is fixed server-side by the weekday schedule; a
         # daily session may only be created for it and only while the official
@@ -171,6 +176,30 @@ def finish_session(session_id: UUID, payload: ScoreSubmit, db: Session = Depends
     session.status = "finished"
     session.finished_at = datetime.now(timezone.utc)
     db.add(score)
+
+    if session.mode == "preview":
+        # A preview attempt on an unpublished draft is history only: no XP, no
+        # achievements, no daily result, no personal best and no rating row.
+        # ``apply_attempt_progression`` is deliberately skipped — it also
+        # writes ``song_best_scores``, which feeds the per-song best scores.
+        try:
+            db.commit()
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=409, detail="Attempt was already submitted")
+        db.refresh(score)
+        return ScoreFinishResponse(
+            **ScoreResponse.model_validate(score).model_dump(),
+            xp_earned=0,
+            xp_total=int(user.xp_total or 0),
+            level=progression.level_for_xp(int(user.xp_total or 0)),
+            level_up=False,
+            xp_to_next=0,
+            xp_remaining=0,
+            personal_best_updated=False,
+            mastery=None,
+            achievements_awarded=[],
+        )
 
     outcome = progression.apply_attempt_progression(
         db, user=user, session=session, score=score, song=song, daily_date=daily_date

@@ -658,6 +658,9 @@ def player_stats(db: Session, user_id: Any) -> dict[str, Any]:
         .where(
             GameSession.user_id == user_id,
             GameSession.status == "finished",
+            # Preview attempts on unpublished drafts are history only; they must
+            # not shift the player's accuracy/speed/versatility statistics.
+            GameSession.mode != "preview",
             Score.completion_percent > STATS_MIN_COMPLETION,
         )
         .order_by(Score.created_at.desc())

@@ -164,35 +164,66 @@ def _submitted_refresh_token(request: Request, payload: RefreshRequest | None) -
     return (raw or "").strip()
 
 
-def get_current_user(
-    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
-    db: Session = Depends(get_db),
-) -> User:
-    unauthorized = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid or missing access token",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    if credentials is None:
-        raise unauthorized
+def _user_from_access_token(raw_token: str, db: Session) -> User | None:
+    """Resolve an access token to an active user, or ``None``.
+
+    Shared by :func:`get_current_user` (which turns ``None`` into 401) and
+    :func:`get_optional_current_user` (which turns it into an anonymous
+    request), so both paths validate the token exactly the same way.
+    """
     try:
         payload = jwt.decode(
-            credentials.credentials,
+            raw_token,
             settings.secret_key,
             algorithms=[JWT_ALGORITHM],
             options={"require": ["sub", "exp", "ver"]},
         )
         if payload.get("type") != "access":
-            raise unauthorized
+            return None
         user_id = UUID(payload["sub"])
         token_version = int(payload["ver"])
     except (jwt.InvalidTokenError, ValueError, KeyError, TypeError):
-        raise unauthorized
+        return None
 
     user = db.scalar(select(User).where(User.id == user_id, User.is_active.is_(True)))
     if user is None or user.token_version != token_version:
-        raise unauthorized
+        return None
     return user
+
+
+def get_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User:
+    user = (
+        _user_from_access_token(credentials.credentials, db)
+        if credentials is not None
+        else None
+    )
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or missing access token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return user
+
+
+def get_optional_current_user(
+    credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme),
+    db: Session = Depends(get_db),
+) -> User | None:
+    """The signed-in user, or ``None`` for an anonymous request.
+
+    Public endpoints use it for *additive* admin behaviour (drafts in the
+    catalogue, preview sessions). A missing, expired or foreign token is
+    treated as anonymous instead of 401: an older client that sends no token
+    keeps the documented public behaviour, and a broken token must never turn
+    a public read into an error.
+    """
+    if credentials is None:
+        return None
+    return _user_from_access_token(credentials.credentials, db)
 
 
 def _find_user_by_email(db: Session, email: str) -> User | None:

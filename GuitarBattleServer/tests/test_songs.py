@@ -44,7 +44,8 @@ def test_publish_makes_song_visible(db_client, draft_song, admin_user):
     assert item["genre"] == draft_song["genre"]
     assert item["bpm"] == draft_song["bpm"]
     assert item["difficulty"] == draft_song["difficulty"]
-    assert "is_published" not in item
+    # Additive field: the client shows a DRAFT badge from it.
+    assert item["is_published"] is True
 
     detail = db_client.get(f"{helpers.API}/songs/{draft_song['slug']}")
     assert detail.status_code == 200

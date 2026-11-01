@@ -65,6 +65,10 @@ class SongSummaryResponse(BaseModel):
     version: int
     description: str | None
     created_at: datetime
+    #: Additive: drafts are only returned to an admin that explicitly asked
+    #: for them (``include_drafts=1``). Older clients ignore the field and keep
+    #: seeing the published catalogue only.
+    is_published: bool = True
     #: Absolute URL of the optional full-mix preview (``role = "preview"``),
     #: or ``None`` when the song has no preview. Additive field: the catalogue
     #: and gameplay keep working without it.

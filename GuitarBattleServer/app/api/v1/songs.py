@@ -5,9 +5,11 @@ from fastapi.responses import FileResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.api.v1.auth import get_optional_current_user
 from app.config import settings
 from app.database import get_db
 from app.models.song import Song, SongFile
+from app.models.user import User
 from app.schemas.songs import (
     SongAssetsResponse,
     SongDetailResponse,
@@ -94,11 +96,22 @@ def list_songs(
     search: str | None = Query(default=None, min_length=1, max_length=100, description="Search title, artist, or slug"),
     genre: str | None = Query(default=None, min_length=1, max_length=80),
     difficulty: int | None = Query(default=None, ge=1, le=10),
+    include_drafts: bool = Query(
+        default=False,
+        description=(
+            "Admin only: also return unpublished drafts. Ignored for anonymous "
+            "or non-admin requests, so the public catalogue never changes."
+        ),
+    ),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> SongListResponse:
     """Return only published songs; drafts remain private to the admin workflow.
+
+    An administrator may ask for drafts with ``include_drafts=1`` and a valid
+    access token; the filter is then relaxed for ``is_published`` only.
 
     Songs holding a Daily Challenge slot (``daily_weekday IS NOT NULL``) are not
     part of the ordinary catalogue. They stay reachable by slug — see
@@ -106,11 +119,15 @@ def list_songs(
     official daily attempt. Archived songs (``archived_at IS NOT NULL``) are
     never served, but their results stay in the database.
     """
+    include_unpublished = (
+        include_drafts and current_user is not None and current_user.is_admin
+    )
     filters = [
-        Song.is_published.is_(True),
         Song.daily_weekday.is_(None),
         Song.archived_at.is_(None),
     ]
+    if not include_unpublished:
+        filters.insert(0, Song.is_published.is_(True))
     if search:
         term = f"%{search.strip()}%"
         filters.append((Song.title.ilike(term)) | (Song.slug.ilike(term)) | (Song.artist.ilike(term)))
@@ -136,19 +153,29 @@ def list_songs(
 
 
 @router.get("/{slug}", response_model=SongDetailResponse, summary="Get a published song")
-def get_song(slug: str, request: Request, db: Session = Depends(get_db)) -> SongDetailResponse:
+def get_song(
+    slug: str,
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
+) -> SongDetailResponse:
     # A daily-challenge song is hidden from the catalogue list but must stay
     # resolvable here: the client calls this endpoint (without a token) to get
-    # the asset URLs of the song of the day. An archived song is not public at
-    # all — its results remain, but its assets are no longer distributed.
+    # the asset URLs of the song of the day. An unpublished draft is served only
+    # to an administrator (draft preview in the desktop client). An archived
+    # song is not public at all — not even for an admin, because the admin
+    # workflow has its own ``/admin/songs/{id}`` endpoints — its results remain,
+    # but its assets are no longer distributed.
     song = db.scalar(
         select(Song).where(
             Song.slug == slug,
-            Song.is_published.is_(True),
             Song.archived_at.is_(None),
         )
     )
-    if song is None:
+    if song is None or (
+        not song.is_published
+        and (current_user is None or not current_user.is_admin)
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
 
     # Serve only the active version of each role. Archived uploads stay
@@ -176,15 +203,21 @@ def download_published_song_file(
     slug: str,
     file_id: UUID,
     db: Session = Depends(get_db),
+    current_user: User | None = Depends(get_optional_current_user),
 ) -> FileResponse:
+    # Draft files are downloadable only by an administrator (draft preview);
+    # archived songs stay unreachable here — the admin panel has its own
+    # ``/admin/songs/{id}/files/{file_id}/download`` route.
     song = db.scalar(
         select(Song).where(
             Song.slug == slug,
-            Song.is_published.is_(True),
             Song.archived_at.is_(None),
         )
     )
-    if song is None:
+    if song is None or (
+        not song.is_published
+        and (current_user is None or not current_user.is_admin)
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Song not found")
 
     record = db.scalar(

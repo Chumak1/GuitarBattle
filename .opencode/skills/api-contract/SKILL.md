@@ -24,12 +24,12 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | POST | `/auth/resend-verification` | `email` | 202, всегда одинаковый ответ |
 | POST | `/auth/forgot-password` | `email` | 202, всегда одинаковый ответ |
 | POST | `/auth/reset-password` | `email`, `code`, `new_password` | `access_token` (+ `refresh_token`, cookie); старые токены и refresh-сессии инвалидируются |
-| GET | `/auth/me` | Bearer | профиль, аддитивно `privacy_consent_at` (`str \| null`) |
+| GET | `/auth/me` | Bearer | профиль, аддитивно `privacy_consent_at` (`str \| null`) и `is_admin` (`bool`, по умолчанию `false`) |
 | PATCH | `/auth/me` | `display_name?`, `username?` (хотя бы одно поле; `username` — 3–32 символа `[A-Za-z0-9_.-]`, приводится к нижнему регистру, 409 если занят) | профиль |
 | POST | `/auth/change-password` | Bearer, `current_password`, `new_password` | 204, без тела; старые токены инвалидируются |
-| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `limit`, `offset` | список опубликованных **без** песен со слотом Daily Challenge; у каждого элемента `readiness` и `preview_url` (`str \| null`, абсолютный URL) |
-| GET | `/songs/{slug}` | — | детали + `version` + `files` + `assets` + `readiness` + `preview_url`; песня дня тоже резолвится (клиент качает ассеты без токена) |
-| GET | `/songs/{slug}/files/{file_id}/download` | — | MIDI/MP3; разрешены роли `midi`, `drums`, `bass`, `guitar`, `others`, `preview` |
+| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `include_drafts?`, `limit`, `offset` | список опубликованных **без** песен со слотом Daily Challenge; у каждого элемента `readiness`, `preview_url` (`str \| null`, абсолютный URL) и `is_published` (`bool`); `include_drafts=1` c admin-JWT добавляет черновики |
+| GET | `/songs/{slug}` | Bearer admin (опционально) | детали + `version` + `files` + `assets` + `readiness` + `preview_url` + `is_published`; песня дня тоже резолвится (клиент качает ассеты без токена); черновик — только админу, архив — никому |
+| GET | `/songs/{slug}/files/{file_id}/download` | Bearer admin (опционально) | MIDI/MP3; разрешены роли `midi`, `drums`, `bass`, `guitar`, `others`, `preview`; файлы черновика — только админу |
 | GET | `/admin/songs` | Bearer admin, `search?`, `published?`, `limit`, `offset` | черновики и опубликованные; у каждой песни `daily_weekday` |
 | POST | `/admin/songs` | Bearer admin, `slug`, `title`, `bpm`, остальные поля опциональны, `daily_weekday?` (0–6 или `null`) | черновик |
 | GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `files[]` (все версии с `is_active`) + `readiness` + `daily_weekday` |
@@ -46,8 +46,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/admin/songs/{id}/files/{file_id}/download` | Bearer admin | файл (активный или архивный) |
 | POST | `/admin/songs/{id}/files/{file_id}/activate` | Bearer admin | 200, файл становится активным для своего `(song, role)`, остальные версии роли — архив; 404 если файл не найден/не относится к песне; `version` песни +1 |
 | POST | `/admin/songs/{id}/files/{file_id}/analyze` | Bearer admin | сохранённый анализ MIDI (404 `MIDI has not been analyzed yet`, если анализ ещё не запускали) |
-| POST | `/games/sessions` | `song_id` (UUID), `speed_percent`, `daily?` (bool, по умолчанию `false`) | сессия; `mode` = `normal`/`daily` |
-| POST | `/games/sessions/{id}/finish` | `score_points`, `accuracy_percent`, `max_combo`, `perfect_count`, `good_count`, `miss_count`, опционально `completion_percent`, `avg_timing_error_ms`, `notes_total`, `notes_played` | score + блок прогрессии (см. ниже) |
+| POST | `/games/sessions` | `song_id` (UUID), `speed_percent`, `daily?` (bool, по умолчанию `false`) | сессия; `mode` = `normal`/`daily`/`preview` (черновик, только админ) |
+| POST | `/games/sessions/{id}/finish` | `score_points`, `accuracy_percent`, `max_combo`, `perfect_count`, `good_count`, `miss_count`, опционально `completion_percent`, `avg_timing_error_ms`, `notes_total`, `notes_played` | score + блок прогрессии (см. ниже); у `preview` прогрессия нулевая |
 | GET | `/games/history` | Bearer, `limit`, `offset` | история |
 | GET | `/games/best-scores` | Bearer | лучший счёт по каждой опубликованной песне вне Daily Challenge + сумма рейтинга |
 | GET | `/leaderboard` | `song_slug?`, `limit`, `offset` | результаты |
@@ -471,12 +471,50 @@ CHECK + индекс) и таблица `daily_slots` (`weekday` PK 0..6, `song_
   панель `#sectionDaily`), 7 строк с «Назначить»/«Очистить»; в форме песни —
   поле «Daily weekday»; в списке песен — бейдж «Daily · Пн».
 
+### Админ-превью черновиков
+
+Администратор (`users.is_admin`) может играть неопубликованную песню до
+публикации. Контракт аддитивный: старый клиент не отправляет ни новых полей, ни
+токена и видит ровно тот же публичный каталог; новый клиент против старого
+сервера просто не получает `is_admin`/`is_published` и работает как раньше.
+
+- `UserResponse.is_admin` (`bool`, default `false`) — отдаётся `/auth/register`,
+  `/auth/me`, `PATCH /auth/me`. Клиент показывает тумблер `ADMIN` только при
+  `true`; сервер всё равно перепроверяет флаг в БД на каждом эндпоинте.
+- `GET /songs?include_drafts=1` — учитывается только вместе с валидным
+  admin-JWT. Тогда снимается **только** фильтр `is_published`; `archived_at IS
+  NULL` и `daily_weekday IS NULL` остаются. Без токена, с токеном не-админа или
+  с битым токеном ответ прежний (публичный каталог, не 401).
+- `SongSummaryResponse.is_published` (`bool`, default `true`) — у каждого
+  элемента `/songs` и в деталях. Клиент рисует бейдж `DRAFT`.
+- `GET /songs/{slug}` и `GET /songs/{slug}/files/{file_id}/download` —
+  неопубликованную песню отдают только при валидном admin-JWT, иначе `404 Song
+  not found`. **Архивная песня недоступна и админу** (у админки свои
+  `/admin/songs/{id}` маршруты): `archived_at IS NOT NULL` → 404.
+- `POST /games/sessions` для черновика: админ получает `201` с `mode="preview"`;
+  не-админ — прежний `404 Published song not found`. `daily: true` для черновика
+  — `404` (песня дня обязана быть опубликованной).
+- `POST /games/sessions/{id}/finish` для `mode="preview"`: `Score` сохраняется
+  (история), но `apply_attempt_progression` не вызывается — нет XP, ачивок,
+  daily-результата, `song_best_scores` и записи в рейтинге. Ответ: `xp_earned=0`,
+  `level_up=false`, `personal_best_updated=false`, `mastery=null`,
+  `achievements_awarded=[]`, `xp_to_next=0`, `xp_remaining=0`, `xp_total`/`level`
+  — текущие значения игрока.
+- Preview-сессии исключены из рейтинга (`_best_score_per_song_subquery` и
+  `/games/best-scores` фильтруют `mode == "normal"`), из `/leaderboard`
+  (требует `Song.is_published`), из `/profile/personal-bests` (нет строки
+  `song_best_scores`) и из статистики `player_stats` (`mode != "preview"`).
+- Тесты: `tests/test_admin_preview.py`.
+
 ## Где искать в клиенте
 
 `Source/Network/ApiClient.h` — единственное место HTTP-запросов (`get`, `post`, `getJson`,
 `postJson`, `download`, `downloadToFile`, `runAsync`). Запросы выполняются на
 `juce::ThreadPool` внутри `ApiClient`, результат приходит в UI через
 `juce::MessageManager::callAsync`; синхронных вызовов из обработчиков кнопок нет.
+`get(path, timeout)`, `download(path, timeout)` и `downloadToFile(path, file,
+timeout)` — анонимные перегрузки; вариант с `bearerToken` добавляет заголовок
+`Authorization: Bearer <token>`. Пустой токен = прежнее поведение без заголовка.
 
 `Source/Network/ClientAssets.h` — манифест, проверка кэша, скачивание и
 распаковка `bundle.zip`; `MainComponent::refreshClientAssets` /
@@ -502,6 +540,14 @@ CHECK + индекс) и таблица `daily_slots` (`weekday` PK 0..6, `song_
   песня не назначена»; это нормальный ответ, кнопку официальной попытки нужно
   скрыть. Поле `weekday` — 0=Пн…6=Вс (UTC).
 - `startSelectedSong` / `downloadOnlineSong` — выбор строки каталога и загрузка ассетов по требованию.
+  В admin-превью запросы идут с `Authorization` (детали + каждый файл), иначе —
+  анонимно, как раньше.
+- Админ-превью: `onlineIsAdmin` (из `is_admin` в `/auth/me`), `adminPreviewMode`
+  (тумблер `ADMIN` в шапке, ключ `AdminPreviewMode` в `appProperties`),
+  `currentSessionIsPreview` (из `mode` ответа `/games/sessions`). Каталог в этом
+  режиме запрашивается как `/songs?limit=100&offset=0&include_drafts=1` с
+  токеном; строки с `is_published=false` помечаются бейджем `DRAFT`, а в игре и
+  на экране результатов рисуется «PREVIEW - NOT RANKED».
 - Телеметрия активности (`/activity/heartbeat`, `/activity/game-launch`) — из
   worker-потока, без блокировки UI-потока.
 - Поиск по `apiClient.`, `ApiClient::get`, `ApiClient::post`.
@@ -548,6 +594,13 @@ CHECK + индекс) и таблица `daily_slots` (`weekday` PK 0..6, `song_
   качает ассеты песни дня этим запросом без `Authorization`.
 - `weekday` в `/daily/today` и `/admin/daily` — 0=Пн…6=Вс (UTC), а не ISO 1–7.
 - `song` в `/daily/today` может быть `null`; это не ошибка и не 404.
+- `is_admin` в `/auth/me` — только подсказка для UI. Нельзя полагаться на него
+  как на разрешение: сервер проверяет `users.is_admin` в БД на каждом запросе, а
+  `include_drafts`/детали/скачивание черновика без admin-JWT дают 404 или
+  публичный ответ.
+- Черновик (`mode="preview"`) не даёт XP, ачивок, личного рекорда и рейтинга.
+  Не показывайте блок прогрессии по `finish` preview-сессии и не ждите строку в
+  `/games/best-scores`.
 - Повторный `finish` (в том числе параллельный) даёт 409 и не начисляет XP —
   это нормальный ответ, а не сбой.
 - `mastery` в ответе `finish` — объект, а `achievements_awarded` — массив объектов,

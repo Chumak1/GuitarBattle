@@ -107,6 +107,10 @@ class UserResponse(BaseModel):
     created_at: datetime
     # Additive: NULL for accounts created before the consent requirement.
     privacy_consent_at: datetime | None = None
+    #: Additive: lets the desktop client show the admin-only tools (draft
+    #: preview). The server never trusts this flag — every admin-only endpoint
+    #: re-checks ``User.is_admin`` from the database.
+    is_admin: bool = False
 
 
 class ProfileUpdateRequest(BaseModel):
