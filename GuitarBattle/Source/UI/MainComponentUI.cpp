@@ -443,10 +443,28 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
     const auto& song = owner.catalogSongs[static_cast<size_t>(rowNumber)];
     const auto row = juce::Rectangle<int>(0, 0, width, height).reduced(3, 4);
 
-    g.setColour(rowIsSelected ? UiColors::accent.withAlpha(0.16f)
-                              : UiColors::surface2.withAlpha(0.55f));
+    // A locked tier sits on the page background with a faint border, so it
+    // reads as "not yet" even before the eye reaches the requirement text.
+    const bool unlocked = owner.isSongUnlocked(song);
+
+    if (rowIsSelected)
+    {
+        g.setColour(UiColors::accent.withAlpha(0.16f));
+    }
+    else if (unlocked)
+    {
+        g.setColour(UiColors::surface2.withAlpha(0.55f));
+    }
+    else
+    {
+        g.setColour(UiColors::background.withAlpha(0.85f));
+    }
+
     g.fillRoundedRectangle(row.toFloat(), 12.0f);
-    g.setColour(rowIsSelected ? UiColors::accent.withAlpha(0.55f) : UiColors::border);
+
+    g.setColour(rowIsSelected ? UiColors::accent.withAlpha(0.55f)
+                              : (unlocked ? UiColors::border
+                                          : UiColors::border.withAlpha(0.45f)));
     g.drawRoundedRectangle(row.toFloat().reduced(0.5f), 12.0f, 1.0f);
 
     if (rowIsSelected)
@@ -473,8 +491,6 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
 
     // A locked tier keeps its row visible, so the player can see what is
     // waiting for them, but the title is dimmed like a disabled item.
-    const bool unlocked = owner.isSongUnlocked(song);
-
     g.setColour(unlocked ? UiColors::text : UiColors::muted);
     g.setFont(titleFont);
     g.drawFittedText(song.title, titleLine,
@@ -502,9 +518,12 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
     const auto levelPill = levelSlot.withSizeKeepingCentre(
         levelWidth, juce::jmin(16, levelSlot.getHeight())).toFloat();
 
-    g.setColour(UiColors::accent.withAlpha(rowIsSelected ? 0.22f : 0.14f));
+    // The level tag is gold only for a playable row; a locked one is neutral,
+    // so the gold in the list always means "you can play this now".
+    g.setColour(unlocked ? UiColors::accent.withAlpha(rowIsSelected ? 0.22f : 0.14f)
+                         : UiColors::border.withAlpha(0.35f));
     g.fillRoundedRectangle(levelPill, 6.0f);
-    g.setColour(UiColors::accent);
+    g.setColour(unlocked ? UiColors::accent : UiColors::muted);
     g.setFont(tagFont);
     g.drawFittedText("LVL " + juce::String(juce::jlimit(1, 10, song.difficulty)),
                      levelPill.toNearestInt().reduced(3, 0),
