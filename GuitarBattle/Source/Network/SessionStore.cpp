@@ -4,6 +4,8 @@
  #include <windows.h>
  #include <wincred.h>
  #pragma comment(lib, "Advapi32.lib")
+#elif JUCE_MAC
+ #include <Security/Security.h>
 #endif
 
 namespace SessionStore
@@ -66,6 +68,116 @@ namespace SessionStore
     void clearRefreshToken()
     {
         CredDeleteW(credentialTarget, CRED_TYPE_GENERIC, 0);
+    }
+#elif JUCE_MAC
+    namespace
+    {
+        // One generic-password item in the login keychain, keyed by service and
+        // account exactly like the Windows Credential Manager entry.
+        constexpr const char* keychainService = "FretFight/Session";
+        constexpr const char* keychainAccount = "refresh_token";
+
+        CFMutableDictionaryRef makeKeychainQuery()
+        {
+            CFMutableDictionaryRef query = CFDictionaryCreateMutable(
+                kCFAllocatorDefault, 0,
+                &kCFTypeDictionaryKeyCallBacks,
+                &kCFTypeDictionaryValueCallBacks);
+
+            CFDictionarySetValue(query, kSecClass, kSecClassGenericPassword);
+
+            if (CFStringRef service = CFStringCreateWithCString(
+                    kCFAllocatorDefault, keychainService, kCFStringEncodingUTF8))
+            {
+                CFDictionarySetValue(query, kSecAttrService, service);
+                CFRelease(service);
+            }
+
+            if (CFStringRef account = CFStringCreateWithCString(
+                    kCFAllocatorDefault, keychainAccount, kCFStringEncodingUTF8))
+            {
+                CFDictionarySetValue(query, kSecAttrAccount, account);
+                CFRelease(account);
+            }
+
+            return query;
+        }
+    }
+
+    void clearRefreshToken()
+    {
+        CFMutableDictionaryRef query = makeKeychainQuery();
+        SecItemDelete(query);
+        CFRelease(query);
+    }
+
+    bool saveRefreshToken(const juce::String& token)
+    {
+        if (token.isEmpty())
+            return false;
+
+        // Replacing is a delete + add: SecItemUpdate needs the same dictionary
+        // shape and the delete keeps a stale entry from surviving.
+        clearRefreshToken();
+
+        CFMutableDictionaryRef query = makeKeychainQuery();
+
+        CFDataRef data = CFDataCreate(
+            kCFAllocatorDefault,
+            reinterpret_cast<const UInt8*>(token.toRawUTF8()),
+            static_cast<CFIndex>(token.getNumBytesAsUTF8()));
+
+        if (data == nullptr)
+        {
+            CFRelease(query);
+            return false;
+        }
+
+        CFDictionarySetValue(query, kSecValueData, data);
+        CFDictionarySetValue(query, kSecAttrAccessible,
+                             kSecAttrAccessibleAfterFirstUnlock);
+
+        const OSStatus status = SecItemAdd(query, nullptr);
+
+        CFRelease(data);
+        CFRelease(query);
+
+        return status == errSecSuccess;
+    }
+
+    juce::String loadRefreshToken()
+    {
+        CFMutableDictionaryRef query = makeKeychainQuery();
+        CFDictionarySetValue(query, kSecReturnData, kCFBooleanTrue);
+        CFDictionarySetValue(query, kSecMatchLimit, kSecMatchLimitOne);
+
+        CFTypeRef result = nullptr;
+        const OSStatus status = SecItemCopyMatching(query, &result);
+        CFRelease(query);
+
+        if (status != errSecSuccess || result == nullptr)
+            return {};
+
+        juce::String token;
+
+        if (CFGetTypeID(result) == CFDataGetTypeID())
+        {
+            const auto* bytes = reinterpret_cast<const char*>(
+                CFDataGetBytePtr(static_cast<CFDataRef>(result)));
+            const auto size = static_cast<int>(
+                CFDataGetLength(static_cast<CFDataRef>(result)));
+
+            if (bytes != nullptr && size > 0)
+                token = juce::String::fromUTF8(bytes, size);
+        }
+
+        CFRelease(result);
+        return token.trim();
+    }
+
+    bool hasRefreshToken()
+    {
+        return loadRefreshToken().isNotEmpty();
     }
 #else
     bool saveRefreshToken(const juce::String&) { return false; }

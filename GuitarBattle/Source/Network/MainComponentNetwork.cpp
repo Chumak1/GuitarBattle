@@ -2191,6 +2191,14 @@ void MainComponent::startUpdateDownload (const juce::String& version,
                                          const juce::String& filename,
                                          juce::int64 sizeBytes)
 {
+   #if JUCE_MAC
+    juce::ignoreUnused (version, downloadUrl, filename, sizeBytes);
+
+    // The build published on the site is the Windows installer. A Mac needs the
+    // .dmg from the download page, so the update opens that page instead of
+    // downloading a file the system cannot run.
+    juce::URL (juce::String (ApiClient::serverOrigin) + "/").launchInDefaultBrowser();
+   #else
     auto updateDirectory = juce::File::getSpecialLocation (juce::File::tempDirectory)
                                .getChildFile ("FretFightUpdate");
     updateDirectory.deleteRecursively();
@@ -2233,6 +2241,7 @@ void MainComponent::startUpdateDownload (const juce::String& version,
         });
 
     task->launchThread();
+   #endif
 }
 
 void MainComponent::installDownloadedUpdate (const juce::File& installerFile)

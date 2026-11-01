@@ -64,13 +64,40 @@ jobs:
           APP=$(find "$GITHUB_WORKSPACE/GuitarBattle/Builds/MacOSX" -maxdepth 5 -type d -name "*.app" | head -n 1)
           echo "App bundle: $APP"
           test -n "$APP"
-          ditto -c -k --sequesterRsrc --keepParent "$APP" "$GITHUB_WORKSPACE/FretFight-macOS.zip"
-          ls -lh "$GITHUB_WORKSPACE/FretFight-macOS.zip"
+
+          WORK="$RUNNER_TEMP/package"
+          rm -rf "$WORK"
+          mkdir -p "$WORK"
+          cp -R "$APP" "$WORK/FretFight.app"
+
+          PLIST="$WORK/FretFight.app/Contents/Info.plist"
+          VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$PLIST")
+          echo "Version: $VERSION"
+
+          # The bundle is renamed and re-branded after the build, so the ad-hoc
+          # signature has to be renewed afterwards.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName FretFight" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FretFight" "$PLIST" || true
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier online.fretfight.client" "$PLIST"
+          codesign --force --deep --sign - "$WORK/FretFight.app"
+          codesign --verify --deep --verbose=2 "$WORK/FretFight.app"
+
+          # Drag-to-Applications disk image.
+          ln -s /Applications "$WORK/Applications"
+          hdiutil create -volname "FretFight" -srcfolder "$WORK" -ov -format UDZO \
+            "$GITHUB_WORKSPACE/FretFight-$VERSION.dmg"
+          rm -f "$WORK/Applications"
+
+          ditto -c -k --sequesterRsrc --keepParent "$WORK/FretFight.app" \
+            "$GITHUB_WORKSPACE/FretFight-macOS.zip"
+          ls -lh "$GITHUB_WORKSPACE"/FretFight-*
 
       - name: Upload the artifact
         uses: actions/upload-artifact@v4
         with:
           name: FretFight-macOS
-          path: FretFight-macOS.zip
+          path: |
+            FretFight-*.dmg
+            FretFight-macOS.zip
           if-no-files-found: error
           retention-days: 30
