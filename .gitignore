@@ -49,3 +49,6 @@ desktop.ini
 
 # test artifacts
 pytest-out.txt
+
+# Local build artifacts (installers, macOS bundles)
+docs/Output/
