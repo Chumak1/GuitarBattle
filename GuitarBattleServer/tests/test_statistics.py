@@ -296,6 +296,167 @@ def test_users_statistics_aggregate(db_client, db_session, admin_user):
     assert admin_row["xp_total"] >= 0
 
 
+def test_users_statistics_exposes_platforms_newest_first(db_client, db_session, admin_user):
+    token = uuid.uuid4().hex[:6]
+    player = helpers.register_user(db_client, username=f"plat{token}")
+    now = _utc_now()
+    db_session.add_all(
+        [
+            AppSession(
+                user_id=uuid.UUID(player["id"]),
+                client_session_id="windows-old",
+                started_at=now - timedelta(days=3),
+                last_seen_at=now - timedelta(days=2),
+                platform="Windows 11",
+            ),
+            AppSession(
+                user_id=uuid.UUID(player["id"]),
+                client_session_id="windows-new",
+                started_at=now - timedelta(hours=6),
+                last_seen_at=now - timedelta(hours=5),
+                platform="Windows 11",
+            ),
+            AppSession(
+                user_id=uuid.UUID(player["id"]),
+                client_session_id="mac",
+                started_at=now - timedelta(hours=2),
+                last_seen_at=now - timedelta(hours=1),
+                platform="Mac OSX 26.1",
+            ),
+            AppSession(
+                user_id=uuid.UUID(player["id"]),
+                client_session_id="linux",
+                started_at=now - timedelta(days=10),
+                last_seen_at=now - timedelta(days=9),
+                platform="Linux",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"search": token},
+        headers=admin_user["headers"],
+    )
+    assert response.status_code == 200, response.text
+    items = response.json()["items"]
+    assert [item["username"] for item in items] == [player["username"]]
+    row = items[0]
+
+    # One entry per distinct raw OS name, most recent heartbeat first.
+    assert [platform["name"] for platform in row["platforms"]] == [
+        "Mac OSX 26.1",
+        "Windows 11",
+        "Linux",
+    ]
+    assert [platform["family"] for platform in row["platforms"]] == [
+        "macOS",
+        "Windows",
+        "Linux",
+    ]
+    # Repeated sessions on the same platform are counted, not duplicated.
+    assert [platform["sessions"] for platform in row["platforms"]] == [1, 2, 1]
+    assert row["last_platform"] == "Mac OSX 26.1"
+    assert row["platforms"][0]["last_seen_at"] is not None
+
+
+def test_users_statistics_platforms_empty_without_sessions(db_client, admin_user):
+    player = helpers.register_user(db_client)
+
+    response = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"search": player["username"]},
+        headers=admin_user["headers"],
+    )
+    assert response.status_code == 200, response.text
+    row = response.json()["items"][0]
+    assert row["user_id"] == player["id"]
+    # Additive field: always present, empty when the account never reported one.
+    assert row["platforms"] == []
+    assert row["last_platform"] is None
+
+
+def test_users_statistics_platforms_ignore_null_platform(db_client, db_session, admin_user):
+    token = uuid.uuid4().hex[:6]
+    player = helpers.register_user(db_client, username=f"legacy{token}")
+    now = _utc_now()
+    db_session.add_all(
+        [
+            # A session written before the client sent an OS name.
+            AppSession(
+                user_id=uuid.UUID(player["id"]),
+                client_session_id="no-platform",
+                started_at=now - timedelta(hours=4),
+                last_seen_at=now - timedelta(hours=3),
+                platform=None,
+            ),
+            AppSession(
+                user_id=uuid.UUID(player["id"]),
+                client_session_id="mac",
+                started_at=now - timedelta(hours=2),
+                last_seen_at=now - timedelta(hours=1),
+                platform="Mac OSX 26.1",
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"search": token},
+        headers=admin_user["headers"],
+    )
+    assert response.status_code == 200, response.text
+    row = response.json()["items"][0]
+    assert [platform["name"] for platform in row["platforms"]] == ["Mac OSX 26.1"]
+    assert row["last_platform"] == "Mac OSX 26.1"
+    # The platform aggregate ignores NULL, the session counter still does not.
+    assert row["sessions_count"] == 2
+
+
+def test_users_statistics_platforms_keep_pagination_and_search(db_client, db_session, admin_user):
+    token = uuid.uuid4().hex[:6]
+    busy = helpers.register_user(db_client, username=f"pg{token}a")
+    idle = helpers.register_user(db_client, username=f"pg{token}b")
+    now = _utc_now()
+    db_session.add(
+        AppSession(
+            user_id=uuid.UUID(busy["id"]),
+            client_session_id="busy",
+            started_at=now - timedelta(minutes=30),
+            last_seen_at=now - timedelta(minutes=20),
+            platform="Windows 11",
+        )
+    )
+    db_session.commit()
+
+    first_page = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"search": token, "sort": "username", "limit": 1, "offset": 0},
+        headers=admin_user["headers"],
+    )
+    assert first_page.status_code == 200, first_page.text
+    payload = first_page.json()
+    # The extra aggregate must not change paging or the search filter.
+    assert payload["total"] == 2
+    assert payload["limit"] == 1
+    assert payload["offset"] == 0
+    assert [item["username"] for item in payload["items"]] == [busy["username"]]
+    assert [p["name"] for p in payload["items"][0]["platforms"]] == ["Windows 11"]
+
+    second_page = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"search": token, "sort": "username", "limit": 1, "offset": 1},
+        headers=admin_user["headers"],
+    )
+    assert second_page.status_code == 200, second_page.text
+    assert [item["username"] for item in second_page.json()["items"]] == [
+        idle["username"]
+    ]
+    assert second_page.json()["items"][0]["platforms"] == []
+
+
 def test_users_statistics_search_is_case_insensitive(db_client, admin_user):
     active = helpers.register_user(
         db_client, username=helpers.unique("searched"), display_name="ZZ Top"

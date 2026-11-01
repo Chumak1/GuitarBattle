@@ -1173,6 +1173,59 @@ code {
   cursor: not-allowed;
 }
 
+/* Platform badges in the users table. One badge per OS family, newest first;
+ * the raw client string, session count and last visit are in the tooltip. */
+.stats-platforms {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-wrap: nowrap;
+}
+
+.stats-platform {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid var(--gb-border-strong);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.04);
+  color: #cbd6e2;
+  font-size: 0.68rem;
+  font-weight: 650;
+  line-height: 1.55;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.stats-platform-windows {
+  border-color: rgba(109, 183, 255, 0.4);
+  color: var(--gb-blue);
+}
+
+.stats-platform-macos {
+  border-color: rgba(199, 166, 255, 0.4);
+  color: #c7a6ff;
+}
+
+.stats-platform-linux {
+  border-color: rgba(255, 183, 3, 0.4);
+  color: var(--gb-accent-strong);
+}
+
+.stats-platform-unknown {
+  color: var(--gb-muted);
+}
+
+.stats-platform-more {
+  border-style: dashed;
+  color: var(--gb-muted);
+}
+
+.stats-platforms-empty {
+  color: var(--gb-muted);
+}
+
 /* ---------- support page CMS (admin-support.js) ---------- */
 
 .support-status {

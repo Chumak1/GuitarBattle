@@ -194,6 +194,84 @@
     return new Date(Math.max(...candidates)).toISOString();
   }
 
+  /* ---------- platforms ---------- */
+
+  const PLATFORM_BADGE_LIMIT = 2;
+  const PLATFORM_MODIFIERS = {
+    Windows: "stats-platform-windows",
+    macOS: "stats-platform-macos",
+    Linux: "stats-platform-linux",
+  };
+
+  function plural(count, one, few, many) {
+    const value = Math.abs(Number(count) || 0);
+    const mod10 = value % 10;
+    const mod100 = value % 100;
+    if (mod10 === 1 && mod100 !== 11) return one;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+    return many;
+  }
+
+  function sessionsLabel(count) {
+    return formatNumber(count) + " " + plural(count, "сессия", "сессии", "сессий");
+  }
+
+  /* The API returns one entry per raw OS name ("Windows 11", "Windows 10"),
+   * newest first. The table shows one badge per family, so equal families are
+   * merged while the raw names stay available in the tooltip. */
+  function platformGroups(user) {
+    const groups = new Map();
+    (user.platforms || []).forEach((platform) => {
+      const family = platform.family || "Unknown";
+      const existing = groups.get(family);
+      if (existing) {
+        existing.push(platform);
+        return;
+      }
+      groups.set(family, [platform]);
+    });
+    return Array.from(groups, ([family, names]) => ({ family, names }));
+  }
+
+  function platformTooltip(group) {
+    return group.names
+      .map(
+        (platform) =>
+          platform.name +
+          " — " +
+          sessionsLabel(platform.sessions) +
+          ", последний визит " +
+          formatDateTime(platform.last_seen_at),
+      )
+      .join("\n");
+  }
+
+  function platformBadge(group) {
+    const modifier = PLATFORM_MODIFIERS[group.family] || "stats-platform-unknown";
+    return (
+      '<span class="stats-platform ' + modifier + '" title="' +
+      escapeHtml(platformTooltip(group)) + '">' +
+      escapeHtml(group.family) + "</span>"
+    );
+  }
+
+  function platformsCell(user) {
+    const groups = platformGroups(user);
+    if (!groups.length) {
+      return '<span class="stats-platforms-empty">—</span>';
+    }
+    const shown = groups.slice(0, PLATFORM_BADGE_LIMIT);
+    const rest = groups.slice(PLATFORM_BADGE_LIMIT);
+    const badges = shown.map(platformBadge);
+    if (rest.length) {
+      badges.push(
+        '<span class="stats-platform stats-platform-more" title="' +
+          escapeHtml(rest.map(platformTooltip).join("\n")) + '">+' + rest.length + "</span>",
+      );
+    }
+    return '<div class="stats-platforms">' + badges.join("") + "</div>";
+  }
+
   /* ---------- overview ---------- */
 
   function renderOverview(overview) {
@@ -301,6 +379,7 @@
       "<td><span class=\"text-nowrap\">LVL " + formatNumber(user.level) + "</span>" +
       (user.xp_total == null ? "" :
         '<div class="stats-mono">' + formatNumber(user.xp_total) + " XP</div>") + "</td>" +
+      '<td class="d-none d-lg-table-cell">' + platformsCell(user) + "</td>" +
       '<td class="d-none d-xl-table-cell">' +
       '<span class="text-nowrap small text-secondary">' + formatDateTime(user.last_launch_at) + "</span>" +
       "</td>" +
@@ -324,7 +403,7 @@
         ? "Никого не нашли по этому запросу."
         : "Пока нет ни одного игрока.";
       body.innerHTML =
-        '<tr><td colspan="11" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
+        '<tr><td colspan="12" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
     } else {
       body.innerHTML = state.users.map(userRow).join("");
     }
@@ -344,7 +423,7 @@
     });
     if (loading) {
       el("statsUsersBody").innerHTML =
-        '<tr><td colspan="11" class="table-loading">' +
+        '<tr><td colspan="12" class="table-loading">' +
         '<span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
     }
   }

@@ -86,6 +86,20 @@ class StatisticsOverview(BaseModel):
     launches_24h: int
 
 
+class UserPlatform(BaseModel):
+    """One distinct OS name a user's client reported, newest first.
+
+    ``name`` is the raw ``juce::SystemStats::getOperatingSystemName()`` string
+    (``Windows 11``, ``Mac OSX 26.1``), ``family`` is the normalized value for
+    display (``Windows``, ``macOS``, ``Linux``, ``Unknown``).
+    """
+
+    name: str
+    family: str
+    last_seen_at: datetime
+    sessions: int
+
+
 class StatisticsUserItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -107,6 +121,11 @@ class StatisticsUserItem(BaseModel):
     # Server-authoritative progression.
     level: int
     xp_total: int
+    # Distinct OS names seen in the user's app sessions, sorted by the newest
+    # heartbeat first. Empty for accounts that never reported a platform, so
+    # older admin clients that ignore the field keep working.
+    platforms: list[UserPlatform] = Field(default_factory=list)
+    last_platform: str | None = None
 
 
 class StatisticsUserList(BaseModel):

@@ -6,6 +6,7 @@ database never issues an N+1 query per user.
 """
 from datetime import datetime, timedelta, timezone
 from typing import Literal
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import and_, func, or_, select
@@ -23,7 +24,9 @@ from app.schemas.statistics import (
     StatisticsOverview,
     StatisticsUserItem,
     StatisticsUserList,
+    UserPlatform,
 )
+from app.services.platforms import normalize_platform
 
 router = APIRouter(prefix="/admin/statistics", tags=["admin: statistics"])
 
@@ -62,6 +65,57 @@ def _search_filter(search: str):
         User.display_name.ilike(pattern, escape="\\"),
         User.email.ilike(pattern, escape="\\"),
     )
+
+
+def _platforms_by_user(
+    db: Session, user_ids: list[UUID]
+) -> dict[UUID, list[UserPlatform]]:
+    """Group the app sessions of one page of users by reported OS name.
+
+    A single ``GROUP BY`` query for the whole page keeps the endpoint free of
+    N+1 queries: every heartbeat collapses into one row per
+    (user, raw platform), newest first. ``platform IS NULL`` marks sessions
+    written before the client sent an OS name and is skipped, as is an empty
+    string from an older heartbeat.
+    """
+    if not user_ids:
+        return {}
+
+    last_seen = func.max(AppSession.last_seen_at).label("last_seen_at")
+    session_count = func.count(AppSession.id).label("sessions")
+    rows = db.execute(
+        select(
+            AppSession.user_id,
+            AppSession.platform,
+            last_seen,
+            session_count,
+        )
+        .where(
+            AppSession.user_id.in_(user_ids),
+            AppSession.platform.is_not(None),
+            AppSession.platform != "",
+        )
+        .group_by(AppSession.user_id, AppSession.platform)
+        .order_by(
+            AppSession.user_id,
+            last_seen.desc(),
+            AppSession.platform.asc(),
+        )
+    ).all()
+
+    platforms: dict[UUID, list[UserPlatform]] = {}
+    for row in rows:
+        if not row.platform or not row.platform.strip():
+            continue
+        platforms.setdefault(row.user_id, []).append(
+            UserPlatform(
+                name=row.platform,
+                family=normalize_platform(row.platform),
+                last_seen_at=row.last_seen_at,
+                sessions=int(row.sessions or 0),
+            )
+        )
+    return platforms
 
 
 @router.get("/overview", response_model=StatisticsOverview, summary="Aggregate activity overview")
@@ -158,6 +212,10 @@ def statistics_users(
     who only started a game still appear as recently active. Text columns are
     compared case-insensitively, empty values go last in both directions, and
     ``username``/``id`` break ties so paging is stable.
+
+    ``platforms`` is filled by one grouped query for the users on the current
+    page (see :func:`_platforms_by_user`), so it adds a single round trip no
+    matter how many rows are returned.
     """
     session_agg = (
         select(
@@ -262,27 +320,34 @@ def statistics_users(
 
     total = db.scalar(select(func.count(User.id)).where(*conditions)) or 0
 
-    items = [
-        StatisticsUserItem(
-            user_id=row.user_id,
-            username=row.username,
-            display_name=row.display_name,
-            email=row.email,
-            is_active=row.is_active,
-            created_at=row.created_at,
-            app_seconds_total=int(row.app_seconds_total or 0),
-            sessions_count=int(row.sessions_count or 0),
-            last_seen_at=row.last_seen_at,
-            launches_count=int(row.launches_count or 0),
-            last_launch_at=row.last_launch_at,
-            games_distinct=int(row.games_distinct or 0),
-            scores_count=int(row.scores_count or 0),
-            best_score=int(row.best_score) if row.best_score is not None else None,
-            level=int(row.level or 1),
-            xp_total=int(row.xp_total or 0),
+    # One extra query for the whole page: the platforms of every listed user.
+    platforms_by_user = _platforms_by_user(db, [row.user_id for row in rows])
+
+    items = []
+    for row in rows:
+        platforms = platforms_by_user.get(row.user_id, [])
+        items.append(
+            StatisticsUserItem(
+                user_id=row.user_id,
+                username=row.username,
+                display_name=row.display_name,
+                email=row.email,
+                is_active=row.is_active,
+                created_at=row.created_at,
+                app_seconds_total=int(row.app_seconds_total or 0),
+                sessions_count=int(row.sessions_count or 0),
+                last_seen_at=row.last_seen_at,
+                launches_count=int(row.launches_count or 0),
+                last_launch_at=row.last_launch_at,
+                games_distinct=int(row.games_distinct or 0),
+                scores_count=int(row.scores_count or 0),
+                best_score=int(row.best_score) if row.best_score is not None else None,
+                level=int(row.level or 1),
+                xp_total=int(row.xp_total or 0),
+                platforms=platforms,
+                last_platform=platforms[0].name if platforms else None,
+            )
         )
-        for row in rows
-    ]
     return StatisticsUserList(items=items, total=int(total), limit=limit, offset=offset)
 
 
