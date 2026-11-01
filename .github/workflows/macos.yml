@@ -77,7 +77,10 @@ jobs:
           # The bundle is renamed and re-branded after the build, so the ad-hoc
           # signature has to be renewed afterwards.
           /usr/libexec/PlistBuddy -c "Set :CFBundleName FretFight" "$PLIST"
-          /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FretFight" "$PLIST" || true
+          # The key already exists in the JUCE template, so Set comes first and
+          # Add is only the fallback.
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName FretFight" "$PLIST" 2>/dev/null \
+            || /usr/libexec/PlistBuddy -c "Add :CFBundleDisplayName string FretFight" "$PLIST"
           /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier online.fretfight.client" "$PLIST"
           codesign --force --deep --sign - "$WORK/FretFight.app"
           codesign --verify --deep --verbose=2 "$WORK/FretFight.app"
