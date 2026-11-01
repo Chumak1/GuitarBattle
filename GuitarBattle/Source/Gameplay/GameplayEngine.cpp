@@ -13,7 +13,12 @@ GameplayEngine::NoteEvaluation GameplayEngine::evaluateNote(
 {
     NoteEvaluation result;
     result.correctPitch = detectedMidi == targetMidi;
-    result.insideTimingWindow = std::abs(timingErrorMs) < 150.0;
+
+    // The same scale that widens the score curve widens the hard hit window,
+    // so a note that is inside the window is never scored as a miss.
+    const double windowScale =
+        ScoringSystem::getTimingWindowScale(songLevel, speedPercent);
+    result.insideTimingWindow = std::abs(timingErrorMs) < 150.0 * windowScale;
 
     const double targetFrequency =
         440.0 * std::pow(2.0, (static_cast<double>(targetMidi) - 69.0) / 12.0);

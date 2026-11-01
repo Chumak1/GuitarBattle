@@ -477,12 +477,23 @@ public:
                             int currentTargetIndex =
                                 owner.gameSession.getTargetNoteIndex();
 
+                            // Easy charts and slower playback widen the timing
+                            // window (see ScoringSystem::getTimingWindowScale).
+                            // The miss and stale-onset guards below must use the
+                            // same value as the scoring path: a note inside the
+                            // widened window must reach evaluateNote() instead
+                            // of being skipped as late.
+                            const double timingWindowScale =
+                                ScoringSystem::getTimingWindowScale(
+                                    owner.songLevel.load(std::memory_order_relaxed),
+                                    owner.speedPercent.load(std::memory_order_relaxed));
+
                             // Catch up targets whose late-hit window has already
                             // passed before evaluating this detected attack. The
                             // same attack can then be tested against the next
                             // target, but is scored at most once.
                             const auto lateWindowSamples =
-                                static_cast<uint64_t>(sampleRate * 0.150);
+                                static_cast<uint64_t>(sampleRate * 0.150 * timingWindowScale);
 
                             while (currentTargetIndex >= 0
                                 && currentTargetIndex < static_cast<int>(
@@ -530,7 +541,7 @@ public:
 
                                 const auto earlyWindowSamples =
                                     static_cast<uint64_t>(
-                                        sampleRate * 0.150);
+                                        sampleRate * 0.150 * timingWindowScale);
 
                                 const bool staleOnset =
                                     detectedOnsetSample < targetSampleForGuard
@@ -567,7 +578,8 @@ public:
                                         const double chordTimingErrorMs =
                                             (static_cast<double>(detectedOnsetSample) - static_cast<double>(chordTargetSample))
                                             * 1000.0 / sampleRate;
-                                        const bool chordInsideTimingWindow = std::abs(chordTimingErrorMs) < 150.0;
+                                        const bool chordInsideTimingWindow =
+                                            std::abs(chordTimingErrorMs) < 150.0 * timingWindowScale;
 
                                         for (int chordOffset = 0; chordOffset < chordCount; ++chordOffset)
                                         {

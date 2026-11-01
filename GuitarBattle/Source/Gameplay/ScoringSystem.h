@@ -135,11 +135,17 @@ public:
 
     static double getPitchMultiplier(double pitchErrorCents);
 
-    static double getTimingMultiplier(double timingErrorMs);
+    // The reference timing window is +/-150 ms. Easier charts and slower
+    // playback widen it: the returned scale multiplies both the hit window and
+    // the scoring thresholds, so a beginner is not punished for the same
+    // millisecond error on a level-1 chart at 70% speed.
+    static double getTimingWindowScale(int songLevel, double bpmPercent);
 
-    static HitQuality getHitQuality(double pitchErrorCents, double timingErrorMs);
+    static double getTimingMultiplier(double timingErrorMs, double windowScale = 1.0);
 
-    static NoteResult calculateNoteScore(double pitchErrorCents, double timingErrorMs);
+    static HitQuality getHitQuality(double pitchErrorCents, double timingErrorMs, double windowScale = 1.0);
+
+    static NoteResult calculateNoteScore(double pitchErrorCents, double timingErrorMs, double windowScale = 1.0);
 
     // Points multiplier for the song's published 1-10 difficulty. Harder charts
     // are worth more per note, so the catalogue is not a flat score list.

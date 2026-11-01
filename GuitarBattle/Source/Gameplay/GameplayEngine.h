@@ -14,8 +14,9 @@ public:
         FinalNoteResult scoringResult;
     };
 
-    // Keeps the existing gameplay rules: exact MIDI pitch match and a strict
-    // +/-150 ms timing window. Pitch deviation still determines score quality.
+    // Exact MIDI pitch match and the reference +/-150 ms timing window, widened
+    // by ScoringSystem::getTimingWindowScale() on easier charts and at reduced
+    // BPM. Pitch deviation still determines score quality.
     static NoteEvaluation evaluateNote(
         int targetMidi,
         int detectedMidi,

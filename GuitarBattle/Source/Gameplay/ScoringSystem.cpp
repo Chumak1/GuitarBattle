@@ -94,9 +94,32 @@ double ScoringSystem::getPitchMultiplier(double pitchErrorCents)
 
 }
 
-double ScoringSystem::getTimingMultiplier(double timingErrorMs)
+double ScoringSystem::getTimingWindowScale(int songLevel, double bpmPercent)
 {
-    const double error = std::abs(timingErrorMs);
+    // Levels 5-10 keep the reference +/-150 ms window; every level below adds
+    // 12.5%, so a level-1 chart is 1.5x as forgiving. Slower playback adds the
+    // square-root part of the slowdown (50% -> +41%): the window follows the
+    // musical grid without turning half speed into a 300 ms window on its own.
+    const int level = juce::jlimit(1, 10, songLevel);
+
+    const double levelBonus = level < 5
+        ? static_cast<double>(5 - level) * 0.125
+        : 0.0;
+
+    const double speed = juce::jlimit(50.0, 120.0, bpmPercent);
+
+    const double speedBonus = speed < 100.0
+        ? std::sqrt(100.0 / speed) - 1.0
+        : 0.0;
+
+    // The cap keeps the easiest chart at half speed just below +/-300 ms.
+    return juce::jlimit(1.0, 2.0, 1.0 + levelBonus + speedBonus);
+}
+
+double ScoringSystem::getTimingMultiplier(double timingErrorMs, double windowScale)
+{
+    const double scale = windowScale > 0.0 ? windowScale : 1.0;
+    const double error = std::abs(timingErrorMs) / scale;
 
     const double points[][2] =
     {
@@ -136,10 +159,11 @@ double ScoringSystem::getTimingMultiplier(double timingErrorMs)
 
 }
 
-HitQuality ScoringSystem::getHitQuality( double pitchErrorCents, double timingErrorMs)
+HitQuality ScoringSystem::getHitQuality( double pitchErrorCents, double timingErrorMs, double windowScale)
 {
     const double pitchError = std::abs(pitchErrorCents);
-    const double timingError = std::abs(timingErrorMs);
+    const double scale = windowScale > 0.0 ? windowScale : 1.0;
+    const double timingError = std::abs(timingErrorMs) / scale;
 
     if (pitchError > 50.0 || timingError >= 150.0)
         return HitQuality::Miss;
@@ -154,7 +178,7 @@ HitQuality ScoringSystem::getHitQuality( double pitchErrorCents, double timingEr
 
 }
 
-NoteResult ScoringSystem::calculateNoteScore( double pitchErrorCents, double timingErrorMs)
+NoteResult ScoringSystem::calculateNoteScore( double pitchErrorCents, double timingErrorMs, double windowScale)
 {
     NoteResult result;
 
@@ -165,12 +189,13 @@ NoteResult ScoringSystem::calculateNoteScore( double pitchErrorCents, double tim
         getPitchMultiplier(pitchErrorCents);
 
     result.timingMultiplier =
-        getTimingMultiplier(timingErrorMs);
+        getTimingMultiplier(timingErrorMs, windowScale);
 
     result.quality =
         getHitQuality(
             pitchErrorCents,
-            timingErrorMs);
+            timingErrorMs,
+            windowScale);
 
     result.noteScore =
         baseNoteScore
@@ -206,7 +231,8 @@ FinalNoteResult ScoringSystem::calculateFinalNoteScore( double pitchErrorCents, 
     result.note =
         calculateNoteScore(
             pitchErrorCents,
-            timingErrorMs);
+            timingErrorMs,
+            getTimingWindowScale(songLevel, bpmPercent));
 
     const auto difficultySettings =
         getDifficultySettings(
