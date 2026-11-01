@@ -666,6 +666,10 @@ void MainComponent::startSelectedSong()
     }
 
     // Assets are downloaded on demand, never for the whole catalogue at once.
+    // Say so before the request starts: otherwise the disabled START button
+    // looks like a hang while the first stems arrive.
+    onlineCatalogStatusLabel.setText(
+        "Downloading " + song.title + "...", juce::dontSendNotification);
     songPridumayButton.setEnabled(false);
     downloadOnlineSong(song.slug, song.serverId, true);
 }

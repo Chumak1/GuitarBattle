@@ -294,6 +294,14 @@ private:
     juce::TextButton songPridumayButton{ "START SONG" };
     juce::TextButton onlineCatalogButton{ "REFRESH CATALOG" };
     juce::Label onlineCatalogStatusLabel;
+
+    // Song asset download feedback. The ApiClient worker publishes the overall
+    // fraction into a shared atomic; timerCallback() copies it into the double
+    // the ProgressBar reads, so the network thread never touches a component.
+    // The shared_ptr keeps the state alive if the window closes mid-download.
+    double songDownloadProgressValue = 0.0;
+    juce::ProgressBar songDownloadProgressBar{ songDownloadProgressValue };
+    std::shared_ptr<std::atomic<float>> songDownloadProgressState;
     juce::Label leaderboardTitleLabel;
     juce::Label leaderboardLabel;
     juce::TableListBox leaderboardTable{ "Global rating", nullptr };

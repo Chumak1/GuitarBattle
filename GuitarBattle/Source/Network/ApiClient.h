@@ -53,6 +53,12 @@ public:
 
     using ResponseCallback = std::function<void (Response)>;
 
+    /** Called after every chunk written by downloadToFile(). Runs on the
+        calling worker thread, so it must not touch components, allocate
+        heavily or block. @p bytesWritten is the size of the current file.
+    */
+    using DownloadProgressCallback = std::function<void (juce::int64 bytesWritten)>;
+
     ApiClient() = default;
 
     // A request may still be in flight when the owner is destroyed: the pool
@@ -145,6 +151,21 @@ public:
                                        const juce::String& bearerToken,
                                        int timeoutMs)
     {
+        return downloadToFile (urlOrServerPath, targetFile, bearerToken,
+                               timeoutMs, {});
+    }
+
+    /** Same as above, but reports the bytes written after every chunk. The
+        callback runs on the calling worker thread and may be empty. It is
+        used by the song loader to drive the download progress bar without
+        touching the UI from the network thread.
+    */
+    static juce::int64 downloadToFile (const juce::String& urlOrServerPath,
+                                       const juce::File& targetFile,
+                                       const juce::String& bearerToken,
+                                       int timeoutMs,
+                                       const DownloadProgressCallback& onProgress)
+    {
         // Never run a blocking download on the message thread.
         jassert (! juce::MessageManager::existsAndIsCurrentThread());
 
@@ -187,6 +208,9 @@ public:
                 }
 
                 totalBytes += numRead;
+
+                if (onProgress != nullptr)
+                    onProgress (totalBytes);
             }
         }
 

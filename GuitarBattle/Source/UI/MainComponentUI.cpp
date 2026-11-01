@@ -2301,7 +2301,8 @@ void MainComponent::resized()
         const int onlineW = juce::jmin(240, available - startW - 12);
         songPridumayButton.setBounds(48 + 24, buttonY, startW, 42);
         onlineCatalogButton.setBounds(48 + 24 + startW + 12, buttonY, onlineW, 42);
-        onlineCatalogStatusLabel.setBounds(48 + 24, buttonY - 30, leftW - 48, 22);
+        onlineCatalogStatusLabel.setBounds(48 + 24, buttonY - 34, leftW - 48, 20);
+        songDownloadProgressBar.setBounds(48 + 24, buttonY - 12, leftW - 48, 8);
 
         dailyChallengeButton.setBounds(48 + 24, contentY + 186, leftW - 48, 44);
         dailyChallengeStatusLabel.setBounds(48 + 24, contentY + 232,
@@ -5510,6 +5511,16 @@ void MainComponent::initialiseUi()
     onlineCatalogStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
     onlineCatalogStatusLabel.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(onlineCatalogStatusLabel);
+
+    // Thin download bar under the status label. It is hidden until START SONG
+    // actually has to fetch assets, so the normal screen is unchanged.
+    songDownloadProgressBar.setColour(juce::ProgressBar::backgroundColourId, UiColors::surface2);
+    songDownloadProgressBar.setColour(juce::ProgressBar::foregroundColourId, UiColors::accent);
+    // The bar is only 8 px tall: the default percentage text would be clipped.
+    // The status label above it already says which song is downloading.
+    songDownloadProgressBar.setTextToDisplay(" ");
+    songDownloadProgressBar.setVisible(false);
+    addChildComponent(songDownloadProgressBar);
 
     // Catalogue list: one row per playable song with the player's best score.
     // Rows are painted by SongListModel in the shared navy/gold style; the card

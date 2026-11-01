@@ -152,6 +152,17 @@ void MainComponent::timerCallback()
     // Idempotent, so screen changes never restart the track.
     updateMusicState();
 
+    // Song asset download: the ApiClient worker stores the overall fraction
+    // into a shared atomic. Only this message-thread tick copies it into the
+    // value the ProgressBar reads; the network thread never touches the UI.
+    if (songDownloadProgressState != nullptr)
+    {
+        songDownloadProgressValue = juce::jlimit(
+            0.0, 1.0,
+            static_cast<double>(
+                songDownloadProgressState->load(std::memory_order_relaxed)));
+    }
+
     // Practice mode: hold the transport at the target note and evaluate the
     // player's attempts. Message thread only.
     updatePracticeMode();

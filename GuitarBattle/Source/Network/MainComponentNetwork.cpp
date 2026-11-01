@@ -1554,6 +1554,15 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
     juce::Component::SafePointer<MainComponent> safeThis(this);
     auto download = std::make_shared<OnlineCatalogDownload>();
 
+    // Show the bar immediately: the detail lookup plus the first stem can take
+    // a few seconds, and a disabled START button alone does not explain why
+    // nothing happens. The worker publishes the overall fraction into this
+    // shared atomic; timerCallback() copies it into the ProgressBar, so the
+    // network thread never touches a component.
+    songDownloadProgressState = std::make_shared<std::atomic<float>>(0.0f);
+    songDownloadProgressValue = 0.0;
+    songDownloadProgressBar.setVisible(true);
+
     // A draft is only reachable with the admin token: the detail lookup and
     // every file download carry it in preview mode. For a published song (or a
     // non-admin) the token stays empty and the requests are anonymous exactly
@@ -1563,7 +1572,8 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
     // Detail lookup and file downloads run on the ApiClient worker threads.
     // Only the message-thread callback below touches components, the song library
     // or the gameplay state.
-    auto backgroundWork = [download, slug, serverId, songToken]()
+    auto progressState = songDownloadProgressState;
+    auto backgroundWork = [download, slug, serverId, songToken, progressState]()
     {
         if (slug.isEmpty())
             return;
@@ -1662,6 +1672,12 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
         if (!hasMidi || !assetsComplete)
             return;
 
+        // Every asset has a server-advertised size (assetsComplete above), so
+        // the overall fraction is exact instead of an estimate per file.
+        juce::int64 totalExpectedBytes = 0;
+        for (const auto& asset : assets)
+            totalExpectedBytes += juce::jmax<juce::int64>(0, asset.expectedSize);
+
         const auto serverVersion = static_cast<int>(detail.getProperty("version", 0));
         const auto cachedVersion = versionFile.existsAsFile()
             ? versionFile.loadFileAsString().trim().getIntValue()
@@ -1694,6 +1710,9 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
 
         if (usedCache)
         {
+            if (progressState != nullptr)
+                progressState->store(1.0f, std::memory_order_relaxed);
+
             DBG("ONLINE CATALOG: using cached assets for version " + juce::String(serverVersion));
         }
         else
@@ -1701,13 +1720,36 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
             // A version mismatch forces every stem to be downloaded again, even
             // if the previously cached file happens to have the same size.
             auto allAssetsDownloaded = true;
+            juce::int64 completedBytes = 0;
 
             for (const auto& asset : assets)
             {
-                const auto writtenBytes = ApiClient::downloadToFile(asset.downloadUrl,
-                                                                    asset.targetFile,
-                                                                    songToken,
-                                                                    5000);
+                const auto fileSize = juce::jmax<juce::int64>(0, asset.expectedSize);
+
+                const auto writtenBytes = ApiClient::downloadToFile(
+                    asset.downloadUrl,
+                    asset.targetFile,
+                    songToken,
+                    5000,
+                    [progressState, completedBytes, fileSize, totalExpectedBytes](
+                        juce::int64 bytesWritten)
+                    {
+                        if (progressState == nullptr || totalExpectedBytes <= 0)
+                            return;
+
+                        const auto current = juce::jlimit<juce::int64>(
+                            0, fileSize, bytesWritten);
+                        const auto fraction =
+                            static_cast<double>(completedBytes + current)
+                            / static_cast<double>(totalExpectedBytes);
+
+                        progressState->store(
+                            static_cast<float>(juce::jlimit(0.0, 1.0, fraction)),
+                            std::memory_order_relaxed);
+                    });
+
+                completedBytes += fileSize;
+
                 const auto sizeOk = writtenBytes > 0 && writtenBytes == asset.expectedSize;
                 const auto headerOk = !asset.isMidi || (sizeOk && hasMidiHeader(asset.targetFile));
 
@@ -1727,6 +1769,9 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
                 DBG("ONLINE CATALOG: downloaded " + asset.role + " ("
                     + juce::String(writtenBytes) + " bytes)");
             }
+
+            if (progressState != nullptr)
+                progressState->store(1.0f, std::memory_order_relaxed);
 
             // Only a complete asset set may be marked as this content version.
             if (allAssetsDownloaded && serverVersion > 0
@@ -1774,6 +1819,12 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
         auto* self = safeThis.getComponent();
         if (self == nullptr)
             return;
+
+        // The worker is done; the bar has served its purpose. Reset the shared
+        // state so a later download starts from zero.
+        self->songDownloadProgressBar.setVisible(false);
+        self->songDownloadProgressValue = 0.0;
+        self->songDownloadProgressState.reset();
 
         self->songPridumayButton.setEnabled(true);
 
