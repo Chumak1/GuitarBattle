@@ -449,11 +449,13 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
 
     if (rowIsSelected)
     {
-        g.setColour(UiColors::accent.withAlpha(0.16f));
+        g.setColour(UiColors::accent.withAlpha(0.22f));
     }
     else if (unlocked)
     {
-        g.setColour(UiColors::surface2.withAlpha(0.55f));
+        // Gold wash: every playable song reads as a gold tile, while a locked
+        // one stays on the dark page background.
+        g.setColour(UiColors::accent.withAlpha(0.12f));
     }
     else
     {
@@ -462,8 +464,8 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
 
     g.fillRoundedRectangle(row.toFloat(), 12.0f);
 
-    g.setColour(rowIsSelected ? UiColors::accent.withAlpha(0.55f)
-                              : (unlocked ? UiColors::border
+    g.setColour(rowIsSelected ? UiColors::accent.withAlpha(0.75f)
+                              : (unlocked ? UiColors::accent.withAlpha(0.28f)
                                           : UiColors::border.withAlpha(0.45f)));
     g.drawRoundedRectangle(row.toFloat().reduced(0.5f), 12.0f, 1.0f);
 
