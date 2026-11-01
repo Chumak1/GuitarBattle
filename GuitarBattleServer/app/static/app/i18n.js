@@ -125,6 +125,7 @@ window.FFI18N = (function () {
       explicit = true;
       writeCookie(COOKIE, code, 365);
       writeStore(code);
+      syncUrl(code);
     }
     apply();
     paintButtons();
@@ -135,6 +136,32 @@ window.FFI18N = (function () {
 
   function onChange(fn) {
     if (typeof fn === 'function') listeners.push(fn);
+  }
+
+  /* A language-specific URL (``/en``) declares its language on <html>. It wins
+     over the cookie: the server already rendered that variant, and switching it
+     on load would contradict what the crawler and the visitor received. */
+  function pageLanguage() {
+    var forced = document.documentElement.getAttribute('data-lang-default');
+    return forced === 'ru' || forced === 'en' ? forced : null;
+  }
+
+  function languagePaths() {
+    var raw = document.documentElement.getAttribute('data-lang-paths');
+    if (!raw) return null;
+    try { return JSON.parse(raw); } catch (e) { return null; }
+  }
+
+  /* Keep the address bar in step with the language the visitor picked, so a
+     reload or a shared link opens the same server-rendered variant. */
+  function syncUrl(code) {
+    var paths = languagePaths();
+    if (!paths || typeof paths[code] !== 'string') return;
+    if (location.pathname === paths[code]) return;
+    if (!window.history || typeof history.replaceState !== 'function') return;
+    try {
+      history.replaceState(null, '', paths[code] + location.hash);
+    } catch (e) { /* the URL is a nicety; the page already switched */ }
   }
 
   function detectByIp() {
@@ -175,7 +202,11 @@ window.FFI18N = (function () {
     initialised = true;
 
     var stored = readCookie(COOKIE) || readStore();
-    if (stored === 'ru' || stored === 'en') {
+    var forced = pageLanguage();
+    if (forced) {
+      current = forced;
+      explicit = true;
+    } else if (stored === 'ru' || stored === 'en') {
       current = stored;
       explicit = true;
     } else {
@@ -184,7 +215,7 @@ window.FFI18N = (function () {
     document.documentElement.lang = current;
     apply();
     bind();
-    detectByIp();
+    if (!forced) detectByIp();
   }
 
   function language() { return current || 'ru'; }

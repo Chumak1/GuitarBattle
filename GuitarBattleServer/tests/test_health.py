@@ -22,5 +22,7 @@ def test_root_serves_landing_page(client):
     assert response.headers["cache-control"] == "no-cache, must-revalidate"
     body = response.text.lower()
     assert "fretfight" in body
-    assert "first guitar battle" in body
+    # / is the Russian document, rendered server-side (see test_landing_seo.py).
+    assert 'lang="ru"' in body
+    assert "гитарный батл" in body
     assert "online" in body

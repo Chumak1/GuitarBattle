@@ -96,9 +96,18 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 
 ## Сайт, лендинг и язык
 
-- Лендинг — статический `app/static/landing/index.html`; `app/static/app/landing.js`
-  запрашивает `/landing` и накладывает CMS-переопределения. Если переопределения
-  для языка нет, остаётся статический перевод из `landing-i18n.js`.
+- Лендинг — шаблон `app/static/landing/index.html` с плейсхолдерами `{{ key }}`;
+  `app/services/landing_page.py` рендерит его на сервере: `/` — русский документ,
+  `/en` — английский (`<html lang>`, title/description/OG/JSON-LD и тексты без JS).
+  Тексты — `app/services/landing_content.py`, браузерный дубль для переключателя
+  языка — `landing-i18n.js` (тест `tests/test_landing_seo.py` ловит расхождение).
+  `app/static/app/landing.js` запрашивает `/landing` и накладывает CMS-переопределения
+  поверх отрендеренного текста.
+- `GET /robots.txt` и `GET /sitemap.xml` генерируются тем же модулем: sitemap
+  содержит `/`, `/en`, `/policy`, `/support`, `/login`, `/register`, у языковой пары
+  — `xhtml:link` alternates; `lastmod` берётся из mtime шаблона.
+- Соцпревью: `app/static/app/og-image.png` (ru) и `og-image-en.png` (en), 1200×630,
+  пересобираются `scripts/build_og_image.ps1`.
 - `blocks` — объект `{hero, facts, about, how, features, requirements, cta}`; каждый
   блок: `{visible: bool, ru: {...}, en: {...}}`. Админ-редактор всегда сохраняет
   оба языка целиком, поэтому публичный ответ содержит полный снимок.

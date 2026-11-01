@@ -163,7 +163,7 @@ def test_page_ships_four_social_placeholders(name: str) -> None:
     # Icons keep a fixed order: YouTube, Instagram, Twitter/X, VK.
     assert positions == sorted(positions)
 
-    assert 'title="Скоро"' in html
+    assert 'title="Скоро"' in html or 'data-i18n-title="contacts.soon"' in html
     assert 'aria-disabled="true"' in html
     assert 'tabindex="-1"' in html
 

@@ -3,13 +3,20 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, status
-from fastapi.responses import FileResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 
 from app.api.health import router as health_router
 from app.api.v1.router import router as v1_router
 from app.config import settings
 from app.database import SessionLocal
+from app.services import landing_page
 from app.services.email_service import log_email_configuration
 from app.services.geo import country_for_ip, language_for_country
 
@@ -112,7 +119,8 @@ account_page = web_static_dir / "account.html"
 policy_page = web_static_dir / "policy.html"
 support_page = web_static_dir / "support.html"
 
-landing_page = Path(__file__).resolve().parent / "static" / "landing" / "index.html"
+# The landing page is rendered by app.services.landing_page from the template at
+# app/static/landing/index.html: / is Russian, /en is English, both server-side.
 
 # The support page and the admin console load no third-party scripts (the
 # landing pages keep their analytics and therefore no strict policy). The
@@ -149,7 +157,7 @@ async def html_no_cache(request: Request, call_next):
     """Always revalidate the landing page and the web apps."""
     response = await call_next(request)
     path = request.url.path
-    if path == "/" or path.startswith(
+    if path in ("/", "/en", "/robots.txt", "/sitemap.xml") or path.startswith(
         ("/admin", "/app", "/login", "/register", "/account", "/policy", "/support")
     ):
         response.headers["Cache-Control"] = "no-cache, must-revalidate"
@@ -187,9 +195,29 @@ async def language_cookie(request: Request, call_next):
 
 
 @app.get("/", include_in_schema=False)
-def root() -> FileResponse:
-    """Public landing page."""
-    return FileResponse(landing_page, media_type="text/html")
+def root() -> HTMLResponse:
+    """Public landing page, Russian variant (canonical for x-default)."""
+    return HTMLResponse(landing_page.render_landing("ru"))
+
+
+@app.get("/en", include_in_schema=False)
+def root_en() -> HTMLResponse:
+    """Public landing page, English variant.
+
+    A separate URL (not a client-side toggle) so crawlers get the English title,
+    description and body copy without running JavaScript.
+    """
+    return HTMLResponse(landing_page.render_landing("en"))
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt() -> PlainTextResponse:
+    return PlainTextResponse(landing_page.robots_txt())
+
+
+@app.get("/sitemap.xml", include_in_schema=False)
+def sitemap_xml() -> Response:
+    return Response(content=landing_page.sitemap_xml(), media_type="application/xml")
 
 
 @app.get("/login", include_in_schema=False)

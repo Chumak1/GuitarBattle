@@ -163,7 +163,13 @@
       setVisible('.hero', b.visible);
       if (b.data) {
         text(document.querySelector('.hero .kicker'), b.data.kicker);
-        text(document.getElementById('hero-title'), b.data.title);
+        // Only the wordmark is replaced: the <h1> also carries the tagline
+        // ("fretfight — гитарный батл онлайн") that search engines index.
+        text(
+          document.querySelector('#hero-title .wordmark__brand') ||
+            document.getElementById('hero-title'),
+          b.data.title
+        );
         text(document.querySelector('.hero .lead'), b.data.text);
       }
     }
@@ -193,7 +199,7 @@
         text(document.querySelector('#how .kicker'), b.data.kicker);
         text(document.getElementById('how-title'), b.data.title);
         text(document.querySelector('#how .section-head > p:last-child'), b.data.text);
-        fillCards(document.querySelector('.steps'), b.data.steps, 'step', false);
+        fillCards(document.querySelector('#how .steps'), b.data.steps, 'step', false);
       }
     }
 
@@ -203,7 +209,7 @@
       if (b.data) {
         text(document.querySelector('#features .kicker'), b.data.kicker);
         text(document.getElementById('features-title'), b.data.title);
-        fillCards(document.querySelector('.cards'), b.data.cards, 'card', true);
+        fillCards(document.querySelector('#features .cards'), b.data.cards, 'card', true);
       }
     }
 

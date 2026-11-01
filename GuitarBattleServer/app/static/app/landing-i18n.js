@@ -2,11 +2,13 @@
 
 window.FFI18N.add({
   ru: {
-    'landing.docTitle': 'fretfight — первая гитарная битва онлайн',
-    'landing.meta': 'fretfight — первая гитарная битва онлайн. Играйте по табам под минусовки, получайте оценку в реальном времени и соревнуйтесь в общем рейтинге.',
-    'landing.ogTitle': 'fretfight — первая гитарная битва онлайн',
-    'landing.ogDescription': 'Табы, минусовки из четырёх стемов и оценка игры по микрофону в реальном времени. Соревнуйтесь за место в мировом рейтинге.',
+    'landing.docTitle': 'fretfight — гитарный батл онлайн: табы и тренажёр гитары',
+    'landing.meta': 'fretfight — гитарный батл онлайн и тренажёр гитары: игра на гитаре по табам под минусовки, оценка точности по микрофону и рейтинг гитаристов.',
+    'landing.keywords': 'fretfight, гитарный батл, гитарная битва, онлайн гитара, игра на гитаре онлайн, тренажёр гитары, табы, минусовки, табы для гитары, рейтинг гитаристов, guitar battle, online guitar',
+    'landing.ogTitle': 'fretfight — гитарный батл онлайн',
+    'landing.ogDescription': 'Игра на гитаре онлайн по табам под минусовки: тренажёр гитары с оценкой точности в реальном времени и рейтингом гитаристов.',
     'landing.ogLocale': 'ru_RU',
+    'landing.ogImageAlt': 'fretfight — гитарный батл онлайн: логотип и название проекта на тёмном фоне',
 
     'contacts.title': 'Контакты',
     'contacts.name': 'Чумак Евгений Александрович',
@@ -27,9 +29,10 @@ window.FFI18N.add({
     'landing.support': 'Поддержать',
     'landing.supportCta': 'Поддержать проект',
 
-    'landing.hero.kicker': 'first guitar battle online',
+    'landing.hero.kicker': 'игра на гитаре онлайн',
     'landing.hero.title': 'fretfight',
-    'landing.hero.lead': 'Гитарная битва в реальном времени: играйте по табам под минусовки, получайте оценку точности по микрофону и поднимайтесь в <strong>общем мировом рейтинге</strong>.',
+    'landing.hero.h1': '— гитарный батл онлайн',
+    'landing.hero.lead': 'Гитарный батл в реальном времени: играйте по табам под минусовки, получайте оценку точности по микрофону и поднимайтесь в <strong>общем рейтинге гитаристов</strong>.',
 
     'landing.facts.label': 'Коротко о проекте',
     'landing.fact1.title': '4 стема',
@@ -96,15 +99,28 @@ window.FFI18N.add({
     'landing.req.site': 'Сайт',
     'landing.req.siteValue': 'fretfight.online',
 
+    'landing.faq.kicker': 'частые вопросы',
+    'landing.faq.title': 'Гитарный батл онлайн: частые вопросы',
+    'landing.faq.q1': 'Что такое fretfight?',
+    'landing.faq.a1': 'fretfight — это гитарный батл онлайн и тренажёр гитары в одном приложении: каталог песен с табами и минусовками, оценка точности по микрофону и общий рейтинг гитаристов.',
+    'landing.faq.q2': 'Нужна ли настоящая гитара?',
+    'landing.faq.a2': 'Да. Это игра на гитаре онлайн с настоящим инструментом: приложение слушает микрофон или аудиоинтерфейс и сравнивает вашу игру с нотами песни, а не с кликами по экрану.',
+    'landing.faq.q3': 'Откуда берутся табы и минусовки?',
+    'landing.faq.a3': 'Каждая песня в каталоге содержит табы, собранные из MIDI, и минусовку из четырёх стемов — бас, барабаны, гитара и прочее. Гитару можно убрать и играть вместе с ритм-секцией.',
+    'landing.faq.q4': 'Как попасть в рейтинг гитаристов?',
+    'landing.faq.a4': 'Сыграйте песню в клиенте: лучший результат по каждой песне идёт в общий зачёт, а прогресс и место в рейтинге видны в личном кабинете.',
+
     'landing.cta.title': 'Релиз уже близко',
     'landing.cta.text': 'Мы дорабатываем клиент и наполняем каталог. Первые песни, оценка в реальном времени и общий рейтинг появятся здесь же — на fretfight.online.'
   },
   en: {
-    'landing.docTitle': 'fretfight — the first online guitar battle',
-    'landing.meta': 'fretfight is the first online guitar battle. Play along to tabs over backing tracks, get a real-time score and compete on the global leaderboard.',
-    'landing.ogTitle': 'fretfight — the first online guitar battle',
-    'landing.ogDescription': 'Tabs, backing tracks built from four stems and real-time microphone scoring. Compete for a place on the global leaderboard.',
+    'landing.docTitle': 'fretfight — online guitar battle: tabs and a guitar trainer',
+    'landing.meta': 'fretfight is an online guitar battle and guitar trainer: play guitar online with tabs and backing tracks, get real-time microphone scoring and climb the global leaderboard.',
+    'landing.keywords': 'fretfight, guitar battle, online guitar, play guitar online, guitar trainer, guitar tabs, backing tracks, tabs, leaderboard, guitar practice',
+    'landing.ogTitle': 'fretfight — online guitar battle',
+    'landing.ogDescription': 'Play guitar online with tabs and backing tracks: a guitar trainer with real-time scoring and a global leaderboard.',
     'landing.ogLocale': 'en_US',
+    'landing.ogImageAlt': 'fretfight — online guitar battle: logo and project name on a dark background',
 
     'contacts.title': 'Contacts',
     'contacts.name': 'Evgeniy Aleksandrovich Chumak',
@@ -125,9 +141,10 @@ window.FFI18N.add({
     'landing.support': 'Support',
     'landing.supportCta': 'Support the project',
 
-    'landing.hero.kicker': 'first guitar battle online',
+    'landing.hero.kicker': 'play guitar online',
     'landing.hero.title': 'fretfight',
-    'landing.hero.lead': 'Real-time guitar battles: play along to tabs over backing tracks, get an accuracy score from your microphone and climb the <strong>global leaderboard</strong>.',
+    'landing.hero.h1': '— guitar battle online',
+    'landing.hero.lead': 'Real-time guitar battles: play along to guitar tabs over backing tracks, get an accuracy score from your microphone and climb the <strong>global leaderboard</strong>.',
 
     'landing.facts.label': 'The project at a glance',
     'landing.fact1.title': '4 stems',
@@ -193,6 +210,17 @@ window.FFI18N.add({
     'landing.req.catalogValue': 'being filled',
     'landing.req.site': 'Website',
     'landing.req.siteValue': 'fretfight.online',
+
+    'landing.faq.kicker': 'frequently asked questions',
+    'landing.faq.title': 'Online guitar battle: frequently asked questions',
+    'landing.faq.q1': 'What is fretfight?',
+    'landing.faq.a1': 'fretfight is an online guitar battle and guitar trainer in one app: a song catalogue with guitar tabs and backing tracks, real-time microphone scoring and a global leaderboard.',
+    'landing.faq.q2': 'Do I need a real guitar?',
+    'landing.faq.a2': 'Yes. This is playing guitar online with a real instrument: the app listens to your microphone or audio interface and matches your playing against the notes of the song, not against clicks on a screen.',
+    'landing.faq.q3': 'Where do the tabs and backing tracks come from?',
+    'landing.faq.a3': 'Every song in the catalogue ships with tabs arranged from MIDI and a backing track built from four stems — bass, drums, guitar and other. Mute the guitar and play with the rhythm section.',
+    'landing.faq.q4': 'How do I get on the leaderboard?',
+    'landing.faq.a4': 'Play a song in the client: your best result for each song counts towards the global total, and your progress and rank are shown in your account.',
 
     'landing.cta.title': 'Release is coming soon',
     'landing.cta.text': 'We are polishing the client and filling the catalogue. The first songs, real-time scoring and the global leaderboard will appear right here — on fretfight.online.'
