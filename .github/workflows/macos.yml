@@ -2,8 +2,9 @@ name: macOS build
 
 # Builds the JUCE client for macOS on a GitHub-hosted runner, because the
 # Windows development machine has no Xcode toolchain. The result is an
-# unsigned .app: users must allow it in System Settings > Privacy & Security
-# (or `xattr -dr com.apple.quarantine FretFight.app`) before the first launch.
+# ad-hoc signed .app: users must allow it in System Settings > Privacy &
+# Security (or run `xattr -dr com.apple.quarantine FretFight.app`) before the
+# first launch. Every disk image ships a helper that does this automatically.
 
 on:
   workflow_dispatch:
@@ -75,6 +76,60 @@ jobs:
             build-arm64/GuitarBattle.app/Contents/Info.plist)
           echo "Version: $VERSION"
 
+          # macOS 15+ blocks an ad-hoc signed, not notarized app until the
+          # quarantine attribute is removed. Both disk images ship the same
+          # helper: a one-click .command and a short note. printf is used
+          # instead of a heredoc so the YAML indentation never leaks into the
+          # generated files (the shebang has to start in column 0).
+          HELPERS="$RUNNER_TEMP/helpers"
+          rm -rf "$HELPERS"
+          mkdir -p "$HELPERS"
+
+          printf '%s\n' \
+            'FretFight для macOS' \
+            '' \
+            '1. Перетащите FretFight в папку Applications.' \
+            '2. Приложение не нотаризовано Apple, поэтому при первом запуске macOS его' \
+            '   блокирует. Дважды щёлкните «First launch.command» в этом окне — он снимет' \
+            '   карантин и откроет FretFight.' \
+            '   Либо выполните в Терминале:' \
+            '       xattr -dr com.apple.quarantine /Applications/FretFight.app' \
+            '   и запустите FretFight из папки Applications.' \
+            '3. Если macOS пишет «Не удаётся открыть программу»: Системные настройки →' \
+            '   Конфиденциальность и безопасность → прокрутите вниз → «Всё равно открыть».' \
+            '' \
+            'FretFight for macOS' \
+            '' \
+            '1. Drag FretFight into Applications.' \
+            '2. The app is not notarized by Apple, so macOS blocks the first launch.' \
+            '   Double-click "First launch.command" in this window: it removes the' \
+            '   quarantine flag and opens FretFight.' \
+            '   Alternatively, run in Terminal:' \
+            '       xattr -dr com.apple.quarantine /Applications/FretFight.app' \
+            '   and launch FretFight from Applications.' \
+            '3. If macOS says "The application cannot be opened": System Settings →' \
+            '   Privacy & Security → scroll down → "Open Anyway".' \
+            > "$HELPERS/README.txt"
+
+          printf '%s\n' \
+            '#!/bin/bash' \
+            '# FretFight is ad-hoc signed and not notarized, so macOS quarantines it.' \
+            '# This helper removes the quarantine flag and opens the installed app.' \
+            'APP="/Applications/FretFight.app"' \
+            '' \
+            'if [ ! -d "$APP" ]; then' \
+            '  echo "Сначала перетащите FretFight в папку Applications."' \
+            '  echo "Drag FretFight into Applications first."' \
+            '  echo' \
+            '  read -n 1 -s -r -p "Нажмите любую клавишу... / Press any key..."' \
+            '  exit 1' \
+            'fi' \
+            '' \
+            'xattr -dr com.apple.quarantine "$APP" 2>/dev/null' \
+            'open "$APP"' \
+            > "$HELPERS/First launch.command"
+          chmod +x "$HELPERS/First launch.command"
+
           package_arch() {
             local arch="$1"
             local work="$RUNNER_TEMP/package-$arch"
@@ -94,6 +149,9 @@ jobs:
             /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier online.fretfight.client" "$plist"
             codesign --force --deep --sign - "$work/FretFight.app"
             codesign --verify --deep --verbose=2 "$work/FretFight.app"
+
+            cp "$HELPERS/README.txt" "$work/README.txt"
+            cp "$HELPERS/First launch.command" "$work/First launch.command"
 
             # Drag-to-Applications disk image.
             ln -s /Applications "$work/Applications"
