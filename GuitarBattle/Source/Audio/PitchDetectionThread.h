@@ -583,7 +583,8 @@ public:
                                                 const double targetFrequency = 440.0 * std::pow(2.0, (targetMidi - 69.0) / 12.0);
                                                 const auto evaluation = GameplayEngine::evaluateNote(
                                                     targetMidi, targetMidi, targetFrequency, chordTimingErrorMs,
-                                                    owner.difficulty, owner.speedPercent);
+                                                    owner.difficulty, owner.speedPercent,
+                                                    owner.songLevel.load(std::memory_order_relaxed));
                                                 const int newScore = owner.gameplayStats.recordHit(
                                                     evaluation.scoringResult.score, evaluation.scoringResult.note.quality);
                                                 owner.gameplayStats.recordTiming(chordTimingErrorMs);
@@ -655,7 +656,8 @@ public:
                                             pitch,
                                             timingErrorMs,
                                             owner.difficulty,
-                                            owner.speedPercent);
+                                            owner.speedPercent,
+                                            owner.songLevel.load(std::memory_order_relaxed));
 
                                     const bool correctPitch =
                                         noteEvaluation.correctPitch;

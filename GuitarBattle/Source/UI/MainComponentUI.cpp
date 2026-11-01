@@ -471,7 +471,11 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
     const auto titleFont = GameUi::font(14.0f, true);
     auto titleLine = textArea.removeFromTop(juce::jmax(18, height * 3 / 5));
 
-    g.setColour(UiColors::text);
+    // A locked tier keeps its row visible, so the player can see what is
+    // waiting for them, but the title is dimmed like a disabled item.
+    const bool unlocked = owner.isSongUnlocked(song);
+
+    g.setColour(unlocked ? UiColors::text : UiColors::muted);
     g.setFont(titleFont);
     g.drawFittedText(song.title, titleLine,
                      juce::Justification::centredLeft, 1, 0.8f);
@@ -555,6 +559,17 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
         }
     }
 
+    if (! unlocked)
+    {
+        // Locked rows explain the requirement instead of the best score.
+        g.setColour(UiColors::red.withAlpha(0.85f));
+        g.setFont(GameUi::font(9.5f, true));
+        g.drawFittedText("REQUIRES LVL "
+                             + juce::String(owner.requiredPlayerLevelForSong(song.difficulty)),
+                         scoreColumn, juce::Justification::centredRight, 1, 0.6f);
+        return;
+    }
+
     // Fitted text with a horizontal-scale floor: never truncate the digits.
     g.setColour(best > 0 ? UiColors::accent : UiColors::muted.withAlpha(0.55f));
     g.setFont(GameUi::font(10.0f, true));
@@ -610,6 +625,18 @@ void MainComponent::selectCatalogSong(int index)
     // Selecting another row swaps the preview: the old track stops inside
     // preparePreviewForSelectedSong() before the new file is requested.
     preparePreviewForSelectedSong();
+
+    refreshSongUnlockState();
+}
+
+void MainComponent::refreshSongUnlockState()
+{
+    const bool hasSelection = juce::isPositiveAndBelow(
+        selectedCatalogIndex, static_cast<int>(catalogSongs.size()));
+
+    songPridumayButton.setEnabled(
+        hasSelection
+        && isSongUnlocked(catalogSongs[static_cast<size_t>(selectedCatalogIndex)]));
 }
 
 void MainComponent::updateSongBestScoreLabels()
@@ -2053,8 +2080,10 @@ void MainComponent::resized()
     gameSongTitleLabel.setVisible(showGame || readyScreen);
 
     songPridumayButton.setVisible(songSelect);
-    dailyChallengeButton.setVisible(songSelect);
-    dailyChallengeStatusLabel.setVisible(songSelect);
+    // The daily challenge is hidden for now: the schedule has no song for most
+    // weekdays yet, and an always-disabled button only confuses players.
+    dailyChallengeButton.setVisible(false);
+    dailyChallengeStatusLabel.setVisible(false);
     onlineCatalogButton.setVisible(songSelect);
     onlineCatalogStatusLabel.setVisible(songSelect);
     leaderboardTitleLabel.setVisible(songSelect);

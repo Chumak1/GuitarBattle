@@ -22,5 +22,6 @@ public:
         double detectedFrequency,
         double timingErrorMs,
         Difficulty difficulty,
-        double speedPercent);
+        double speedPercent,
+        int songLevel = 5);
 };

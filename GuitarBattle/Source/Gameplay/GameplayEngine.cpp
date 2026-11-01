@@ -8,7 +8,8 @@ GameplayEngine::NoteEvaluation GameplayEngine::evaluateNote(
     double detectedFrequency,
     double timingErrorMs,
     Difficulty difficulty,
-    double speedPercent)
+    double speedPercent,
+    int songLevel)
 {
     NoteEvaluation result;
     result.correctPitch = detectedMidi == targetMidi;
@@ -24,7 +25,7 @@ GameplayEngine::NoteEvaluation GameplayEngine::evaluateNote(
     }
 
     result.scoringResult = ScoringSystem::calculateFinalNoteScore(
-        result.pitchErrorCents, timingErrorMs, difficulty, speedPercent);
+        result.pitchErrorCents, timingErrorMs, difficulty, speedPercent, songLevel);
 
     return result;
 }

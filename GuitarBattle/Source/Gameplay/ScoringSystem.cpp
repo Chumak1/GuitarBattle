@@ -184,7 +184,22 @@ NoteResult ScoringSystem::calculateNoteScore( double pitchErrorCents, double tim
 
 }
 
-FinalNoteResult ScoringSystem::calculateFinalNoteScore( double pitchErrorCents, double timingErrorMs, Difficulty difficulty, double bpmPercent)
+double ScoringSystem::getSongLevelMultiplier(int songLevel)
+{
+    // Published difficulty 1-10 -> points multiplier. The curve starts below
+    // 1.0 for the easiest charts and tops out at 1.8, so a level-10 chart is
+    // worth about 2.4x a level-1 one: hard songs pay off without turning the
+    // leaderboard into a difficulty contest.
+    static const double multipliers[] =
+    {
+        0.75, 0.85, 0.95, 1.00, 1.10, 1.22, 1.35, 1.50, 1.65, 1.80
+    };
+
+    const int index = juce::jlimit(1, 10, songLevel) - 1;
+    return multipliers[index];
+}
+
+FinalNoteResult ScoringSystem::calculateFinalNoteScore( double pitchErrorCents, double timingErrorMs, Difficulty difficulty, double bpmPercent, int songLevel)
 {
     FinalNoteResult result;
 
@@ -209,13 +224,14 @@ FinalNoteResult ScoringSystem::calculateFinalNoteScore( double pitchErrorCents, 
             std::round(
                 result.note.noteScore
                 * result.difficultyMultiplier
-                * result.bpmMultiplier));
+                * result.bpmMultiplier
+                * getSongLevelMultiplier(songLevel)));
 
     return result;
 
 }
 
-SongResult ScoringSystem::calculateSongResult( const std::vector<NoteResult>& notes, Difficulty difficulty, double bpmPercent)
+SongResult ScoringSystem::calculateSongResult( const std::vector<NoteResult>& notes, Difficulty difficulty, double bpmPercent, int songLevel)
 {
     SongResult result;
 
@@ -274,7 +290,8 @@ SongResult ScoringSystem::calculateSongResult( const std::vector<NoteResult>& no
     result.finalScore =
         result.rawScore
         * result.difficultyMultiplier
-        * result.bpmMultiplier;
+        * result.bpmMultiplier
+        * getSongLevelMultiplier(songLevel);
 
     if (!notes.empty())
     {

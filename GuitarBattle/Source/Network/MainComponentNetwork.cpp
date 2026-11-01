@@ -905,6 +905,16 @@ void MainComponent::submitOnlineGameResult()
                             "xp_to_next",
                             json.getProperty("xp_for_next", 0)));
 
+                    // A finished attempt can raise the player level, which may
+                    // unlock the next difficulty tier: refresh the catalogue
+                    // state without waiting for the next progression poll.
+                    if (self->lastLevel > 0)
+                    {
+                        self->progressionLevel = self->lastLevel;
+                        self->songListBox.repaint();
+                        self->refreshSongUnlockState();
+                    }
+
                     juce::String achievements;
 
                     if (auto* awarded = json.getProperty("achievements_awarded", juce::var())
@@ -1089,6 +1099,18 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
             rows.push_back(row);
         }
     }
+
+    // The catalogue is ordered by the published difficulty, then by title, so
+    // the list reads as a progression instead of an alphabetical dump. The
+    // selection is restored by slug below, so sorting does not move the cursor.
+    std::stable_sort(rows.begin(), rows.end(),
+                     [](const CatalogSong& a, const CatalogSong& b)
+                     {
+                         if (a.difficulty != b.difficulty)
+                             return a.difficulty < b.difficulty;
+
+                         return a.title.compareIgnoreCase(b.title) < 0;
+                     });
 
     catalogSongs = std::move(rows);
 
@@ -1299,6 +1321,11 @@ void MainComponent::refreshProgressionSummary()
             self->progressionXpForNext = xpForNext;
             self->progressionXpRemaining =
                 static_cast<int>(json.getProperty("xp_remaining", 0));
+
+            // The catalogue unlocks by level, so a level-up must re-evaluate the
+            // rows and the START button immediately.
+            self->songListBox.repaint();
+            self->refreshSongUnlockState();
 
             juce::String text;
             text << "LEVEL " << level

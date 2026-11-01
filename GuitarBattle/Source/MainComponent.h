@@ -462,6 +462,26 @@ private:
         bool published = true;
     };
 
+    // A song unlocks by its published difficulty. Levels 1-4 are always open,
+    // 5-7 need the player to reach level 5 (851 XP) and 8-10 need level 8
+    // (3071 XP), which keeps the first tier playable immediately and paces the
+    // rest against the XP curve rather than the calendar.
+    static int requiredPlayerLevelForSong(int songDifficulty)
+    {
+        if (songDifficulty >= 8)
+            return 8;
+
+        if (songDifficulty >= 5)
+            return 5;
+
+        return 1;
+    }
+
+    bool isSongUnlocked(const CatalogSong& song) const
+    {
+        return progressionLevel >= requiredPlayerLevelForSong(song.difficulty);
+    }
+
     // List model for the song list. Lives in this header so no new compile
     // unit has to be registered in GuitarBattle.jucer.
     struct SongListModel : public juce::ListBoxModel
@@ -498,10 +518,11 @@ private:
     int bestScoresRequestId = 0;
 
     void refreshOnlineCatalog();
-    void refreshOnlineBestScores();
-    void rebuildCatalogRows(const juce::var& serverItems);
+    void refreshOnlineBestScores();    void rebuildCatalogRows(const juce::var& serverItems);
     void updateCatalogRows();
     void selectCatalogSong(int index);
+    // Keeps the START button in sync with the selected song's unlock state.
+    void refreshSongUnlockState();
     void startSelectedSong();
     void downloadOnlineSong(const juce::String& slug,
                             const juce::String& serverId,
@@ -794,6 +815,10 @@ private:
     // Difficulty / scoring
 
     Difficulty difficulty = Difficulty::Normal;
+
+    // Published 1-10 difficulty of the song being played. Read by the pitch
+    // worker, written when a song starts, so it is an atomic.
+    std::atomic<int> songLevel{ 5 };
 
 
 

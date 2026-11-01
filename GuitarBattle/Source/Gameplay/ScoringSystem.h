@@ -141,9 +141,13 @@ public:
 
     static NoteResult calculateNoteScore(double pitchErrorCents, double timingErrorMs);
 
-    static FinalNoteResult calculateFinalNoteScore(double pitchErrorCents, double timingErrorMs, Difficulty difficulty, double bpmPercent);
+    // Points multiplier for the song's published 1-10 difficulty. Harder charts
+    // are worth more per note, so the catalogue is not a flat score list.
+    static double getSongLevelMultiplier(int songLevel);
+
+    static FinalNoteResult calculateFinalNoteScore(double pitchErrorCents, double timingErrorMs, Difficulty difficulty, double bpmPercent, int songLevel = 5);
 
 
 
-    static SongResult calculateSongResult(const std::vector<NoteResult>& notes, Difficulty difficulty, double bpmPercent);
+    static SongResult calculateSongResult(const std::vector<NoteResult>& notes, Difficulty difficulty, double bpmPercent, int songLevel = 5);
 };

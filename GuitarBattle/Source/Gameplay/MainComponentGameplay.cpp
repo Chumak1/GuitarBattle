@@ -633,6 +633,22 @@ void MainComponent::startSelectedSong()
                                         selectedCatalogIndex);
     const auto& song = catalogSongs[static_cast<size_t>(selectedCatalogIndex)];
 
+    // Locked tiers cannot be started: the row already says which player level
+    // is required, this is the second guard for the START button and the
+    // Enter key.
+    if (! isSongUnlocked(song))
+    {
+        onlineCatalogStatusLabel.setText(
+            song.title + " unlocks at level "
+                + juce::String(requiredPlayerLevelForSong(song.difficulty))
+                + " (you are level " + juce::String(progressionLevel) + ").",
+            juce::dontSendNotification);
+        return;
+    }
+
+    // The published difficulty drives the per-note points multiplier.
+    songLevel.store(juce::jlimit(1, 10, song.difficulty), std::memory_order_relaxed);
+
     // An unpublished draft is only playable in admin preview mode; the server
     // records that attempt as ``preview`` and ranks nothing. The label is
     // confirmed by the server answer in startOnlineGameSession().
