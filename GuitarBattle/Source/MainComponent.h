@@ -478,6 +478,12 @@ private:
 
     bool isSongUnlocked(const CatalogSong& song) const
     {
+        // The ADMIN toggle is the testing mode: an administrator sees and can
+        // start every song regardless of their own level, so a level-1 test
+        // account is enough to review the level-10 charts.
+        if (isAdminPreviewActive())
+            return true;
+
         return progressionLevel >= requiredPlayerLevelForSong(song.difficulty);
     }
 

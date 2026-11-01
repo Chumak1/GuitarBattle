@@ -1154,6 +1154,12 @@ void MainComponent::setAdminPreviewMode(bool enabled)
     // is reloaded with the matching request. The request runs on a worker
     // thread; only the callback touches the UI.
     refreshOnlineCatalog();
+
+    // Admin mode also lifts the level gate, so the already loaded rows and the
+    // START button must switch immediately instead of waiting for the next
+    // selection or catalogue refresh.
+    refreshSongUnlockState();
+    songListBox.repaint();
     repaint();
 }
 
