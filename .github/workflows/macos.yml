@@ -34,8 +34,10 @@ jobs:
         run: |
           set -euo pipefail
           cd "$HOME/JUCE/extras/Projucer/Builds/MacOSX"
+          # Ad-hoc signing ("-") keeps the JUCE "Sign Target" phase happy:
+          # it reads CODE_SIGN_IDENTITY and fails on an unset variable.
           xcodebuild -project Projucer.xcodeproj -configuration Release \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY="-" \
             | tail -n 40
 
       - name: Regenerate the Xcode project
@@ -49,9 +51,11 @@ jobs:
         run: |
           set -euo pipefail
           cd "$GITHUB_WORKSPACE/GuitarBattle/Builds/MacOSX"
-          xcodebuild -project GuitarBattle.xcodeproj -target GuitarBattle \
+          # The JUCE target is "<project> - App"; ad-hoc signing needs no
+          # certificate and still produces a runnable bundle.
+          xcodebuild -project GuitarBattle.xcodeproj -target "GuitarBattle - App" \
             -configuration Release \
-            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            CODE_SIGN_IDENTITY="-" \
             | tail -n 80
 
       - name: Package
