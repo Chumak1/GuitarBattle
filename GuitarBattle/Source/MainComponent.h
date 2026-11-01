@@ -436,6 +436,7 @@ private:
         juce::String slug;      // server slug
         juce::String serverId;  // server UUID, used to open a game session
         juce::String artist;
+        juce::String genre;      // server genre, free text ("Power metal", "Jazz")
         juce::String previewUrl; // full-song MP3 for the in-app preview, optional
         double bpm = 120.0;
         int difficulty = 1;      // server difficulty, 1-10

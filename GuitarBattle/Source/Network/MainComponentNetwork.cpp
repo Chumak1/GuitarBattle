@@ -1031,6 +1031,7 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
             if (row.title.isEmpty())
                 row.title = slug;
             row.artist = item.getProperty("artist", juce::var()).toString();
+            row.genre = item.getProperty("genre", juce::var()).toString();
             row.previewUrl = item.getProperty("preview_url", juce::var()).toString();
             row.bpm = static_cast<double>(item.getProperty("bpm", 120));
             row.difficulty = static_cast<int>(item.getProperty("difficulty", 1));

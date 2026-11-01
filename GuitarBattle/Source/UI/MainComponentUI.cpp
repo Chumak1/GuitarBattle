@@ -441,7 +441,7 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
         return;
 
     const auto& song = owner.catalogSongs[static_cast<size_t>(rowNumber)];
-    const auto row = juce::Rectangle<int>(0, 0, width, height).reduced(2, 3);
+    const auto row = juce::Rectangle<int>(0, 0, width, height).reduced(3, 4);
 
     g.setColour(rowIsSelected ? UiColors::accent.withAlpha(0.16f)
                               : UiColors::surface2.withAlpha(0.55f));
@@ -458,9 +458,9 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
     }
 
     // The best score sits on the right; the metadata column shrinks with the card.
-    const int bestWidth = juce::jlimit(84, 152, width / 3);
-    const auto bestArea = row.withTrimmedRight(14).removeFromRight(bestWidth);
-    auto textArea = row.withTrimmedLeft(16).withTrimmedRight(bestWidth + 22);
+    const int bestWidth = juce::jlimit(96, 168, width / 3);
+    const auto bestArea = row.withTrimmedRight(18).removeFromRight(bestWidth);
+    auto textArea = row.withTrimmedLeft(18).withTrimmedRight(bestWidth + 30);
 
     juce::StringArray meta;
     if (song.artist.isNotEmpty())
@@ -484,25 +484,53 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
 
     const int best = owner.getBestScoreForSong(song.slug, song.title);
 
-    // Difficulty and best score share the right column: the tag sits directly
-    // above the score so both numbers read as one block.
+    // Difficulty, genre and best score share the right column: both tags sit on
+    // the same line, directly above the score, so the numbers read as one block.
     auto scoreColumn = bestArea;
-    auto levelArea = scoreColumn.removeFromTop(juce::jmax(16, scoreColumn.getHeight() / 2));
+    auto tagLine = scoreColumn.removeFromTop(juce::jmax(18, scoreColumn.getHeight() / 2));
+    scoreColumn.removeFromTop(2);
 
-    const int levelTagWidth = juce::jmin(46, juce::jmax(30, levelArea.getWidth()));
-    const auto levelTag = juce::Rectangle<int>(levelArea.getRight() - levelTagWidth,
-                                               levelArea.getY() + 1,
-                                               levelTagWidth,
-                                               juce::jmax(14, levelArea.getHeight() - 2))
-                              .toFloat();
+    const auto tagFont = GameUi::font(9.5f, true);
+    const int levelWidth = juce::jmin(46, juce::jmax(30, tagLine.getWidth()));
+    const int tagGap = 6;
+
+    auto levelSlot = tagLine.removeFromRight(levelWidth);
+    const auto levelPill = levelSlot.withSizeKeepingCentre(
+        levelWidth, juce::jmin(16, levelSlot.getHeight())).toFloat();
 
     g.setColour(UiColors::accent.withAlpha(rowIsSelected ? 0.22f : 0.14f));
-    g.fillRoundedRectangle(levelTag, 6.0f);
+    g.fillRoundedRectangle(levelPill, 6.0f);
     g.setColour(UiColors::accent);
-    g.setFont(GameUi::font(9.5f, true));
+    g.setFont(tagFont);
     g.drawFittedText("LVL " + juce::String(juce::jlimit(1, 10, song.difficulty)),
-                     levelTag.toNearestInt().reduced(3, 0),
+                     levelPill.toNearestInt().reduced(3, 0),
                      juce::Justification::centred, 1, 0.8f);
+
+    // Genre tag uses the same pill geometry, immediately left of the level tag.
+    const auto genreText = song.genre.trim().toUpperCase();
+
+    if (genreText.isNotEmpty())
+    {
+        tagLine = tagLine.withTrimmedRight(tagGap);
+
+        const int wanted = juce::roundToInt(
+            juce::GlyphArrangement::getStringWidth(tagFont, genreText)) + 14;
+        const int genreWidth = juce::jmin(wanted, tagLine.getWidth());
+
+        if (genreWidth >= 30)
+        {
+            auto genreSlot = tagLine.removeFromRight(genreWidth);
+            const auto genrePill = genreSlot.withSizeKeepingCentre(
+                genreWidth, juce::jmin(16, genreSlot.getHeight())).toFloat();
+
+            g.setColour(UiColors::border.withAlpha(0.22f));
+            g.fillRoundedRectangle(genrePill, 6.0f);
+            g.setColour(UiColors::secondaryText);
+            g.setFont(tagFont);
+            g.drawFittedText(genreText, genrePill.toNearestInt().reduced(4, 0),
+                             juce::Justification::centred, 1, 0.75f);
+        }
+    }
 
     // Fitted text with a horizontal-scale floor: never truncate the digits.
     g.setColour(best > 0 ? UiColors::accent : UiColors::muted.withAlpha(0.55f));
