@@ -286,43 +286,21 @@ public:
                                     const bool allStringsTuned =
                                         owner.tuner.areAllStringsTuned();
 
-                                    juce::String stringText;
+                                    juce::String stringText = "---";
 
-                                    switch (stringIndex)
+                                    if (stringIndex >= 0 && stringIndex < 6)
                                     {
-                                    case 0:
-                                        stringText =
-                                            "6th string - E2";
-                                        break;
+                                        const int stringNumber = 6 - stringIndex;
+                                        const juce::String ordinal =
+                                            stringNumber == 1 ? "1st"
+                                            : stringNumber == 2 ? "2nd"
+                                            : stringNumber == 3 ? "3rd"
+                                            : juce::String(stringNumber) + "th";
 
-                                    case 1:
-                                        stringText =
-                                            "5th string - A2";
-                                        break;
-
-                                    case 2:
-                                        stringText =
-                                            "4th string - D3";
-                                        break;
-
-                                    case 3:
-                                        stringText =
-                                            "3rd string - G3";
-                                        break;
-
-                                    case 4:
-                                        stringText =
-                                            "2nd string - B3";
-                                        break;
-
-                                    case 5:
-                                        stringText =
-                                            "1st string - E4";
-                                        break;
-
-                                    default:
-                                        stringText = "---";
-                                        break;
+                                        stringText = ordinal + " string - "
+                                            + GuitarTuning::noteName(
+                                                owner.tuner.getOpenMidiNote(stringIndex),
+                                                true);
                                     }
 
                                     const auto note =

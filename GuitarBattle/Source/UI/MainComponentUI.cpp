@@ -1220,22 +1220,91 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                        juce::Justification::centredLeft, false);
         }
 
-        // Large input dial. The note itself is a real Label above this paint.
-        const float dialRadius = juce::jmin(88.0f, rightW * 0.21f);
+        // Tuner arc: a shallow gauge from flat (b) to sharp (#). The triangle
+        // marks the target note at the top; the gold/green bar shows how far
+        // the detected pitch is from it. The note itself is a real Label.
         const float dialX = rightPanel.getCentreX();
         const float dialY = rightPanel.getY() + 196.0f;
-        g.setColour(UiColors::accent.withAlpha(0.035f));
-        g.fillEllipse(dialX - dialRadius - 16.0f, dialY - dialRadius - 16.0f,
-                      (dialRadius + 16.0f) * 2.0f, (dialRadius + 16.0f) * 2.0f);
-        g.setColour(UiColors::surface2.withAlpha(0.78f));
-        g.fillEllipse(dialX - dialRadius, dialY - dialRadius,
-                      dialRadius * 2.0f, dialRadius * 2.0f);
-        g.setColour(UiColors::borderStrong);
-        g.drawEllipse(dialX - dialRadius, dialY - dialRadius,
-                      dialRadius * 2.0f, dialRadius * 2.0f, 1.0f);
-        g.setColour(UiColors::accent.withAlpha(0.22f));
-        g.drawEllipse(dialX - dialRadius + 12.0f, dialY - dialRadius + 12.0f,
-                      (dialRadius - 12.0f) * 2.0f, (dialRadius - 12.0f) * 2.0f, 1.0f);
+        const float dialRadius = juce::jmin(120.0f, rightW * 0.30f);
+        constexpr float startDeg = 200.0f;
+        constexpr float endDeg = 340.0f;
+        constexpr int dashCount = 13;
+        constexpr float dashLength = 11.0f;
+        constexpr float dashThickness = 7.0f;
+
+        const bool hasReading = tunerDetectedString >= 0;
+        const double cents = juce::jlimit(-50.0, 50.0, tunerCents);
+        const bool inTune = hasReading && std::abs(cents) <= 10.0;
+
+        for (int i = 0; i < dashCount; ++i)
+        {
+            const float t = static_cast<float>(i)
+                / static_cast<float>(dashCount - 1);
+            const float angleDeg = startDeg + t * (endDeg - startDeg);
+            const float angle = juce::degreesToRadians(angleDeg);
+            const float x = dialX + dialRadius * std::cos(angle);
+            const float y = dialY + dialRadius * std::sin(angle);
+
+            juce::Path dash;
+            dash.addRoundedRectangle(-dashLength * 0.5f,
+                                     -dashThickness * 0.5f,
+                                     dashLength, dashThickness,
+                                     dashThickness * 0.5f);
+            dash.applyTransform(
+                juce::AffineTransform::rotation(
+                    angle + juce::MathConstants<float>::halfPi)
+                    .translated(x, y));
+
+            g.setColour(UiColors::muted.withAlpha(
+                i == dashCount / 2 ? 0.55f : 0.30f));
+            g.fillPath(dash);
+        }
+
+        // Target pointer at the top: green once the string is in tune.
+        const float triangleTipY = dialY - dialRadius - 4.0f;
+        juce::Path triangle;
+        triangle.addTriangle(dialX, triangleTipY,
+                             dialX - 9.0f, triangleTipY - 16.0f,
+                             dialX + 9.0f, triangleTipY - 16.0f);
+        g.setColour(inTune ? UiColors::green : UiColors::muted);
+        g.fillPath(triangle);
+
+        // Flat / sharp ends of the scale.
+        const float leftAngle = juce::degreesToRadians(startDeg);
+        const float rightAngle = juce::degreesToRadians(endDeg);
+        const float labelRadius = dialRadius + 24.0f;
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::font(18.0f, true));
+        g.drawText("b",
+                   juce::Rectangle<float>(
+                       dialX + labelRadius * std::cos(leftAngle) - 14.0f,
+                       dialY + labelRadius * std::sin(leftAngle) - 12.0f,
+                       28.0f, 24.0f),
+                   juce::Justification::centred, false);
+        g.drawText("#",
+                   juce::Rectangle<float>(
+                       dialX + labelRadius * std::cos(rightAngle) - 14.0f,
+                       dialY + labelRadius * std::sin(rightAngle) - 12.0f,
+                       28.0f, 24.0f),
+                   juce::Justification::centred, false);
+
+        // Current pitch marker: moves from b to #, green when in tune.
+        const float markerDeg = 270.0f
+            + static_cast<float>(cents / 50.0) * 70.0f;
+        const float markerAngle = juce::degreesToRadians(markerDeg);
+        const float markerX = dialX + dialRadius * std::cos(markerAngle);
+        const float markerY = dialY + dialRadius * std::sin(markerAngle);
+
+        juce::Path marker;
+        marker.addRoundedRectangle(-9.0f, -5.0f, 18.0f, 10.0f, 4.0f);
+        marker.applyTransform(
+            juce::AffineTransform::rotation(
+                markerAngle + juce::MathConstants<float>::halfPi)
+                .translated(markerX, markerY));
+        g.setColour(hasReading
+                        ? (inTune ? UiColors::green : UiColors::accent)
+                        : UiColors::muted.withAlpha(0.55f));
+        g.fillPath(marker);
 
         GameUi::drawDivider(g, rightPanel.getX() + 24.0f,
                             rightPanel.getRight() - 24.0f,
