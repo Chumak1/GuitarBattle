@@ -2434,6 +2434,27 @@ void MainComponent::resized()
         resumeOverlayButton.setBounds((width - 200) / 2, cardY + 340 - 104,
                                       200, 40);
         resumeOverlayButton.toFront(false);
+
+        // The pause card and its dim layer are painted by the modal overlay,
+        // which sits above the regular controls. Keep the mixer and tempo
+        // controls above that layer so the player can still balance the
+        // backing tracks and change the tempo while the transport is frozen.
+        juce::Component* pauseControls[] = {
+            &liveGuitarButton, &liveGuitarVolumeSlider, &liveGuitarVolumeLabel,
+            &midiBackingButton, &midiBackingVolumeSlider, &midiBackingVolumeLabel,
+            &midiRhythmGuitarButton, &midiRhythmGuitarVolumeSlider,
+            &midiRhythmGuitarVolumeLabel,
+            &midiBassButton, &midiBassVolumeSlider, &midiBassVolumeLabel,
+            &midiDrumsButton, &midiDrumsVolumeSlider, &midiDrumsVolumeLabel,
+            &midiPianoButton, &midiPianoVolumeSlider, &midiPianoVolumeLabel,
+            &metronomeMixerButton, &metronomeMixerVolumeSlider,
+            &metronomeMixerVolumeLabel,
+            &speed50Button, &speed75Button, &speed100Button, &speed120Button,
+            &bpmLabel, &audioSettingsButton,
+        };
+
+        for (auto* control : pauseControls)
+            control->toFront(false);
     }
 
     if (finishedScreen)
