@@ -4825,6 +4825,25 @@ void MainComponent::initialiseTuningSelector()
             combo.addItem(GuitarTuning::noteName(note, true), note);
         }
 
+        // A stored custom note may sit outside the practical range: keep it
+        // selectable instead of leaving the combo blank.
+        bool hasCurrentNote = false;
+        for (int index = 0; index < combo.getNumItems(); ++index)
+        {
+            if (combo.getItemId(index) == currentTuning[static_cast<size_t>(i)])
+            {
+                hasCurrentNote = true;
+                break;
+            }
+        }
+
+        if (!hasCurrentNote)
+        {
+            combo.addItem(
+                GuitarTuning::noteName(currentTuning[static_cast<size_t>(i)], true),
+                currentTuning[static_cast<size_t>(i)]);
+        }
+
         combo.setTooltip("Open note of string " + juce::String(6 - i));
         combo.setColour(juce::ComboBox::backgroundColourId, UiColors::surface2);
         combo.setColour(juce::ComboBox::textColourId, UiColors::accent);
