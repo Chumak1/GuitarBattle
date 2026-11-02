@@ -4,15 +4,48 @@
 
 namespace
 {
-    constexpr double stringFrequencies[6] =
+    double midiToFrequency(int midiNote)
     {
-        82.4069,   // 6th string - E2
-        110.0000,  // 5th string - A2
-        146.8324,  // 4th string - D3
-        195.9977,  // 3rd string - G3
-        246.9417,  // 2nd string - B3
-        329.6276   // 1st string - E4
-    };
+        return 440.0 * std::pow(2.0,
+                                (static_cast<double>(midiNote) - 69.0) / 12.0);
+    }
+}
+
+GuitarTuner::GuitarTuner()
+{
+    for (int i = 0; i < 6; ++i)
+        openMidiNotes[i].store(GuitarTuning::standard[static_cast<size_t>(i)],
+                               std::memory_order_relaxed);
+}
+
+void GuitarTuner::setTuning(const std::array<int, 6>& newOpenMidiNotes)
+{
+    for (int i = 0; i < 6; ++i)
+        openMidiNotes[i].store(
+            juce::jlimit(0, 127, newOpenMidiNotes[static_cast<size_t>(i)]),
+            std::memory_order_relaxed);
+
+    // The previous green lights referred to different target pitches.
+    resetTunedStrings();
+}
+
+std::array<int, 6> GuitarTuner::getTuning() const
+{
+    std::array<int, 6> result {};
+
+    for (int i = 0; i < 6; ++i)
+        result[static_cast<size_t>(i)] =
+            openMidiNotes[i].load(std::memory_order_relaxed);
+
+    return result;
+}
+
+int GuitarTuner::getOpenMidiNote(int stringIndex) const
+{
+    if (stringIndex < 0 || stringIndex >= 6)
+        return -1;
+
+    return openMidiNotes[stringIndex].load(std::memory_order_relaxed);
 }
 
 int GuitarTuner::detectString(double frequency) const
@@ -25,8 +58,12 @@ int GuitarTuner::detectString(double frequency) const
 
     for (int i = 0; i < 6; ++i)
     {
+        const double target = getTargetFrequency(i);
+        if (target <= 0.0)
+            continue;
+
         const double cents =
-            1200.0 * std::log2(frequency / stringFrequencies[i]);
+            1200.0 * std::log2(frequency / target);
 
         const double absoluteCents = std::abs(cents);
 
@@ -46,10 +83,11 @@ int GuitarTuner::detectString(double frequency) const
 
 double GuitarTuner::getTargetFrequency(int stringIndex) const
 {
-    if (stringIndex < 0 || stringIndex >= 6)
+    const int midiNote = getOpenMidiNote(stringIndex);
+    if (midiNote < 0)
         return 0.0;
 
-    return stringFrequencies[stringIndex];
+    return midiToFrequency(midiNote);
 }
 
 double GuitarTuner::getCentsDeviation(double frequency, int stringIndex) const

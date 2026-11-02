@@ -719,7 +719,10 @@ bool MainComponent::loadSongMidi(const juce::String& songId)
                         + " midi=" + found->soloMidi.getFullPathName()
                         + " size=" + juce::String(found->soloMidi.getSize())
                         + " slug=" + found->slug);
-    if (!MidiParser::loadMidi(found->soloMidi, parsedNotes) || parsedNotes.empty())
+    currentMidiFile = found->soloMidi;
+
+    if (!MidiParser::loadMidi(found->soloMidi, parsedNotes, currentTuning)
+        || parsedNotes.empty())
     {
         appendAudioDebugLog("MIDI LOAD FAILED " + found->soloMidi.getFullPathName());
         DBG("MIDI load failed: " + found->soloMidi.getFullPathName());
@@ -974,7 +977,10 @@ bool MainComponent::loadGeneratedMelody()
         return false;
 
     std::vector<TabNote> parsedNotes;
-    if (!MidiParser::loadMidi(dailyChallengeMidiFile, parsedNotes) || parsedNotes.empty())
+    currentMidiFile = dailyChallengeMidiFile;
+
+    if (!MidiParser::loadMidi(dailyChallengeMidiFile, parsedNotes, currentTuning)
+        || parsedNotes.empty())
     {
         DBG("DAILY CHALLENGE MIDI PARSE FAILED: " + dailyChallengeMidiFile.getFullPathName());
         juce::AlertWindow::showMessageBoxAsync(
@@ -1018,6 +1024,7 @@ bool MainComponent::loadGeneratedMelody()
 void MainComponent::beginTuningForSelectedSong()
 {
     tuner.resetTunedStrings();
+    syncTuningUi();
     tunerActive.store(true, std::memory_order_relaxed);
     previousRmsValue = 0.0;
     previousRmsValue2 = 0.0;
@@ -1038,6 +1045,66 @@ void MainComponent::beginTuningForSelectedSong()
     gameState = GameState::Tuner;
     resized();
     repaint();
+}
+
+void MainComponent::setCurrentTuning(const std::array<int, 6>& openMidiNotes,
+                                     const juce::String& name,
+                                     bool persist)
+{
+    const bool changed = openMidiNotes != currentTuning;
+
+    currentTuning = openMidiNotes;
+    currentTuningName = name.isNotEmpty() ? name : juce::String("CUSTOM");
+
+    // Tuner targets and tab positions share one source of truth.
+    tuner.setTuning(currentTuning);
+    tablatureComponent.setTuning(currentTuning, currentTuningName);
+
+    if (persist)
+    {
+        if (auto* settings = appProperties.getUserSettings())
+        {
+            juce::StringArray values;
+            for (int note : currentTuning)
+                values.add(juce::String(note));
+
+            settings->setValue("TuningNotes", values.joinIntoString(","));
+            settings->setValue("TuningName", currentTuningName);
+            settings->saveIfNeeded();
+        }
+    }
+
+    if (changed)
+    {
+        rebuildTablatureForTuning();
+        repaint();
+    }
+}
+
+void MainComponent::rebuildTablatureForTuning()
+{
+    // The selector is only shown before the song starts. Refuse a rebuild
+    // while the transport is running in case a future UI allows it.
+    if (gameState == GameState::Playing)
+        return;
+
+    if (!currentMidiFile.existsAsFile())
+        return;
+
+    std::vector<TabNote> parsedNotes;
+
+    if (!MidiParser::loadMidi(currentMidiFile, parsedNotes, currentTuning)
+        || parsedNotes.empty())
+        return;
+
+    gameSession.getMidiNotes() = std::move(parsedNotes);
+    tablatureComponent.setNotes(gameSession.getMidiNotes());
+    tablatureComponent.setTuning(currentTuning, currentTuningName);
+
+    // The first target points at the first note of the rebuilt chart.
+    gameSession.setTargetNoteIndex(0);
+    gameSession.resetResolvedTarget();
+    setTargetFromMidiIndex(0);
 }
 
 int MainComponent::getBestScore(const juce::String& songId)

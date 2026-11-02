@@ -1098,7 +1098,11 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                    juce::Justification::centredLeft, false);
         g.setColour(UiColors::muted);
         g.setFont(GameUi::font(13.0f));
-        g.drawText("Standard tuning E A D G B E. Play each string and wait for the green light.",
+        const juce::String tuningHint =
+            currentTuningName + " TUNING  /  "
+            + GuitarTuning::label(currentTuning, false)
+            + ". Play each string and wait for the green light.";
+        g.drawText(tuningHint,
                    juce::Rectangle<float>(42.0f, 148.0f, width - 84.0f, 24.0f),
                    juce::Justification::centredLeft, false);
 
@@ -1122,15 +1126,6 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                                           leftPanel.getY() + 24.0f,
                                           leftW - 48.0f, 16.0f),
                    juce::Justification::centredLeft, false);
-        g.setColour(UiColors::muted);
-        g.setFont(GameUi::font(11.0f));
-        g.drawText("STANDARD TUNING  /  E  A  D  G  B  E",
-                   juce::Rectangle<float>(leftPanel.getX() + 24.0f,
-                                          leftPanel.getY() + 44.0f,
-                                          leftW - 48.0f, 18.0f),
-                   juce::Justification::centredLeft, false);
-
-        const char* stringNames[6] = { "E", "A", "D", "G", "B", "E" };
         const char* stringNumbers[6] = { "6", "5", "4", "3", "2", "1" };
         const int tunedMask = tuner.getTunedMask();
         const float tileGap = 12.0f;
@@ -1154,11 +1149,8 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             g.setColour(colour.withAlpha(tuned ? 0.46f : 0.22f));
             g.drawRoundedRectangle(x, y, tileW, tileH, 14.0f, 1.0f);
 
-            g.setColour(colour);
-            g.setFont(GameUi::heading(34.0f));
-            g.drawText(stringNames[i],
-                       juce::Rectangle<float>(x, y + 10.0f, tileW, 40.0f),
-                       juce::Justification::centred, false);
+            // The note itself is a real ComboBox placed over the tile by
+            // resized(); the paint layer only provides the card and status.
             g.setColour(UiColors::muted);
             g.setFont(GameUi::eyebrow(8.5f));
             g.drawText("STRING " + juce::String(stringNumbers[i]),
@@ -2138,6 +2130,9 @@ void MainComponent::resized()
     tunerStatusLabel.setVisible(tunerScreen);
     tunerStartButton.setVisible(tunerScreen);
     tunerSkipButton.setVisible(tunerScreen);
+    tuningPresetCombo.setVisible(tunerScreen);
+    for (auto& combo : stringTuningCombos)
+        combo.setVisible(tunerScreen);
 
     // One shared input monitor: full size on the song screen and in the tuner,
     // compact in the gameplay HUD.
@@ -2367,6 +2362,29 @@ void MainComponent::resized()
         tunerCentsLabel.setJustificationType(juce::Justification::centredRight);
         tunerStatusLabel.setBounds(rightX + 40, panelY + 368, rightW - 80, 40);
         tunerStatusLabel.setJustificationType(juce::Justification::centred);
+
+        // Tuning selector occupies the old static "STANDARD TUNING" line; the
+        // six note combos sit on top of the string tiles.
+        tuningPresetCombo.setBounds(margin + 24, panelY + 44, leftW - 48, 28);
+
+        const float tileGap = 12.0f;
+        const float tileW = (static_cast<float>(leftW) - 48.0f
+                             - tileGap * 2.0f) / 3.0f;
+        const float tileH = 112.0f;
+
+        for (int i = 0; i < 6; ++i)
+        {
+            const int column = i % 3;
+            const int row = i / 3;
+            const float x = static_cast<float>(margin + 24)
+                + static_cast<float>(column) * (tileW + tileGap);
+            const float y = static_cast<float>(panelY + 82)
+                + static_cast<float>(row) * (tileH + tileGap);
+
+            stringTuningCombos[static_cast<size_t>(i)].setBounds(
+                juce::Rectangle<float>(x + 8.0f, y + 8.0f,
+                                       tileW - 16.0f, 34.0f).toNearestInt());
+        }
 
         // The input monitor takes the free space at the bottom of the strings
         // panel, where the static reference-pitch list used to be.
@@ -4726,6 +4744,173 @@ void MainComponent::refreshGuitarInputCombo()
     rebuildGuitarInputChoices();
 }
 
+namespace
+{
+    struct TuningPreset
+    {
+        const char* name;
+        std::array<int, 6> notes;
+    };
+
+    constexpr int customTuningItemId = 8;
+    constexpr int tuningPresetCount = 7;
+
+    const TuningPreset& tuningPreset(int index)
+    {
+        static const TuningPreset presets[] =
+        {
+            { "STANDARD", { 40, 45, 50, 55, 59, 64 } },
+            { "DROP D",   { 38, 45, 50, 55, 59, 64 } },
+            { "EB",       { 39, 44, 49, 54, 58, 63 } },
+            { "DADGAD",   { 38, 45, 50, 55, 57, 62 } },
+            { "OPEN G",   { 38, 43, 50, 55, 59, 62 } },
+            { "OPEN D",   { 38, 45, 50, 54, 57, 62 } },
+            { "DROP C",   { 36, 43, 48, 53, 57, 62 } },
+        };
+
+        return presets[juce::jlimit(0, tuningPresetCount - 1, index)];
+    }
+}
+
+std::array<int, 6> MainComponent::presetNotes(int presetIndex)
+{
+    return tuningPreset(presetIndex).notes;
+}
+
+const char* MainComponent::presetName(int presetIndex)
+{
+    return tuningPreset(presetIndex).name;
+}
+
+int MainComponent::presetItemIdForTuning(const std::array<int, 6>& openMidiNotes)
+{
+    for (int i = 0; i < tuningPresetCount; ++i)
+        if (tuningPreset(i).notes == openMidiNotes)
+            return i + 1;
+
+    return customTuningItemId;
+}
+
+void MainComponent::initialiseTuningSelector()
+{
+    tuningPresetCombo.clear(juce::dontSendNotification);
+
+    for (int i = 0; i < tuningPresetCount; ++i)
+        tuningPresetCombo.addItem(presetName(i), i + 1);
+
+    tuningPresetCombo.addItem("Custom", customTuningItemId);
+    tuningPresetCombo.setTooltip(
+        "Open-string tuning. The tablature is rebuilt for the selected tuning.");
+    tuningPresetCombo.setColour(juce::ComboBox::backgroundColourId, UiColors::surface2);
+    tuningPresetCombo.setColour(juce::ComboBox::textColourId, UiColors::text);
+    tuningPresetCombo.setColour(juce::ComboBox::outlineColourId, UiColors::border);
+    tuningPresetCombo.setColour(juce::ComboBox::arrowColourId, UiColors::accent);
+    tuningPresetCombo.onChange = [this]
+    {
+        applyPresetTuning(tuningPresetCombo.getSelectedId());
+    };
+    addAndMakeVisible(tuningPresetCombo);
+
+    for (int i = 0; i < 6; ++i)
+    {
+        auto& combo = stringTuningCombos[static_cast<size_t>(i)];
+        combo.clear(juce::dontSendNotification);
+
+        // Offer a practical range around the standard open note: enough for
+        // drop tunings and open tunings without a 100-item popup.
+        const int standardNote = GuitarTuning::standard[static_cast<size_t>(i)];
+        for (int note = juce::jmax(24, standardNote - 12);
+             note <= juce::jmin(96, standardNote + 12); ++note)
+        {
+            combo.addItem(GuitarTuning::noteName(note, true), note);
+        }
+
+        combo.setTooltip("Open note of string " + juce::String(6 - i));
+        combo.setColour(juce::ComboBox::backgroundColourId, UiColors::surface2);
+        combo.setColour(juce::ComboBox::textColourId, UiColors::accent);
+        combo.setColour(juce::ComboBox::outlineColourId, UiColors::borderStrong);
+        combo.setColour(juce::ComboBox::arrowColourId, UiColors::accent);
+        combo.onChange = [this] { applyCustomTuningFromUi(); };
+        addAndMakeVisible(combo);
+    }
+
+    // A stored tuning that matches a preset should show that preset, even if
+    // the previous session ended on the Custom item.
+    const int presetId = presetItemIdForTuning(currentTuning);
+    if (presetId != customTuningItemId)
+        currentTuningName = presetName(presetId - 1);
+    else if (currentTuningName.isEmpty())
+        currentTuningName = "CUSTOM";
+
+    setCurrentTuning(currentTuning, currentTuningName, false);
+    syncTuningUi();
+}
+
+void MainComponent::syncTuningUi()
+{
+    tuningUiUpdating = true;
+
+    tuningPresetCombo.setSelectedId(presetItemIdForTuning(currentTuning),
+                                    juce::dontSendNotification);
+
+    for (int i = 0; i < 6; ++i)
+        stringTuningCombos[static_cast<size_t>(i)].setSelectedId(
+            currentTuning[static_cast<size_t>(i)], juce::dontSendNotification);
+
+    tuningUiUpdating = false;
+}
+
+void MainComponent::applyPresetTuning(int presetItemId)
+{
+    if (tuningUiUpdating)
+        return;
+
+    if (presetItemId == customTuningItemId)
+    {
+        // Keep the current notes; the player edits the six string combos next.
+        setCurrentTuning(currentTuning, "CUSTOM", true);
+        return;
+    }
+
+    const int index = presetItemId - 1;
+    if (index < 0 || index >= tuningPresetCount)
+        return;
+
+    const auto notes = presetNotes(index);
+
+    tuningUiUpdating = true;
+    for (int i = 0; i < 6; ++i)
+        stringTuningCombos[static_cast<size_t>(i)].setSelectedId(
+            notes[static_cast<size_t>(i)], juce::dontSendNotification);
+    tuningUiUpdating = false;
+
+    setCurrentTuning(notes, presetName(index), true);
+    syncTuningUi();
+}
+
+void MainComponent::applyCustomTuningFromUi()
+{
+    if (tuningUiUpdating)
+        return;
+
+    std::array<int, 6> notes {};
+
+    for (int i = 0; i < 6; ++i)
+    {
+        const int note = stringTuningCombos[static_cast<size_t>(i)].getSelectedId();
+        if (note <= 0)
+            return;
+
+        notes[static_cast<size_t>(i)] = note;
+    }
+
+    tuningUiUpdating = true;
+    tuningPresetCombo.setSelectedId(customTuningItemId, juce::dontSendNotification);
+    tuningUiUpdating = false;
+
+    setCurrentTuning(notes, "CUSTOM", true);
+}
+
 void MainComponent::initialiseUi()
 {
     //==========================================================================
@@ -4821,6 +5006,10 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(tunerStringLabel);
     addAndMakeVisible(tunerCentsLabel);
     addAndMakeVisible(tunerStatusLabel);
+
+    // Tuning selector: presets plus six custom open notes. It lives on the
+    // tuner screen, before the player starts the song.
+    initialiseTuningSelector();
 
     previewButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
     previewButton.setColour(juce::TextButton::textColourOffId, UiColors::text);

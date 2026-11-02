@@ -577,6 +577,16 @@ private:
 
     juce::TextButton tunerSkipButton{ "SKIP TUNING" };
 
+    // Open-string tuning selected on the tuner screen. The same array is used
+    // by GuitarTuner (targets) and MidiParser (tab positions), so the tuner
+    // and the tabs can never disagree.
+    std::array<int, 6> currentTuning = GuitarTuning::standard;
+    juce::String currentTuningName{ "STANDARD" };
+    juce::ComboBox tuningPresetCombo;
+    std::array<juce::ComboBox, 6> stringTuningCombos;
+    juce::File currentMidiFile;
+    bool tuningUiUpdating = false;
+
     juce::TextButton gameStartButton{ "START" };
 
     // Shown on the Ready screen; the count-in and playback start only here.
@@ -937,6 +947,21 @@ private:
     bool loadGeneratedMelody();
     juce::File dailyChallengeMidiFile;
     void beginTuningForSelectedSong();
+
+    // Tuning selector shown at the tuner stage. The presets live in
+    // MainComponentUI.cpp; changing any string combo switches to Custom.
+    void initialiseTuningSelector();
+    void syncTuningUi();
+    void applyPresetTuning(int presetItemId);
+    void applyCustomTuningFromUi();
+    void setCurrentTuning(const std::array<int, 6>& openMidiNotes,
+                          const juce::String& name,
+                          bool persist);
+    void rebuildTablatureForTuning();
+    static int presetItemIdForTuning(const std::array<int, 6>& openMidiNotes);
+    static std::array<int, 6> presetNotes(int presetIndex);
+    static const char* presetName(int presetIndex);
+
     int getBestScore(const juce::String& songId);
     void saveBestScoreForSelectedSong(int score);
     void updateSongBestScoreLabels();

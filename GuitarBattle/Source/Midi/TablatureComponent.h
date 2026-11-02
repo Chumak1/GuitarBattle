@@ -1,7 +1,10 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <array>
+
 #include "TabNote.h"
+#include "TabMapper.h"
 
 class TablatureComponent : public juce::Component,
     private juce::Timer
@@ -10,6 +13,13 @@ public:
     TablatureComponent();
 
     void setNotes(const std::vector<TabNote>& newNotes);
+
+    /** Open-string MIDI notes, low string first, plus the display name
+        ("STANDARD", "DROP D", "CUSTOM"). The notes themselves come from the
+        parser, which is re-run with the same tuning.
+    */
+    void setTuning(const std::array<int, 6>& newOpenMidiNotes,
+                   const juce::String& name);
 
     void setPlayheadBeat(double beat);
     void setPlayheadRunning(bool shouldRun);
@@ -40,8 +50,11 @@ private:
 
     static constexpr int numberOfStrings = 6;
 
+    std::array<int, 6> openMidiNotes = GuitarTuning::standard;
+    juce::String tuningName = "STANDARD";
+
     static juce::Colour getFingerColour(int finger);
-    static const char* getStringName(int stringIndex);
+    juce::String getStringName(int stringIndex) const;
 
     void drawString(
         juce::Graphics& g,

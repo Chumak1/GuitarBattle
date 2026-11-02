@@ -3,10 +3,8 @@
 
 bool MidiParser::loadMidi(
     const juce::File& file,
-    std::vector<TabNote>& outputNotes)
-
-
-
+    std::vector<TabNote>& outputNotes,
+    const std::array<int, 6>& openMidiNotes)
 {
     outputNotes.clear();
 
@@ -54,7 +52,8 @@ bool MidiParser::loadMidi(
             *track,
             static_cast<double>(
                 midiFile.getTimeFormat()),
-            outputNotes);
+            outputNotes,
+            openMidiNotes);
     }
 
     std::sort(
@@ -77,7 +76,6 @@ bool MidiParser::loadMidi(
         int preferenceCost = 0;
     };
 
-    static constexpr int openStrings[6] = { 40, 45, 50, 55, 59, 64 };
     const size_t noteCount = outputNotes.size();
     std::vector<std::vector<PositionCandidate>> candidates(noteCount);
 
@@ -88,7 +86,8 @@ bool MidiParser::loadMidi(
         {
             for (int stringIndex = 0; stringIndex < 6; ++stringIndex)
             {
-                const int fret = note.midiNote - openStrings[stringIndex];
+                const int fret = note.midiNote
+                    - openMidiNotes[static_cast<size_t>(stringIndex)];
                 if (fret < 0 || fret > maxFret)
                     continue;
 
@@ -234,7 +233,13 @@ bool MidiParser::loadMidi(
     // limited to Chords.mid; the existing solo fingering optimiser is untouched.
     if (file.getFileName().equalsIgnoreCase("Chords.mid"))
     {
-        static constexpr int chordOpenStrings[4] = { 40, 45, 50, 55 };
+        const std::array<int, 4> chordOpenStrings
+        {
+            openMidiNotes[0],
+            openMidiNotes[1],
+            openMidiNotes[2],
+            openMidiNotes[3]
+        };
         double previousRootFret = -1.0;
         size_t groupBegin = 0;
 
@@ -371,7 +376,8 @@ bool MidiParser::loadMidi(
 void MidiParser::processTrack(
     const juce::MidiMessageSequence& sequence,
     double ticksPerQuarterNote,
-    std::vector<TabNote>& outputNotes)
+    std::vector<TabNote>& outputNotes,
+    const std::array<int, 6>& openMidiNotes)
 {
     struct ActiveNote
     {
@@ -444,7 +450,8 @@ void MidiParser::processTrack(
                     if (TabMapper::midiNoteToPosition(
                         midiNote,
                         stringIndex,
-                        fret))
+                        fret,
+                        openMidiNotes))
                     {
                         TabNote note;
 

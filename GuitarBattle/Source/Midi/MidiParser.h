@@ -9,11 +9,13 @@ class MidiParser
 public:
     static bool loadMidi(
         const juce::File& file,
-        std::vector<TabNote>& outputNotes);
+        std::vector<TabNote>& outputNotes,
+        const std::array<int, 6>& openMidiNotes = GuitarTuning::standard);
 
 private:
     static void processTrack(
         const juce::MidiMessageSequence& sequence,
         double ticksPerQuarterNote,
-        std::vector<TabNote>& outputNotes);
+        std::vector<TabNote>& outputNotes,
+        const std::array<int, 6>& openMidiNotes);
 };

@@ -58,6 +58,16 @@ void TablatureComponent::setNotes(const std::vector<TabNote>& newNotes)
 
 //==============================================================================
 
+void TablatureComponent::setTuning(const std::array<int, 6>& newOpenMidiNotes,
+                                   const juce::String& name)
+{
+    openMidiNotes = newOpenMidiNotes;
+    tuningName = name.isNotEmpty() ? name : juce::String("CUSTOM");
+    repaint();
+}
+
+//==============================================================================
+
 void TablatureComponent::setBpm(double newBpm)
 {
     if (newBpm > 0.0)
@@ -131,18 +141,13 @@ juce::Colour TablatureComponent::getFingerColour(int finger)
 
 //==============================================================================
 
-const char* TablatureComponent::getStringName(int stringIndex)
+juce::String TablatureComponent::getStringName(int stringIndex) const
 {
-    switch (stringIndex)
-    {
-    case 0: return "E";
-    case 1: return "A";
-    case 2: return "D";
-    case 3: return "G";
-    case 4: return "B";
-    case 5: return "E";
-    default: return "?";
-    }
+    if (stringIndex < 0 || stringIndex >= numberOfStrings)
+        return "?";
+
+    return GuitarTuning::noteName(
+        openMidiNotes[static_cast<size_t>(stringIndex)], false);
 }
 
 //==============================================================================
@@ -344,8 +349,9 @@ void TablatureComponent::paint(juce::Graphics& g)
 
     g.setColour(UiColors::muted);
     g.setFont(GameUi::font(10.5f));
-    g.drawText("STANDARD TUNING  /  E  A  D  G  B  E",
-               juce::Rectangle<float>(180.0f, 12.0f, 340.0f, 18.0f),
+    g.drawText(tuningName + " TUNING  /  "
+                   + GuitarTuning::label(openMidiNotes, false),
+               juce::Rectangle<float>(180.0f, 12.0f, 420.0f, 18.0f),
                juce::Justification::centredLeft, false);
 
     const float legendX = static_cast<float>(getWidth()) - 212.0f;

@@ -61,6 +61,38 @@ MainComponent::MainComponent()
         metronomeMixerEnabled.store(
             settings->getBoolValue("MetronomeEnabled", false),
             std::memory_order_relaxed);
+
+        // Open-string tuning chosen on the tuner screen. Invalid or missing
+        // values fall back to standard tuning; the UI validates the selection.
+        const auto storedTuning = settings->getValue("TuningNotes", juce::String());
+        if (storedTuning.isNotEmpty())
+        {
+            juce::StringArray parts;
+            parts.addTokens(storedTuning, ",", "");
+
+            if (parts.size() == 6)
+            {
+                std::array<int, 6> parsed {};
+                bool valid = true;
+
+                for (int i = 0; i < 6; ++i)
+                {
+                    const int note = parts[i].getIntValue();
+                    if (note < 24 || note > 96)
+                    {
+                        valid = false;
+                        break;
+                    }
+
+                    parsed[static_cast<size_t>(i)] = note;
+                }
+
+                if (valid)
+                    currentTuning = parsed;
+            }
+        }
+
+        currentTuningName = settings->getValue("TuningName", "STANDARD");
     }
 
     inputMonitor = std::make_unique<GuitarInputMonitor>(deviceManager);
