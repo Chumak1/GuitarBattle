@@ -7,9 +7,9 @@ build can change without redeploying the page.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlalchemy import select
@@ -23,10 +23,17 @@ from app.schemas.site import (
     GameBuildItem,
     GeoResponse,
     HeroBackground,
+    LandingDownloads,
     LandingResponse,
     SiteContacts,
 )
 from app.services.contacts import contacts_update_from_content, public_contacts
+from app.services.game_builds import (
+    DEFAULT_GAME_BUILD_PLATFORM,
+    GAME_BUILD_PLATFORMS,
+    MACOS,
+    WINDOWS,
+)
 from app.services.geo import country_for_ip, language_for_country
 
 router = APIRouter(tags=["site"])
@@ -36,9 +43,24 @@ LANDING_SETTINGS_ID = 1
 # Public URL prefix of hero uploads; the directory itself is mounted by main.py.
 LANDING_MEDIA_URL_PREFIX = "/media/landing/"
 
+#: ``?platform=`` query parameter shared by the public endpoints.
+PlatformParam = Literal["windows", "macos"]
+
 
 def download_url() -> str:
+    """Canonical (Windows) download URL, kept for backwards compatibility."""
     return f"{settings.api_v1_prefix}/downloads/game"
+
+
+def platform_download_url(platform: str) -> str:
+    """Download URL of one platform.
+
+    The Windows URL carries no query string: the desktop client builds it from
+    ``/landing`` and older clients must keep working unchanged.
+    """
+    if platform in ("", WINDOWS):
+        return download_url()
+    return f"{download_url()}?platform={platform}"
 
 
 def get_landing_row(db: Session) -> LandingSettings | None:
@@ -68,15 +90,17 @@ def hero_background_from_content(content: dict[str, Any]) -> HeroBackground:
 
 
 def serialize_build(build: GameBuild) -> GameBuildItem:
+    platform = build.platform or DEFAULT_GAME_BUILD_PLATFORM
     return GameBuildItem(
         id=build.id,
+        platform=platform,
         version=build.version or "",
         filename=build.filename,
         size_bytes=build.size_bytes,
         content_type=build.content_type,
         is_active=build.is_active,
         uploaded_at=build.uploaded_at,
-        url=download_url(),
+        url=platform_download_url(platform),
         release_notes=build.release_notes or "",
     )
 
@@ -94,34 +118,64 @@ def build_file_path(build: GameBuild) -> Path | None:
     return target
 
 
-def active_build(db: Session) -> GameBuild | None:
-    return db.scalars(
+def active_builds(db: Session) -> dict[str, GameBuild | None]:
+    """Newest published build of every platform (``None`` when absent)."""
+    result: dict[str, GameBuild | None] = {platform: None for platform in GAME_BUILD_PLATFORMS}
+    rows = db.scalars(
         select(GameBuild)
         .where(GameBuild.is_active.is_(True))
         .order_by(GameBuild.uploaded_at.desc(), GameBuild.id.desc())
-    ).first()
+    ).all()
+    for row in rows:
+        platform = row.platform or DEFAULT_GAME_BUILD_PLATFORM
+        if platform in result and result[platform] is None:
+            result[platform] = row
+    return result
+
+
+def active_build(
+    db: Session, platform: str = DEFAULT_GAME_BUILD_PLATFORM
+) -> GameBuild | None:
+    return active_builds(db).get(platform)
+
+
+def download_info(build: GameBuild | None, platform: str) -> DownloadInfo:
+    """Public download descriptor for one platform.
+
+    ``url`` is always set so the page can link to the endpoint even when no
+    build is published; ``available`` says whether it will return a file.
+    """
+    url = platform_download_url(platform)
+    if build is None or build_file_path(build) is None:
+        return DownloadInfo(url=url)
+    return DownloadInfo(
+        available=True,
+        version=build.version or "",
+        filename=build.filename,
+        size_bytes=build.size_bytes,
+        url=url,
+        release_notes=build.release_notes or "",
+    )
 
 
 @router.get("/landing", response_model=LandingResponse, summary="Landing page content")
 def get_landing(db: Session = Depends(get_db)) -> LandingResponse:
     content = landing_content(get_landing_row(db))
+    builds = active_builds(db)
 
-    build = active_build(db)
-    download = DownloadInfo(url=download_url())
-    if build is not None and build_file_path(build) is not None:
-        download = DownloadInfo(
-            available=True,
-            version=build.version or "",
-            filename=build.filename,
-            size_bytes=build.size_bytes,
-            url=download_url(),
-            release_notes=build.release_notes or "",
-        )
+    # ``download`` stays the Windows build: the desktop client reads it and the
+    # URL must keep working unchanged. ``downloads`` is the additive, per
+    # platform map used by the macOS button on the page.
+    downloads = LandingDownloads(
+        windows=download_info(builds[WINDOWS], WINDOWS),
+        macos=download_info(builds[MACOS], MACOS),
+    )
 
     return LandingResponse(
         blocks=blocks_from_content(content),
         hero_background=hero_background_from_content(content),
-        download=download,
+        download=downloads.windows or DownloadInfo(url=download_url()),
+        downloads=downloads,
     )
 
 
@@ -136,12 +190,23 @@ def get_contacts(db: Session = Depends(get_db)) -> SiteContacts:
 
 
 @router.get("/downloads/game", summary="Download the current desktop build")
-def download_game_build(db: Session = Depends(get_db)) -> FileResponse:
-    build = active_build(db)
+def download_game_build(
+    platform: PlatformParam = Query(
+        default=DEFAULT_GAME_BUILD_PLATFORM,
+        description="windows (default) or macos",
+    ),
+    db: Session = Depends(get_db),
+) -> FileResponse:
+    build = active_build(db, platform)
     if build is None:
+        # The Windows message is unchanged: older clients only ever ask for the
+        # default platform.
+        detail = "No game build is available"
+        if platform != DEFAULT_GAME_BUILD_PLATFORM:
+            detail = f"No game build is available for {platform}"
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail="No game build is available",
+            detail=detail,
         )
     target = build_file_path(build)
     if target is None:

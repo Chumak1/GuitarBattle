@@ -5,13 +5,14 @@ Preview lives in ``song_files`` with ``role = "preview"`` but is outside
 the gameplay asset list. Only the additive ``preview_url`` field exposes it.
 """
 import uuid
+from pathlib import Path
 
 import pytest
 
 from app.config import settings
 from tests import helpers
 
-pytestmark = pytest.mark.db
+ADMIN_STATIC_DIR = Path(__file__).resolve().parents[1] / "app" / "static" / "admin"
 
 
 def _upload_preview(client, admin_user, song_id, *, marker=0x11, size=256, name="preview.mp3"):
@@ -29,6 +30,7 @@ def _preview_url_for(slug, file_id):
     return f"http://testserver{helpers.API}/songs/{slug}/files/{file_id}/download"
 
 
+@pytest.mark.db
 def test_preview_absent_is_null(db_client, published_song):
     detail = db_client.get(f"{helpers.API}/songs/{published_song['slug']}")
     assert detail.status_code == 200
@@ -39,6 +41,7 @@ def test_preview_absent_is_null(db_client, published_song):
     assert listing.json()["items"][0]["preview_url"] is None
 
 
+@pytest.mark.db
 def test_preview_upload_replace_and_public_url(
     db_client, admin_user, published_song, song_storage
 ):
@@ -104,6 +107,7 @@ def test_preview_upload_replace_and_public_url(
     assert again.status_code == 204
 
 
+@pytest.mark.db
 def test_preview_does_not_affect_readiness_or_publish(
     db_client, admin_user, published_song
 ):
@@ -135,6 +139,7 @@ def test_preview_does_not_affect_readiness_or_publish(
     assert readiness_endpoint.status_code == 200
 
 
+@pytest.mark.db
 def test_preview_download_is_not_public_for_archived_or_missing(
     db_client, admin_user, published_song
 ):
@@ -155,6 +160,7 @@ def test_preview_download_is_not_public_for_archived_or_missing(
     assert archived.status_code == 404
 
 
+@pytest.mark.db
 def test_preview_does_not_bump_gameplay_asset_version(
     db_client, admin_user, published_song
 ):
@@ -179,6 +185,7 @@ def test_preview_does_not_bump_gameplay_asset_version(
     assert db_client.get(f"{helpers.API}/songs/{published_song['slug']}").json()["version"] == before + 1
 
 
+@pytest.mark.db
 def test_preview_upload_validation(db_client, admin_user, published_song, monkeypatch):
     wrong_extension = db_client.post(
         f"{helpers.API}/admin/songs/{published_song['id']}/files/audio/preview",
@@ -204,6 +211,7 @@ def test_preview_upload_validation(db_client, admin_user, published_song, monkey
     assert "limit" in oversized.json()["detail"].lower()
 
 
+@pytest.mark.db
 def test_preview_upload_requires_admin(db_client, user_account, published_song):
     data = helpers.build_mp3_bytes()
     anonymous = db_client.post(
@@ -224,3 +232,88 @@ def test_preview_upload_requires_admin(db_client, user_account, published_song):
         headers=user_account["headers"],
     )
     assert delete.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Admin list/detail: additive ``preview_url`` used by the web admin player
+# ---------------------------------------------------------------------------
+def _admin_songs(client, admin_headers):
+    response = client.get(f"{helpers.API}/admin/songs", headers=admin_headers)
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.db
+def test_admin_preview_url_follows_upload_and_delete(
+    db_client, admin_user, published_song
+):
+    headers = admin_user["headers"]
+    song_id = published_song["id"]
+
+    listing = _admin_songs(db_client, headers)
+    assert listing["items"][0]["preview_url"] is None
+
+    uploaded, preview_bytes = _upload_preview(db_client, admin_user, song_id)
+    expected = (
+        f"{helpers.API}/admin/songs/{song_id}/files/{uploaded['id']}/download"
+    )
+
+    listing = _admin_songs(db_client, headers)
+    assert listing["items"][0]["preview_url"] == expected
+
+    detail = db_client.get(f"{helpers.API}/admin/songs/{song_id}", headers=headers)
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["preview_url"] == expected
+    # ``preview_url`` mirrors the existing file manager field.
+    assert detail.json()["assets"]["preview"]["download_url"] == expected
+
+    # The admin download route is the only way to play it: no anonymous access.
+    assert db_client.get(expected).status_code == 401
+    download = db_client.get(expected, headers=headers)
+    assert download.status_code == 200, download.text
+    assert download.content == preview_bytes
+
+    deleted = db_client.delete(
+        f"{helpers.API}/admin/songs/{song_id}/files/preview", headers=headers
+    )
+    assert deleted.status_code == 204
+    assert _admin_songs(db_client, headers)["items"][0]["preview_url"] is None
+    detail = db_client.get(f"{helpers.API}/admin/songs/{song_id}", headers=headers)
+    assert detail.json()["preview_url"] is None
+
+
+# ---------------------------------------------------------------------------
+# Static assets: the songs page shows LVL and ships the inline player
+# ---------------------------------------------------------------------------
+def test_admin_songs_page_has_level_badge_and_inline_player():
+    html = (ADMIN_STATIC_DIR / "index.html").read_text(encoding="utf-8")
+    assert 'id="songPreviewPlayer"' in html
+    assert 'id="songPreviewAudio"' in html
+    assert 'id="songPreviewClose"' in html
+    assert ">LVL</th>" in html
+    assert 'colspan="8"' in html
+
+    # The player reports download progress (determinate or indeterminate).
+    assert 'id="songPreviewProgress"' in html
+    assert 'id="songPreviewProgressBar"' in html
+    assert 'id="songPreviewProgressText"' in html
+    assert 'class="progress"' in html
+
+    script = (ADMIN_STATIC_DIR / "admin.js").read_text(encoding="utf-8")
+    assert 'data-action="preview"' in script
+    assert "preview_url" in script
+    assert "songPreviewAudio" in script
+    assert "URL.createObjectURL" in script
+    assert "URL.revokeObjectURL" in script
+
+    # Progress comes from XHR (fetch has no download progress) and is abortable.
+    assert 'xhr.responseType = "blob"' in script
+    assert 'addEventListener("progress"' in script
+    assert "xhr.abort()" in script
+    assert "songPreviewProgressBar" in script
+    assert "songPreviewProgressText" in script
+    assert "aria-valuenow" in script
+
+    css = (ADMIN_STATIC_DIR / "admin.css").read_text(encoding="utf-8")
+    assert ".badge-level" in css
+    assert ".song-preview-progress" in css

@@ -489,6 +489,19 @@ code {
   border-color: rgba(66, 211, 146, 0.24);
 }
 
+/* Platform badge of a game build: Windows vs macOS. */
+.badge-platform-windows {
+  color: #a8cfff;
+  background: rgba(109, 183, 255, 0.10);
+  border-color: rgba(109, 183, 255, 0.23);
+}
+
+.badge-platform-macos {
+  color: #d6c6ff;
+  background: rgba(160, 132, 255, 0.10);
+  border-color: rgba(160, 132, 255, 0.24);
+}
+
 .action-group {
   display: inline-flex;
   align-items: center;
@@ -1377,6 +1390,123 @@ code {
 
 .support-preview-lang {
   width: auto;
+}
+
+/* Difficulty level (LVL 1..10) in the songs table and the files modal. */
+.badge-level {
+  color: #ffd98a;
+  background: rgba(243, 196, 81, 0.12);
+  border-color: rgba(243, 196, 81, 0.28);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Inline Preview Song player shown above the songs table. */
+.song-preview-player {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin: 0.75rem 1rem 0;
+  padding: 0.75rem 0.9rem;
+  border: 1px solid rgba(243, 196, 81, 0.22);
+  border-bottom-width: 2px;
+  border-radius: 0.75rem;
+  background: rgba(243, 196, 81, 0.045);
+}
+
+.song-preview-player[hidden] {
+  display: none;
+}
+
+.song-preview-player .badge-preview {
+  flex: 0 0 auto;
+  color: #ffd98a;
+  background: rgba(243, 196, 81, 0.12);
+  border-color: rgba(243, 196, 81, 0.26);
+}
+
+.song-preview-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.song-preview-title {
+  color: #f0f5fa;
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+#songPreviewAudio {
+  width: 100%;
+  max-width: 32rem;
+  height: 2.2rem;
+}
+
+/* Download progress of the inline Preview Song player. */
+.song-preview-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+  max-width: 32rem;
+}
+
+.song-preview-progress[hidden] {
+  display: none;
+}
+
+.song-preview-progress .progress {
+  height: 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+
+.song-preview-progress .progress-bar {
+  background-color: #f3c451;
+  transition: width 0.15s ease;
+}
+
+.song-preview-progress-text {
+  color: #9caebb;
+  font-size: 0.72rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.song-preview-player > .action-btn {
+  flex: 0 0 auto;
+}
+
+/* A preview button without an uploaded Preview Song. */
+.action-btn:disabled,
+.action-btn:disabled:hover {
+  opacity: 0.38;
+  cursor: not-allowed;
+  color: #9caebb;
+  background: transparent;
+  border-color: transparent;
+}
+
+@media (max-width: 575.98px) {
+  .song-preview-player {
+    flex-wrap: wrap;
+    margin: 0.65rem 0.75rem 0;
+  }
+
+  .song-preview-main {
+    order: 3;
+    flex-basis: 100%;
+  }
+
+  #songPreviewAudio {
+    max-width: none;
+  }
+
+  .song-preview-progress {
+    max-width: none;
+  }
 }
 
 

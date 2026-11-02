@@ -154,6 +154,73 @@
     });
   }
 
+  /* ---------- macOS download ---------- */
+
+  function formatSize(bytes) {
+    var value = Number(bytes) || 0;
+    if (value <= 0) return '';
+    var megabytes = value / (1024 * 1024);
+    if (megabytes >= 1024) {
+      return (megabytes / 1024).toFixed(1).replace('.', ',') + ' GB';
+    }
+    return Math.round(megabytes) + ' MB';
+  }
+
+  function downloadMeta(info) {
+    var parts = [];
+    if (info.version) parts.push('v' + info.version);
+    var size = formatSize(info.size_bytes);
+    if (size) parts.push(size);
+    if (!parts.length && info.filename) parts.push(info.filename);
+    return parts.join(' · ');
+  }
+
+  // The macOS build is one universal binary, so there is no architecture
+  // picker: the button is a plain link. The markup ships it disabled with a
+  // "coming soon" hint; here it becomes a real download as soon as the API
+  // reports a published macOS build.
+  function applyDownloads() {
+    var downloads = (state.data && state.data.downloads) || null;
+    var info = downloads ? downloads.macos : null;
+    var available = !!(info && info.available);
+    var metaText = available
+      ? downloadMeta(info)
+      : (I18N ? I18N.t('landing.mac.soon') : '');
+
+    Array.prototype.forEach.call(
+      document.querySelectorAll('[data-download-macos]'),
+      function (link) {
+        if (available && info.url) link.href = info.url;
+
+        if (available) {
+          link.classList.remove('is-disabled');
+          link.removeAttribute('aria-disabled');
+          if (metaText) link.setAttribute('title', metaText);
+        } else {
+          link.classList.add('is-disabled');
+          link.setAttribute('aria-disabled', 'true');
+          link.removeAttribute('title');
+        }
+
+        var meta = link.querySelector('[data-download-macos-meta]');
+        if (meta && metaText) meta.textContent = metaText;
+      }
+    );
+  }
+
+  // A link marked as disabled must not navigate, whether it is clicked or
+  // activated from the keyboard.
+  function bindMacDownload() {
+    Array.prototype.forEach.call(
+      document.querySelectorAll('[data-download-macos]'),
+      function (link) {
+        link.addEventListener('click', function (event) {
+          if (link.getAttribute('aria-disabled') === 'true') event.preventDefault();
+        });
+      }
+    );
+  }
+
   function apply() {
     if (!state.data) return;
     var b;
@@ -236,6 +303,7 @@
 
     applyHeroBackground();
     applyDownload();
+    applyDownloads();
   }
 
   fetch('/api/v1/landing', { credentials: 'omit', cache: 'no-store' })
@@ -253,4 +321,5 @@
     });
 
   if (I18N) I18N.onChange(apply);
+  bindMacDownload();
 })();

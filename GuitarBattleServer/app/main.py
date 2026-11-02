@@ -56,6 +56,12 @@ def _seed_support_page() -> None:
     except Exception:  # pragma: no cover - startup must survive a cold database
         db.rollback()
         logger.exception("Could not seed the support page")
+    finally:
+        # ``ensure_support_seed`` ends with a refresh, which opens a
+        # transaction. Returning the connection to the pool explicitly keeps a
+        # startup read from pinning a pooled connection until garbage collection
+        # (that blocks later ``TRUNCATE`` statements, e.g. in the test suite).
+        db.close()
 
 
 @asynccontextmanager
@@ -128,6 +134,9 @@ support_page = web_static_dir / "support.html"
 CONTENT_SECURITY_POLICY = (
     "default-src 'self'; "
     "img-src 'self' data:; "
+    # The admin songs page plays an authorized preview from a blob: URL; the
+    # fetch itself is same-origin, but <audio> needs the scheme explicitly.
+    "media-src 'self' blob:; "
     "style-src 'self' 'unsafe-inline'; "
     "script-src 'self'; "
     "frame-src 'self'; "

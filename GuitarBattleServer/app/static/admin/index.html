@@ -255,6 +255,26 @@
 
           <div id="pageNote" class="page-note small text-secondary" hidden></div>
 
+          <div id="songPreviewPlayer" class="song-preview-player" hidden>
+            <span class="badge-soft badge-preview">
+              <i class="bi bi-play-circle"></i>Preview Song
+            </span>
+            <div class="song-preview-main">
+              <div id="songPreviewTitle" class="song-preview-title text-truncate"></div>
+              <audio id="songPreviewAudio" controls preload="none"></audio>
+              <div id="songPreviewProgress" class="song-preview-progress" hidden>
+                <div id="songPreviewProgressTrack" class="progress" role="progressbar"
+                     aria-label="Загрузка Preview Song" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+                  <div id="songPreviewProgressBar" class="progress-bar" style="width: 0%"></div>
+                </div>
+                <div id="songPreviewProgressText" class="song-preview-progress-text" aria-live="polite"></div>
+              </div>
+            </div>
+            <button id="songPreviewClose" class="action-btn" type="button" title="Закрыть плеер" aria-label="Закрыть плеер">
+              <i class="bi bi-x-lg"></i>
+            </button>
+          </div>
+
           <div class="table-responsive">
             <table class="table songs-table align-middle mb-0">
               <thead>
@@ -262,6 +282,7 @@
                   <th scope="col">Песня</th>
                   <th scope="col">Статус</th>
                   <th scope="col">Готовность</th>
+                  <th scope="col">LVL</th>
                   <th scope="col" class="d-none d-lg-table-cell">BPM</th>
                   <th scope="col" class="d-none d-xl-table-cell">Длительность</th>
                   <th scope="col" class="d-none d-xl-table-cell">Обновлена</th>
@@ -269,7 +290,7 @@
                 </tr>
               </thead>
               <tbody id="songsBody">
-                <tr><td colspan="7" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                <tr><td colspan="8" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
               </tbody>
             </table>
           </div>
@@ -622,7 +643,7 @@
           <div>
             <div class="eyebrow">Публичный сайт</div>
             <h1 class="page-title">Сборка игры</h1>
-            <p class="page-subtitle">Загрузите ZIP, EXE или MSI и активируйте сборку — на лендинге появится кнопка скачивания.</p>
+            <p class="page-subtitle">Загрузите сборку для Windows или macOS и активируйте её — на лендинге появится кнопка скачивания для этой платформы. macOS-сборка одна и универсальная: работает и на Apple Silicon, и на Intel. У каждой платформы своя активная сборка.</p>
           </div>
           <button id="buildsReload" class="btn btn-outline-light" type="button">
             <i class="bi bi-arrow-clockwise me-1"></i>Обновить
@@ -636,10 +657,17 @@
             <h2 class="h5 mb-3">Загрузить новую сборку</h2>
             <form id="buildForm" class="row g-2 align-items-end">
               <div class="col-12 col-md-3">
+                <label class="form-label" for="buildPlatform">Платформа</label>
+                <select id="buildPlatform" class="form-select">
+                  <option value="windows" selected>Windows</option>
+                  <option value="macos">macOS (универсальная)</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-2">
                 <label class="form-label" for="buildVersion">Версия</label>
                 <input id="buildVersion" class="form-control" type="text" maxlength="64" placeholder="0.9.0">
               </div>
-              <div class="col-12 col-md-6">
+              <div class="col-12 col-md-4">
                 <label class="form-label" for="buildFile">Файл</label>
                 <input id="buildFile" class="form-control" type="file" accept=".exe,.zip,.msi" required>
               </div>
@@ -654,16 +682,28 @@
                 <textarea id="buildReleaseNotes" class="form-control" rows="3" maxlength="8000" placeholder="Что нового в этой версии…"></textarea>
               </div>
             </form>
-            <p class="form-hint mt-2 mb-0">ZIP, EXE или MSI. До 500 МБ. Новая сборка не публикуется автоматически.</p>
+            <p id="buildFileHint" class="form-hint mt-2 mb-0">Windows: .exe, .zip или .msi. macOS: .dmg или .zip. До 500 МБ. Новая сборка не публикуется автоматически.</p>
           </div>
         </section>
 
         <section class="card content-card">
           <div class="card-body p-0">
+            <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-3 border-bottom">
+              <div class="d-flex align-items-center gap-2">
+                <label class="form-label mb-0 small text-secondary" for="buildsPlatformFilter">Платформа</label>
+                <select id="buildsPlatformFilter" class="form-select form-select-sm w-auto">
+                  <option value="">Все платформы</option>
+                  <option value="windows">Windows</option>
+                  <option value="macos">macOS (универсальная)</option>
+                </select>
+              </div>
+              <p id="buildsActiveSummary" class="form-hint mb-0 text-md-end"></p>
+            </div>
             <div class="table-responsive">
               <table class="table songs-table align-middle mb-0">
                 <thead>
                   <tr>
+                    <th scope="col">Платформа</th>
                     <th scope="col">Версия</th>
                     <th scope="col">Файл</th>
                     <th scope="col">Описание</th>
@@ -674,14 +714,14 @@
                   </tr>
                 </thead>
                 <tbody id="buildsBody">
-                  <tr><td colspan="7" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                  <tr><td colspan="8" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
                 </tbody>
               </table>
             </div>
             <div id="buildsEmpty" class="empty-state" hidden>
               <div class="empty-icon"><i class="bi bi-box-seam"></i></div>
               <h2>Сборок пока нет</h2>
-              <p>Загрузите ZIP, EXE или MSI выше, затем активируйте сборку.</p>
+              <p>Загрузите сборку для нужной платформы выше, затем активируйте её.</p>
             </div>
           </div>
         </section>
@@ -1162,7 +1202,7 @@
   </noscript>
 
   <script src="./vendor/bootstrap.bundle.min.js"></script>
-  <script src="./admin.js?v=20261028-1"></script>
+  <script src="./admin.js?v=20261102-1"></script>
   <script src="/app/i18n.js"></script>
   <script src="/app/landing-i18n.js"></script>
   <script src="./admin-statistics.js?v=20261026-2"></script>

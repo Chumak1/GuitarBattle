@@ -18,6 +18,7 @@ from fastapi import (
     File,
     Form,
     HTTPException,
+    Query,
     Response,
     UploadFile,
     status,
@@ -29,6 +30,7 @@ from app.api.v1.admin_songs import require_admin
 from app.api.v1.site import (
     LANDING_MEDIA_URL_PREFIX,
     LANDING_SETTINGS_ID,
+    PlatformParam,
     blocks_from_content,
     build_file_path,
     get_landing_row,
@@ -56,6 +58,14 @@ from app.services.contacts import (
     contacts_update_from_content,
     normalize_contacts_update,
 )
+from app.services.game_builds import (
+    DEFAULT_GAME_BUILD_PLATFORM,
+    GAME_BUILD_PLATFORMS,
+    allowed_extensions_text,
+    content_type_for,
+    normalize_platform,
+    platform_label,
+)
 
 router = APIRouter(prefix="/admin/site", tags=["admin: site"])
 
@@ -82,11 +92,8 @@ IMAGE_SIGNATURES = {
     ".webm": ("video", "video/webm", lambda head: head.startswith(b"\x1a\x45\xdf\xa3")),
 }
 
-GAME_BUILD_TYPES = {
-    ".exe": "application/octet-stream",
-    ".zip": "application/zip",
-    ".msi": "application/octet-stream",
-}
+# Extension/content-type rules live in app.services.game_builds: they depend on
+# the platform of the build (Windows installers vs macOS disk images).
 
 
 def _validate_blocks(blocks: dict[str, Any]) -> None:
@@ -379,10 +386,20 @@ def update_admin_contacts(
 
 
 @router.get("/game-builds", response_model=GameBuildListResponse, summary="List uploaded game builds")
-def list_game_builds(db: Session = Depends(get_db), _: User = Depends(require_admin)) -> GameBuildListResponse:
-    builds = db.scalars(
-        select(GameBuild).order_by(GameBuild.uploaded_at.desc(), GameBuild.id.desc())
-    ).all()
+def list_game_builds(
+    platform: PlatformParam | None = Query(
+        default=None,
+        description="Optional filter: windows or macos",
+    ),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> GameBuildListResponse:
+    query = select(GameBuild).order_by(
+        GameBuild.uploaded_at.desc(), GameBuild.id.desc()
+    )
+    if platform is not None:
+        query = query.where(GameBuild.platform == platform)
+    builds = db.scalars(query).all()
     return GameBuildListResponse(items=[serialize_build(build) for build in builds])
 
 
@@ -393,19 +410,38 @@ def list_game_builds(db: Session = Depends(get_db), _: User = Depends(require_ad
     summary="Upload a game build",
 )
 async def upload_game_build(
-    file: UploadFile = File(..., description="Desktop build (.exe, .zip or .msi)"),
+    file: UploadFile = File(..., description="Desktop build (.exe/.msi/.zip or .dmg/.zip)"),
+    platform: str = Form(
+        default=DEFAULT_GAME_BUILD_PLATFORM,
+        description="windows or macos",
+    ),
     version: str | None = Form(default=None, max_length=64),
     release_notes: str | None = Form(default=None, max_length=8000),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> GameBuildItem:
+    target_platform = normalize_platform(platform)
+    if not target_platform:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "platform must be one of: "
+                + ", ".join(GAME_BUILD_PLATFORMS)
+            ),
+        )
+
     original_name = Path(file.filename or "").name
     suffix = Path(original_name).suffix.lower()
-    content_type = GAME_BUILD_TYPES.get(suffix)
+    content_type = content_type_for(target_platform, suffix)
     if content_type is None:
+        # A .exe installer is not a macOS build: reject the pair, not just the
+        # extension, so the admin notices the wrong platform selection.
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail="Only .exe, .zip and .msi builds are accepted",
+            detail=(
+                f"{platform_label(target_platform)} builds must be "
+                f"{allowed_extensions_text(target_platform)}"
+            ),
         )
 
     stored_name = f"build-{uuid.uuid4()}{suffix}"
@@ -413,6 +449,7 @@ async def upload_game_build(
     try:
         size = await _write_upload(file, target, settings.max_game_build_bytes)
         build = GameBuild(
+            platform=target_platform,
             version=(version or "").strip(),
             release_notes=(release_notes or "").strip(),
             filename=original_name,
@@ -437,7 +474,7 @@ async def upload_game_build(
 @router.post(
     "/game-builds/{build_id}/activate",
     response_model=GameBuildItem,
-    summary="Make a build the current download",
+    summary="Make a build the current download of its platform",
 )
 def activate_game_build(
     build_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
@@ -447,7 +484,13 @@ def activate_game_build(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Game build not found"
         )
-    db.execute(update(GameBuild).values(is_active=False))
+    # Only the builds of the same platform compete for the "active" slot: a
+    # macOS release must not unpublish the Windows download.
+    db.execute(
+        update(GameBuild)
+        .where(GameBuild.platform == build.platform)
+        .values(is_active=False)
+    )
     build.is_active = True
     db.commit()
     db.refresh(build)

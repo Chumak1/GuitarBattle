@@ -361,6 +361,31 @@
       transform: translateY(-1px);
     }
 
+    /* ---------- secondary (macOS) download action ---------- */
+
+    /* The macOS build is universal, so there is no architecture picker: the
+       button is a plain link next to the Windows one. Until a macOS build is
+       published it stays visible but inert with a "coming soon" hint; the
+       markup ships that state and landing.js enables it from the API. */
+
+    .btn__meta {
+      color: var(--muted);
+      font-size: 0.74rem;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .btn.is-disabled,
+    .btn.is-disabled:hover,
+    .btn.is-disabled:focus-visible {
+      opacity: 0.55;
+      cursor: not-allowed;
+      transform: none;
+      box-shadow: none;
+      border-color: var(--line);
+      color: var(--muted);
+    }
+
     /* ---------- facts strip ---------- */
 
     .facts {
@@ -859,6 +884,10 @@
         <p class="lead" data-i18n-html="landing.hero.lead">{{! landing.hero.lead }}</p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="/api/v1/downloads/game" data-download hidden data-i18n="landing.download">{{ landing.download }}</a>
+          <a class="btn btn-ghost is-disabled" href="/api/v1/downloads/game?platform=macos" data-download-macos aria-disabled="true">
+            <span data-i18n="landing.downloadMac">{{ landing.downloadMac }}</span>
+            <span class="btn__meta" data-download-macos-meta data-i18n="landing.mac.soon">{{ landing.mac.soon }}</span>
+          </a>
           <a class="btn btn-primary" href="/register" data-i18n="landing.cta">{{ landing.cta }}</a>
           <a class="btn btn-ghost" href="#how" data-i18n="landing.how">{{ landing.how }}</a>
           <a class="btn btn-ghost btn-support" href="/support" data-i18n="landing.supportCta">{{ landing.supportCta }}</a>
@@ -1021,6 +1050,10 @@
         <p data-i18n="landing.cta.text">{{ landing.cta.text }}</p>
         <div class="hero-actions">
           <a class="btn btn-primary" href="/api/v1/downloads/game" data-download hidden data-i18n="landing.download">{{ landing.download }}</a>
+          <a class="btn btn-ghost is-disabled" href="/api/v1/downloads/game?platform=macos" data-download-macos aria-disabled="true">
+            <span data-i18n="landing.downloadMac">{{ landing.downloadMac }}</span>
+            <span class="btn__meta" data-download-macos-meta data-i18n="landing.mac.soon">{{ landing.mac.soon }}</span>
+          </a>
           <a class="btn btn-primary" href="/register" data-i18n="landing.cta">{{ landing.cta }}</a>
           <a class="btn btn-ghost" href="#how" data-i18n="landing.how">{{ landing.how }}</a>
           <a class="btn btn-ghost btn-support" href="/support" data-i18n="landing.supportCta">{{ landing.supportCta }}</a>

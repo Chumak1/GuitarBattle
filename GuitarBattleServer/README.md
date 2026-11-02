@@ -398,7 +398,7 @@ Three extra directories are mounted into the API container:
 | Directory | Volume | Used for |
 |---|---|---|
 | `/data/landing_media` | `landing_media_data` | Hero image/video uploaded from the admin panel, served at `/media/landing/<name>`. Max 50 MiB (`MAX_LANDING_MEDIA_BYTES`). |
-| `/data/game_builds` | `game_builds_data` | Desktop builds (`.exe`, `.zip`, `.msi`), one active build served at `/api/v1/downloads/game`. Max 500 MiB (`MAX_GAME_BUILD_BYTES`). |
+| `/data/game_builds` | `game_builds_data` | Desktop builds: Windows (`.exe`, `.zip`, `.msi`) and one universal macOS build (`.dmg`, `.zip`). One active build per platform; `/api/v1/downloads/game` serves Windows by default, `?platform=macos` the Mac build. Max 500 MiB (`MAX_GAME_BUILD_BYTES`). |
 | `/data/geoip` | `geoip_data` | DB-IP Lite country database for `GET /api/v1/geo`. |
 
 Both upload directories are backed by named volumes, so `docker compose up --build` keeps the files; do not replace the volumes. The landing page reads its content from `GET /api/v1/landing` (blocks, hero background and the active build), so text and the download link change without a redeploy.
@@ -407,7 +407,7 @@ Administrator endpoints (`Bearer` token with `is_admin`, same as `/admin/songs`)
 
 - `GET /api/v1/admin/site/landing`, `PUT /api/v1/admin/site/landing` — read/replace the CMS blocks (max 256 KiB serialized, 5000 characters per string, nesting depth 8).
 - `POST /api/v1/admin/site/landing/background` (multipart `file`), `DELETE /api/v1/admin/site/landing/background` — hero JPEG/PNG/WebP/GIF/MP4/WebM.
-- `GET /api/v1/admin/site/game-builds`, `POST /api/v1/admin/site/game-builds` (multipart `file` + optional `version`), `POST /api/v1/admin/site/game-builds/{id}/activate`, `DELETE /api/v1/admin/site/game-builds/{id}`.
+- `GET /api/v1/admin/site/game-builds` (`?platform=windows|macos`), `POST /api/v1/admin/site/game-builds` (multipart `file` + optional `platform`, `version`), `POST /api/v1/admin/site/game-builds/{id}/activate` (activates within the build's platform), `DELETE /api/v1/admin/site/game-builds/{id}`.
 
 ### Support page CMS (`/support`)
 

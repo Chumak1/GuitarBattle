@@ -85,6 +85,9 @@ class AdminSongResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     readiness: SongReadinessResponse = Field(default_factory=SongReadinessResponse)
+    #: Admin-only download link of the active Preview Song (full mix).
+    #: ``None`` until a preview is uploaded; the link needs the admin token.
+    preview_url: str | None = None
 
 class AdminSongListResponse(BaseModel):
     items: list[AdminSongResponse]

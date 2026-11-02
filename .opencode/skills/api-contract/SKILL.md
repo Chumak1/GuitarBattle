@@ -62,8 +62,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/daily/history` | Bearer, `limit` (1–100, по умолчанию 20), `offset` | официальные результаты игрока по дням с `rank` и `participants` |
 | GET | `/client-assets/manifest` | — (публичный) | `schema`, `version`, `archive_url`, `archive_size_bytes`, `archive_sha256`, `files[]`; 503, если manifest или bundle отсутствует |
 | GET/HEAD | `/client-assets/bundle.zip` | — (публичный) | zip `guitarbattle-sounds.zip`; 503, если архив отсутствует |
-| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` для лендинга (`available`, `version`, `filename`, `size_bytes`, `url`, `release_notes`) |
-| GET | `/downloads/game` | — (публичный) | активная сборка игры; 404, если активной сборки нет |
+| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` (Windows, для обратной совместимости) и аддитивный `downloads` (`{"windows": DownloadInfo\|null, "macos": DownloadInfo\|null}`); `DownloadInfo` = `available`, `version`, `filename`, `size_bytes`, `url`, `release_notes` |
+| GET | `/downloads/game` | — (публичный), `platform=windows\|macos` (по умолчанию `windows`) | активная сборка платформы; 404, если для платформы нет активной сборки; 422 для неизвестного `platform` |
 | GET | `/geo` | — (публичный) | `country`, `language` (`ru`/`en`/`null`) по IP из локальной DB-IP Lite |
 | GET | `/site/contacts` | — (публичный) | `name` (`ru`/`en`), `email`, `telegram` (`@handle`), `telegram_url`, `socials` (`youtube`/`instagram`/`twitter`/`vk`; `null` — заглушка «Скоро»); без записи в CMS отдаёт дефолты |
 | POST | `/activity/heartbeat` | Bearer, `client_session_id` (≤64), `app_version?`, `platform?`, `final=false` | 200, `session_id`, `started_at`, `last_seen_at`; upsert по `(user_id, client_session_id)`, `final=true` ставит `ended_at` |
@@ -78,10 +78,10 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | DELETE | `/admin/site/landing/background` | Bearer admin | 200, `hero_background.type = "none"` |
 | GET | `/admin/site/contacts` | Bearer admin | `name_ru`, `name_en`, `email`, `telegram`, `socials` (сохранённые значения или дефолты) |
 | PUT | `/admin/site/contacts` | Bearer admin, те же поля | сохранённые нормализованные значения; 422 с именем поля в `detail` для битого email/telegram/URL соцсети; пишет `content["contacts"]`, не трогая `blocks`/`hero_background` |
-| GET | `/admin/site/game-builds` | Bearer admin | список загруженных сборок |
-| POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `version?`, `release_notes?` (≤8000) | 201, сборка создаётся неактивной; `.exe/.zip/.msi` |
+| GET | `/admin/site/game-builds` | Bearer admin, `platform?` (`windows`/`macos`) | список загруженных сборок; у каждой `platform` и `url` |
+| POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `platform?` (по умолчанию `windows`), `version?`, `release_notes?` (≤8000) | 201, сборка создаётся неактивной; Windows — `.exe/.zip/.msi`, macOS — `.dmg/.zip`; неверная пара платформа/расширение → 415, неизвестная платформа → 422 |
 | PATCH | `/admin/site/game-builds/{id}` | Bearer admin, JSON `{release_notes}` (≤8000) | 200, обновлённая сборка; меняет только описание, файл и `is_active` не трогает |
-| POST | `/admin/site/game-builds/{id}/activate` | Bearer admin | 200, сборка становится единственной активной |
+| POST | `/admin/site/game-builds/{id}/activate` | Bearer admin | 200, сборка становится единственной активной в своей платформе; сборка другой платформы остаётся активной |
 | DELETE | `/admin/site/game-builds/{id}` | Bearer admin | 204 |
 | GET | `/app/background-music` | — (публичный) | всегда 200: `{url: str \| null, content_type: str \| null, size_bytes: int}`; без файла — `null`/`null`/`0` |
 | GET | `/app/background-music/file` | — (публичный) | текущий MP3 (`audio/mpeg`, `Cache-Control: no-cache`); 404, если трека нет |
@@ -123,8 +123,14 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   `app/static/app/contacts.js` подменяет значения из API, без JS остаются
   дефолты и 4 заглушки соцсетей.
 - Сборки игры лежат в `GAME_BUILDS_DIR` (`/data/game_builds`), лимит 500 МиБ.
-  Активна максимум одна сборка; `/downloads/game` отдаёт её с
-  `Content-Disposition: attachment`.
+  Платформы (`game_builds.platform`, миграция `0017_game_build_platform`):
+  `windows` (по умолчанию) и `macos` — одна универсальная сборка для Apple
+  Silicon и Intel. Активна максимум одна сборка на платформу; активация macOS
+  не снимает `is_active` у Windows. `/downloads/game` отдаёт активную сборку
+  платформы с `Content-Disposition: attachment`; без `?platform=` — Windows.
+  На лендинге рядом с кнопкой Windows стоит ссылка
+  `/api/v1/downloads/game?platform=macos`; пока macOS-сборки нет, она
+  отключена и подписана «Скоро»/«Coming soon».
 - `game_builds.release_notes` (Text, NOT NULL, default `''`, миграция
   `0016_game_build_release_notes`) — текст «что нового», который администратор
   пишет в админке. Отдаётся в `GET /landing` как `download.release_notes`

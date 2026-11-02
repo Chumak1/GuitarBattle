@@ -44,6 +44,14 @@
     pendingDelete: null,
     slugTouched: false,
     loadRequestId: 0,
+    // Preview Song player: the id of the song currently loaded, the blob URL
+    // handed to <audio>, the in-flight download and the request id that cancels
+    // superseded downloads.
+    previewSongId: null,
+    previewObjectUrl: "",
+    previewRequestId: 0,
+    previewLoading: false,
+    previewXhr: null,
   };
 
   class ApiError extends Error {
@@ -391,7 +399,7 @@
       }
     });
     if (loading) {
-      el("songsBody").innerHTML = '<tr><td colspan="7" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
+      el("songsBody").innerHTML = '<tr><td colspan="8" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
       const table = el("songsBody").closest(".table-responsive");
       if (table) {
         table.hidden = false;
@@ -439,6 +447,16 @@
     }
   }
 
+  // ``difficulty`` is the LVL shown to players: always clamp it to 1..10 so a
+  // malformed value can never break the row markup.
+  function songLevel(song) {
+    const parsed = Number.parseInt(song?.difficulty, 10);
+    if (!Number.isFinite(parsed)) {
+      return 1;
+    }
+    return Math.min(10, Math.max(1, parsed));
+  }
+
   function songRow(song) {
     const artist = song.artist ? escapeHtml(song.artist) : '<span class="text-secondary">Без исполнителя</span>';
     const initial = escapeHtml((song.title || "?").trim().charAt(0).toUpperCase() || "?");
@@ -446,6 +464,13 @@
     const publishAction = song.is_published ? "unpublish" : "publish";
     const publishIcon = song.is_published ? "bi-eye-slash" : "bi-cloud-arrow-up";
     const publishTitle = song.is_published ? "Снять с публикации" : "Опубликовать";
+    const level = songLevel(song);
+    // The preview download needs the admin token, so the button is only a
+    // trigger for the blob player; without an uploaded preview it is disabled.
+    const hasPreview = Boolean(song.preview_url);
+    const previewTitle = hasPreview
+      ? "Послушать Preview Song"
+      : "Preview Song не загружен — загрузите его в „Файлах“";
     // An archived song cannot be published or unpublished; it is restored first.
     const publishButton = archived
       ? `<button type="button" class="action-btn" data-action="restore" title="Вернуть из архива" aria-label="Вернуть из архива">
@@ -469,11 +494,15 @@
         </td>
         <td><div class="d-flex flex-wrap gap-1">${publishedBadge(song)}${dailyBadge(song)}</div></td>
         <td>${readinessBadge(song)}</td>
+        <td><span class="badge-soft badge-level" title="Уровень сложности">LVL ${level}</span></td>
         <td class="d-none d-lg-table-cell"><span class="text-nowrap">${escapeHtml(song.bpm)}</span></td>
         <td class="d-none d-xl-table-cell"><span class="text-nowrap">${formatDuration(song.duration_seconds)}</span></td>
         <td class="d-none d-xl-table-cell"><span class="text-nowrap small text-secondary">${formatDate(song.updated_at)}</span></td>
         <td class="text-end">
           <div class="action-group">
+            <button type="button" class="action-btn" data-action="preview" title="${previewTitle}" aria-label="Послушать Preview Song" ${hasPreview ? "" : "disabled"}>
+              <i class="bi bi-play-fill"></i>
+            </button>
             <button type="button" class="action-btn" data-action="files" title="Файлы" aria-label="Файлы">
               <i class="bi bi-folder2-open"></i>
             </button>
@@ -491,6 +520,9 @@
   }
 
   function renderSongs() {
+    // Re-rendering the table replaces the rows the player was started from, so
+    // any reload/search/filter stops playback and releases the blob URL.
+    closePreviewPlayer();
     const body = el("songsBody");
     body.innerHTML = state.songs.map(songRow).join("");
     renderEmptyState(state.songs.length > 0);
@@ -630,6 +662,8 @@
   }
 
   function showLogin(message = "") {
+    // A preview must not keep playing after sign-out or an expired session.
+    closePreviewPlayer();
     closeAllModals();
     el("appView").hidden = true;
     el("loginView").hidden = false;
@@ -971,6 +1005,241 @@
     }
   }
 
+  function syncPreviewIcons() {
+    const audio = el("songPreviewAudio");
+    const playing = Boolean(audio) && !audio.paused && Boolean(state.previewSongId);
+    el("songsBody").querySelectorAll('button[data-action="preview"]').forEach((button) => {
+      const row = button.closest("tr[data-id]");
+      const active = playing && row?.dataset.id === state.previewSongId;
+      const icon = button.querySelector("i");
+      if (icon) {
+        icon.className = `bi ${active ? "bi-pause-fill" : "bi-play-fill"}`;
+      }
+    });
+  }
+
+  function stopPreviewPlayback() {
+    const audio = el("songPreviewAudio");
+    if (audio) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    if (state.previewObjectUrl) {
+      URL.revokeObjectURL(state.previewObjectUrl);
+      state.previewObjectUrl = "";
+    }
+    state.previewSongId = null;
+    syncPreviewIcons();
+  }
+
+  function resetPreviewProgress() {
+    const bar = el("songPreviewProgressBar");
+    const track = el("songPreviewProgressTrack");
+    const text = el("songPreviewProgressText");
+    if (bar) {
+      bar.style.width = "0%";
+      bar.classList.remove("progress-bar-striped", "progress-bar-animated");
+    }
+    if (track) {
+      track.setAttribute("aria-valuenow", "0");
+    }
+    if (text) {
+      text.textContent = "";
+    }
+  }
+
+  function hidePreviewProgress() {
+    const wrap = el("songPreviewProgress");
+    if (wrap) {
+      wrap.hidden = true;
+    }
+    resetPreviewProgress();
+  }
+
+  // ``total === 0`` means the server did not send Content-Length: show an
+  // indeterminate striped bar instead of a fake percentage.
+  function updatePreviewProgress(loaded, total) {
+    const wrap = el("songPreviewProgress");
+    const bar = el("songPreviewProgressBar");
+    const track = el("songPreviewProgressTrack");
+    const text = el("songPreviewProgressText");
+    if (!wrap || !bar || !text) {
+      return;
+    }
+    wrap.hidden = false;
+    const received = formatBytes(loaded);
+    if (total > 0) {
+      const percent = Math.max(0, Math.min(100, Math.round((loaded / total) * 100)));
+      bar.style.width = `${percent}%`;
+      bar.classList.remove("progress-bar-striped", "progress-bar-animated");
+      if (track) {
+        track.setAttribute("aria-valuenow", String(percent));
+      }
+      text.textContent = `Загрузка ${percent}% · ${received} из ${formatBytes(total)}`;
+      return;
+    }
+    // Unknown length: animate a full-width striped bar, drop aria-valuenow so
+    // assistive technology does not announce a bogus percentage.
+    bar.style.width = "100%";
+    bar.classList.add("progress-bar-striped", "progress-bar-animated");
+    if (track) {
+      track.removeAttribute("aria-valuenow");
+    }
+    text.textContent = loaded > 0 ? `Загрузка… ${received}` : "Загрузка…";
+  }
+
+  function abortPreviewDownload() {
+    const xhr = state.previewXhr;
+    state.previewXhr = null;
+    if (xhr) {
+      xhr.abort();
+    }
+  }
+
+  // The download route requires the admin Bearer token, so <audio> cannot point
+  // at it directly. XHR is used instead of fetch because it reports download
+  // progress and can be aborted when the administrator switches songs or closes
+  // the player.
+  function downloadPreviewBlob(url, requestId) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", url);
+      xhr.responseType = "blob";
+      if (state.token) {
+        xhr.setRequestHeader("Authorization", `Bearer ${state.token}`);
+      }
+      xhr.addEventListener("progress", (event) => {
+        if (requestId !== state.previewRequestId) {
+          return;
+        }
+        updatePreviewProgress(event.loaded, event.lengthComputable ? event.total : 0);
+      });
+      xhr.addEventListener("load", () => {
+        if (state.previewXhr === xhr) {
+          state.previewXhr = null;
+        }
+        if (xhr.status >= 200 && xhr.status < 300) {
+          resolve(xhr.response);
+          return;
+        }
+        if (xhr.status === 401 || xhr.status === 403) {
+          handleUnauthorized();
+          reject(new ApiError("Требуется авторизация администратора.", xhr.status));
+          return;
+        }
+        if (xhr.status === 404) {
+          reject(new ApiError("Preview Song не найден. Загрузите его заново в «Файлах».", 404));
+          return;
+        }
+        reject(new ApiError(`Не удалось загрузить Preview Song (${xhr.status}).`, xhr.status));
+      });
+      xhr.addEventListener("error", () => {
+        if (state.previewXhr === xhr) {
+          state.previewXhr = null;
+        }
+        reject(new ApiError("Не удалось загрузить Preview Song. Проверьте подключение.", 0));
+      });
+      xhr.addEventListener("abort", () => {
+        if (state.previewXhr === xhr) {
+          state.previewXhr = null;
+        }
+        reject(new ApiError("Загрузка отменена.", 0));
+      });
+      state.previewXhr = xhr;
+      xhr.send();
+    });
+  }
+
+  // Stops playback, frees the blob URL, cancels an in-flight download and hides
+  // the player. Bumping the request id makes any late callback a no-op.
+  function closePreviewPlayer() {
+    state.previewRequestId += 1;
+    state.previewLoading = false;
+    abortPreviewDownload();
+    stopPreviewPlayback();
+    hidePreviewProgress();
+    const player = el("songPreviewPlayer");
+    if (player) {
+      player.hidden = true;
+    }
+    const title = el("songPreviewTitle");
+    if (title) {
+      title.textContent = "";
+    }
+  }
+
+  async function playPreview(song) {
+    const audio = el("songPreviewAudio");
+    const player = el("songPreviewPlayer");
+    if (!audio || !player || !song) {
+      return;
+    }
+
+    // Repeated click on the loaded song: toggle playback, no second download.
+    if (state.previewSongId === song.id && state.previewObjectUrl) {
+      if (audio.paused) {
+        try {
+          await audio.play();
+        } catch {
+          // A failed resume is visible in the native controls; nothing to do.
+        }
+      } else {
+        audio.pause();
+      }
+      return;
+    }
+    if (state.previewSongId === song.id && state.previewLoading) {
+      return;
+    }
+
+    if (!song.preview_url) {
+      showToast("Preview Song не загружен — загрузите его в «Файлах».", "danger");
+      return;
+    }
+
+    const requestId = ++state.previewRequestId;
+    // Switching songs cancels the previous download, stops playback and frees
+    // its object URL before the new one starts.
+    abortPreviewDownload();
+    stopPreviewPlayback();
+    state.previewLoading = true;
+    state.previewSongId = song.id;
+    el("songPreviewTitle").textContent = song.artist
+      ? `${song.title} — ${song.artist}`
+      : song.title;
+    player.hidden = false;
+    resetPreviewProgress();
+    updatePreviewProgress(0, 0);
+
+    try {
+      const blob = await downloadPreviewBlob(song.preview_url, requestId);
+      if (requestId !== state.previewRequestId) {
+        return;
+      }
+      hidePreviewProgress();
+      const objectUrl = URL.createObjectURL(blob);
+      state.previewObjectUrl = objectUrl;
+      audio.src = objectUrl;
+      try {
+        await audio.play();
+      } catch {
+        // Browsers may block autoplay; the native controls stay usable.
+      }
+    } catch (error) {
+      if (requestId !== state.previewRequestId) {
+        return;
+      }
+      closePreviewPlayer();
+      showToast(friendlyErrorMessage(error), "danger");
+    } finally {
+      if (requestId === state.previewRequestId) {
+        state.previewLoading = false;
+        hidePreviewProgress();
+      }
+    }
+  }
+
   function fileVersionHtml(kind, file) {
     const active = Boolean(file.is_active);
     const badge = active
@@ -1172,7 +1441,7 @@
   function renderFiles(detail) {
     const byRole = versionsByRole(detail);
     el("filesTitle").textContent = detail.title;
-    el("filesMeta").textContent = `${detail.archived_at ? "В архиве" : detail.is_published ? "Опубликована" : "Черновик"} · ${detail.slug} · ${detail.bpm} BPM · ${formatDuration(detail.duration_seconds)}`;
+    el("filesMeta").textContent = `${detail.archived_at ? "В архиве" : detail.is_published ? "Опубликована" : "Черновик"} · ${detail.slug} · ${detail.bpm} BPM · LVL ${songLevel(detail)} · ${formatDuration(detail.duration_seconds)}`;
     el("filesReadiness").innerHTML = renderReadiness(detail);
     el("filesBody").innerHTML = `
       <div class="file-list">
@@ -1461,6 +1730,11 @@
     });
     el("bgMusicUpload").addEventListener("click", uploadBackgroundMusic);
     el("bgMusicDelete").addEventListener("click", deleteBackgroundMusic);
+    el("songPreviewClose").addEventListener("click", closePreviewPlayer);
+    const previewAudio = el("songPreviewAudio");
+    previewAudio.addEventListener("play", syncPreviewIcons);
+    previewAudio.addEventListener("pause", syncPreviewIcons);
+    previewAudio.addEventListener("ended", syncPreviewIcons);
 
     let searchTimer = null;
     el("searchInput").addEventListener("input", (event) => {
@@ -1477,7 +1751,7 @@
 
     el("songsBody").addEventListener("click", (event) => {
       const button = event.target.closest("button[data-action]");
-      if (!button) {
+      if (!button || button.disabled) {
         return;
       }
       const row = button.closest("tr[data-id]");
@@ -1486,7 +1760,9 @@
         return;
       }
       const action = button.dataset.action;
-      if (action === "files") {
+      if (action === "preview") {
+        playPreview(song);
+      } else if (action === "files") {
         openFiles(song.id);
       } else if (action === "edit") {
         openSongModal(song);

@@ -57,6 +57,14 @@ def _admin_file_response(song_id: UUID, stored_file: SongFile) -> AdminSongFileR
 def _admin_song_response(song: Song, files_by_role: dict[str, SongFile]) -> AdminSongResponse:
     result = AdminSongResponse.model_validate(song)
     result.readiness = build_readiness(files_by_role)
+    preview = files_by_role.get(PREVIEW_ROLE)
+    # Additive field for the web admin player. The URL is the admin-only
+    # download route, so it never exposes the preview outside ``/admin``.
+    result.preview_url = (
+        _admin_file_response(song.id, preview).download_url
+        if preview is not None
+        else None
+    )
     return result
 
 
@@ -91,6 +99,9 @@ def _admin_song_detail(
         ),
         preview=optional(PREVIEW_ROLE),
     )
+    # Mirrors ``assets.preview.download_url`` so the web admin can start the
+    # player from either the list or the detail response.
+    result.preview_url = result.assets.preview.download_url if result.assets.preview else None
     result.files = [
         _admin_file_response(song.id, stored_file) for stored_file in (all_files or [])
     ]
