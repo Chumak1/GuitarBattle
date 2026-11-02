@@ -2158,16 +2158,23 @@ void MainComponent::checkForUpdatesOnLaunch()
             if (self == nullptr || ! response.isJsonObject())
                 return;
 
-            // The landing response has a platform-specific map. Older servers
-            // only expose the Windows "download"; on macOS that must never be
-            // mistaken for a Mac build.
+            // The server has a dedicated portable-update channel: installers
+            // stay on the download page, while the app fetches a ZIP. Fall
+            // back to `downloads` for servers that predate the split (the
+            // Windows installer is refused later by the .zip check; the macOS
+            // DMG is a valid update payload).
+            const auto updates = response.json.getProperty ("updates", {});
             const auto downloads = response.json.getProperty ("downloads", {});
             juce::var download;
 
            #if JUCE_MAC
-            download = downloads.getProperty ("macos", {});
+            download = updates.getProperty ("macos", {});
+            if (! download.isObject())
+                download = downloads.getProperty ("macos", {});
            #else
-            download = downloads.getProperty ("windows", {});
+            download = updates.getProperty ("windows", {});
+            if (! download.isObject())
+                download = downloads.getProperty ("windows", {});
            #endif
 
             if (! download.isObject())
