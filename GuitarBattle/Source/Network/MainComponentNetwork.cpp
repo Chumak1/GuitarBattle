@@ -2185,6 +2185,12 @@ void MainComponent::checkForUpdatesOnLaunch()
             if (compareVersionStrings (remoteVersion, localVersion) <= 0)
                 return;
 
+            // The check runs shortly after launch, but the player may already
+            // have started a song. Never replace the app mid-session; the next
+            // launch retries.
+            if (self->gameState != GameState::SongSelect)
+                return;
+
             self->startAutomaticUpdate (
                 remoteVersion,
                 downloadUrl,
