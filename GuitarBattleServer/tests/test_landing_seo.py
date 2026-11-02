@@ -243,6 +243,98 @@ def test_existing_public_routes_still_work(client) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Search engine ownership confirmation (Yandex.Webmaster, Google Search Console)
+# ---------------------------------------------------------------------------
+YANDEX_CODE = "13c642a7d8dc4d50"
+YANDEX_FILE = f"/yandex_{YANDEX_CODE}.html"
+
+GOOGLE_TOKEN = "uRKDy8NvkkgwlIOcR7kUjheH0_3b8J53Vqn89GbweK0"
+GOOGLE_FILENAME = f"google{GOOGLE_TOKEN}.html"
+GOOGLE_FILE = f"/{GOOGLE_FILENAME}"
+
+
+def test_yandex_verification_file_is_served_from_the_root(client) -> None:
+    response = client.get(YANDEX_FILE)
+
+    assert response.status_code == 200
+    content_type = response.headers["content-type"].lower()
+    assert content_type.startswith("text/html")
+    assert "charset=utf-8" in content_type
+    body = response.text
+    assert f"Verification: {YANDEX_CODE}" in body
+    assert "charset=UTF-8" in body
+    assert "<html>" in body and "</html>" in body
+
+
+def test_yandex_verification_file_body_is_exact(client) -> None:
+    """Yandex compares the body it was given, so it is reproduced verbatim."""
+    expected = (
+        "<html>\n"
+        "    <head>\n"
+        '        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">\n'
+        "    </head>\n"
+        f"    <body>Verification: {YANDEX_CODE}</body>\n"
+        "</html>\n"
+    )
+    assert client.get(YANDEX_FILE).text == expected
+
+
+def test_google_verification_file_is_served_from_the_root(client) -> None:
+    response = client.get(GOOGLE_FILE)
+
+    assert response.status_code == 200
+    content_type = response.headers["content-type"].lower()
+    assert content_type.startswith("text/html")
+    assert "charset=utf-8" in content_type
+    assert f"google-site-verification: {GOOGLE_FILENAME}" in response.text
+
+
+def test_google_verification_file_body_is_exact(client) -> None:
+    """Google compares the body verbatim: one line naming the file itself."""
+    assert client.get(GOOGLE_FILE).text == (
+        f"google-site-verification: {GOOGLE_FILENAME}"
+    )
+
+
+@pytest.mark.parametrize("path", sorted(ROUTES.values()))
+def test_landing_has_the_yandex_verification_meta(client, path: str) -> None:
+    html = client.get(path).text
+
+    assert f'<meta name="yandex-verification" content="{YANDEX_CODE}">' in html
+
+
+@pytest.mark.parametrize("path", sorted(ROUTES.values()))
+def test_landing_has_the_google_verification_meta(client, path: str) -> None:
+    html = client.get(path).text
+
+    assert (
+        f'<meta name="google-site-verification" content="{GOOGLE_TOKEN}">' in html
+    )
+
+
+@pytest.mark.parametrize("path", sorted(ROUTES.values()))
+def test_both_verification_metas_share_one_head(client, path: str) -> None:
+    """The template is one document: both tags must land in the same <head>."""
+    html = client.get(path).text
+
+    assert html.count("<head>") == 1
+    head = re.search(r"<head>(.*?)</head>", html, re.DOTALL)
+    assert head is not None
+    for meta in (
+        f'<meta name="yandex-verification" content="{YANDEX_CODE}">',
+        f'<meta name="google-site-verification" content="{GOOGLE_TOKEN}">',
+    ):
+        assert meta in head.group(1), meta
+    # Unresolved placeholders never reach either head.
+    assert "{{" not in head.group(1)
+
+
+def test_public_routes_survive_the_verification_routes(client) -> None:
+    for path in ("/", "/en", "/robots.txt", "/sitemap.xml", "/support"):
+        assert client.get(path).status_code == 200, path
+
+
+# ---------------------------------------------------------------------------
 # Social preview images
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize("lang", sorted(OG_IMAGES))

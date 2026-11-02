@@ -229,6 +229,28 @@ def sitemap_xml() -> Response:
     return Response(content=landing_page.sitemap_xml(), media_type="application/xml")
 
 
+# Yandex.Webmaster verifies the site by fetching this exact file from the root.
+# It is served by a route (not a static mount) so the body stays byte-exact and
+# cannot be affected by the static file handler. The same code is also present
+# as a <meta name="yandex-verification"> tag in the landing template.
+@app.get(landing_page.YANDEX_VERIFICATION_PATH, include_in_schema=False)
+def yandex_verification_file() -> HTMLResponse:
+    return HTMLResponse(
+        landing_page.YANDEX_VERIFICATION_HTML,
+        media_type="text/html; charset=UTF-8",
+    )
+
+
+# Google Search Console checks the same way: a meta tag in the landing template
+# plus this root file, whose body is ``google-site-verification: <filename>``.
+@app.get(landing_page.GOOGLE_VERIFICATION_PATH, include_in_schema=False)
+def google_verification_file() -> HTMLResponse:
+    return HTMLResponse(
+        landing_page.GOOGLE_VERIFICATION_HTML,
+        media_type="text/html; charset=UTF-8",
+    )
+
+
 @app.get("/login", include_in_schema=False)
 def login_page() -> FileResponse:
     return FileResponse(auth_page, media_type="text/html")
