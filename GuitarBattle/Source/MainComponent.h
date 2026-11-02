@@ -369,21 +369,18 @@ private:
     void sendActivityHeartbeat(bool finalEvent);
     void sendGameLaunchTelemetry();
     // Self-update: once per launch the client asks the public landing endpoint
-    // for the active desktop build. A newer server build is offered as an
-    // asynchronous dialog; the installer is downloaded on a worker thread and
-    // started only after the player confirms. Never touches the audio thread.
+    // for the active portable build of its own platform. A newer build is
+    // downloaded automatically, then a tiny platform helper replaces the
+    // running app and relaunches it; no installer UI is involved. Never
+    // touches the audio thread.
     void checkForUpdatesOnLaunch();
-    void promptForUpdate(const juce::String& version,
-                         const juce::String& downloadUrl,
-                         const juce::String& filename,
-                         juce::int64 sizeBytes,
-                         const juce::String& releaseNotes);
-    void startUpdateDownload(const juce::String& version,
-                             const juce::String& downloadUrl,
-                             const juce::String& filename,
-                             juce::int64 sizeBytes);
-    void installDownloadedUpdate(const juce::File& installerFile);
+    void startAutomaticUpdate(const juce::String& version,
+                              const juce::String& downloadUrl,
+                              const juce::String& filename,
+                              juce::int64 sizeBytes);
+    void applyDownloadedUpdate(const juce::File& downloadedFile);
     bool updateCheckStarted = false;
+    bool updateDownloadInProgress = false;
     // All server communication is asynchronous: requests run on this client's
     // worker threads and their results arrive on the message thread.
     ApiClient apiClient;

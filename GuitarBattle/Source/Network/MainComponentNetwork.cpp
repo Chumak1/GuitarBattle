@@ -6,6 +6,12 @@
 #include <memory>
 #include <vector>
 
+#if JUCE_WINDOWS
+ #include <windows.h>
+#elif JUCE_MAC
+ #include <unistd.h>
+#endif
+
 // Network-only implementation for MainComponent: authentication, catalogue,
 // leaderboard, song downloads and online game sessions.
 
@@ -1976,22 +1982,20 @@ namespace
             + (urlOrPath.startsWithChar ('/') ? urlOrPath : "/" + urlOrPath);
     }
 
-    juce::String skippedUpdateVersion (juce::ApplicationProperties& properties)
-    {
-        if (auto* settings = properties.getUserSettings())
-            return settings->getValue ("SkippedUpdateVersion").trim();
-
-        return {};
-    }
-
     /** Never trust a server-supplied name as a path: keep it a plain file name. */
-    juce::String safeInstallerFileName (const juce::String& serverName,
-                                        const juce::String& version)
+    juce::String safeUpdateFileName (const juce::String& serverName,
+                                     const juce::String& version)
     {
         auto name = juce::File::createLegalFileName (serverName.trim());
 
         if (name.isEmpty() || name.startsWithChar ('.'))
-            name = "FretFightSetup-" + version + ".exe";
+        {
+           #if JUCE_MAC
+            name = "FretFight-" + version + ".dmg";
+           #else
+            name = "FretFight-" + version + "-win64.zip";
+           #endif
+        }
 
         return name;
     }
@@ -2154,7 +2158,20 @@ void MainComponent::checkForUpdatesOnLaunch()
             if (self == nullptr || ! response.isJsonObject())
                 return;
 
-            const auto download = response.json.getProperty ("download", {});
+            // The landing response has a platform-specific map. Older servers
+            // only expose the Windows "download"; on macOS that must never be
+            // mistaken for a Mac build.
+            const auto downloads = response.json.getProperty ("downloads", {});
+            juce::var download;
+
+           #if JUCE_MAC
+            download = downloads.getProperty ("macos", {});
+           #else
+            download = downloads.getProperty ("windows", {});
+           #endif
+
+            if (! download.isObject())
+                return;
 
             if (! static_cast<bool> (download.getProperty ("available", false)))
                 return;
@@ -2168,128 +2185,31 @@ void MainComponent::checkForUpdatesOnLaunch()
             if (compareVersionStrings (remoteVersion, localVersion) <= 0)
                 return;
 
-            if (remoteVersion == skippedUpdateVersion (self->appProperties))
-                return;
-
-            // Optional "what's new" text edited in the admin panel. Older
-            // servers do not send the field; the dialog falls back to the
-            // plain version prompt when it is empty.
-            const auto releaseNotes = download.getProperty ("release_notes", {}).toString().trim();
-
-            self->promptForUpdate (remoteVersion,
-                                   downloadUrl,
-                                   download.getProperty ("filename", {}).toString(),
-                                   static_cast<juce::int64> (download.getProperty ("size_bytes", 0)),
-                                   releaseNotes);
+            self->startAutomaticUpdate (
+                remoteVersion,
+                downloadUrl,
+                download.getProperty ("filename", {}).toString(),
+                static_cast<juce::int64> (download.getProperty ("size_bytes", 0)));
         });
 }
 
-void MainComponent::promptForUpdate (const juce::String& version,
-                                     const juce::String& downloadUrl,
-                                     const juce::String& filename,
-                                     juce::int64 sizeBytes,
-                                     const juce::String& releaseNotes)
+void MainComponent::startAutomaticUpdate (const juce::String& version,
+                                          const juce::String& downloadUrl,
+                                          const juce::String& filename,
+                                          juce::int64 sizeBytes)
 {
-    const auto notes = releaseNotes.replace ("\r\n", "\n")
-                                   .replace ("\r", "\n")
-                                   .trim();
+    if (updateDownloadInProgress)
+        return;
 
-    juce::String message;
-    message << "FretFight " << version << " is available. You are running "
-            << ProjectInfo::versionString << ".";
+    updateDownloadInProgress = true;
 
-    if (sizeBytes > 0)
-        message << "\n\nDownload size: "
-                << juce::File::descriptionOfSizeInBytes (sizeBytes) << ".";
-
-    if (notes.isEmpty())
-        message << "\n\nDownload and install the update now?";
-
-    auto* prompt = new juce::AlertWindow ("Update available", message,
-                                          juce::AlertWindow::InfoIcon);
-
-    // The release notes are authored in the admin panel and are read-only in
-    // the dialog: the player can scroll and copy them, but the text is never
-    // editable on the client. Capturing the editor in the modal callback keeps
-    // it alive for as long as the alert window needs it.
-    std::shared_ptr<juce::TextEditor> notesBox;
-
-    if (notes.isNotEmpty())
-    {
-        notesBox = std::make_shared<juce::TextEditor>();
-        // AlertWindow paints a non-empty component name as a caption above it.
-        notesBox->setName ("What's new in " + version);
-        notesBox->setMultiLine (true, true);
-        notesBox->setReadOnly (true);
-        notesBox->setScrollbarsShown (true);
-        notesBox->setCaretVisible (false);
-        notesBox->setPopupMenuEnabled (true);
-        notesBox->setEscapeAndReturnKeysConsumed (false);
-        notesBox->setFont (GameUi::font (14.0f));
-        notesBox->setColour (juce::TextEditor::backgroundColourId, UiColors::surface2);
-        notesBox->setColour (juce::TextEditor::textColourId, UiColors::text);
-        notesBox->setColour (juce::TextEditor::outlineColourId, UiColors::border);
-        notesBox->setColour (juce::TextEditor::focusedOutlineColourId, UiColors::borderStrong);
-        notesBox->setColour (juce::TextEditor::highlightColourId, UiColors::accent.withAlpha (0.28f));
-        notesBox->setColour (juce::TextEditor::highlightedTextColourId, UiColors::text);
-        notesBox->setIndents (10, 8);
-        notesBox->setText (notes, false);
-        // AlertWindow derives its own width from this size (at 80%) and places
-        // the component as-is, so the height also caps the scroll area.
-        notesBox->setSize (420, 150);
-        prompt->addCustomComponent (notesBox.get());
-        prompt->addTextBlock ("Download and install the update now?");
-    }
-
-    prompt->addButton ("UPDATE NOW", 1);
-    prompt->addButton ("LATER", 0);
-    prompt->addButton ("SKIP VERSION", 2);
-
-    juce::Component::SafePointer<MainComponent> safeThis (this);
-
-    prompt->enterModalState (true,
-        juce::ModalCallbackFunction::create (
-            [safeThis, version, downloadUrl, filename, sizeBytes, notesBox] (int result)
-            {
-                auto* self = safeThis.getComponent();
-
-                if (self == nullptr)
-                    return;
-
-                if (result == 1)
-                {
-                    self->startUpdateDownload (version, downloadUrl,
-                                               filename, sizeBytes);
-                }
-                else if (result == 2)
-                {
-                    if (auto* settings = self->appProperties.getUserSettings())
-                        settings->setValue ("SkippedUpdateVersion", version);
-                }
-            }),
-        true);
-}
-
-void MainComponent::startUpdateDownload (const juce::String& version,
-                                         const juce::String& downloadUrl,
-                                         const juce::String& filename,
-                                         juce::int64 sizeBytes)
-{
-   #if JUCE_MAC
-    juce::ignoreUnused (version, downloadUrl, filename, sizeBytes);
-
-    // The build published on the site is the Windows installer. A Mac needs the
-    // .dmg from the download page, so the update opens that page instead of
-    // downloading a file the system cannot run.
-    juce::URL (juce::String (ApiClient::serverOrigin) + "/").launchInDefaultBrowser();
-   #else
     auto updateDirectory = juce::File::getSpecialLocation (juce::File::tempDirectory)
                                .getChildFile ("FretFightUpdate");
     updateDirectory.deleteRecursively();
     updateDirectory.createDirectory();
 
     const auto targetFile = updateDirectory.getChildFile (
-        safeInstallerFileName (filename, version));
+        safeUpdateFileName (filename, version));
 
     juce::Component::SafePointer<MainComponent> safeThis (this);
 
@@ -2298,84 +2218,269 @@ void MainComponent::startUpdateDownload (const juce::String& version,
         resolveUpdateUrl (downloadUrl),
         version,
         sizeBytes,
-        [safeThis] (bool success, juce::File installerFile)
+        [safeThis] (bool success, juce::File downloadedFile)
         {
-            // The progress window has already closed; defer the follow-up
-            // dialog so it is not created from inside the window's teardown.
-            juce::MessageManager::callAsync ([safeThis, success, installerFile]
+            // The progress window has already closed; defer the follow-up so
+            // it is not created from inside the window's teardown.
+            juce::MessageManager::callAsync ([safeThis, success, downloadedFile]
             {
                 auto* self = safeThis.getComponent();
 
                 if (self == nullptr)
                     return;
 
-                if (! success)
-                {
-                    juce::AlertWindow::showMessageBoxAsync (
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Update download failed",
-                        "FretFight could not download the update. "
-                        "Check the connection and try again later.",
-                        "OK");
-                    return;
-                }
+                self->updateDownloadInProgress = false;
 
-                self->installDownloadedUpdate (installerFile);
+                if (! success)
+                    return; // offline or cancelled: stay on the current build
+
+                self->applyDownloadedUpdate (downloadedFile);
             });
         });
 
     task->launchThread();
-   #endif
 }
 
-void MainComponent::installDownloadedUpdate (const juce::File& installerFile)
+void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile)
 {
-    if (! installerFile.existsAsFile())
+    if (! downloadedFile.existsAsFile())
         return;
 
-    auto* prompt = new juce::AlertWindow (
-        "Update downloaded",
-        "FretFight will close, install the update and start again.",
-        juce::AlertWindow::InfoIcon);
-    prompt->addButton ("INSTALL NOW", 1);
-    prompt->addButton ("LATER", 0);
+   #if JUCE_WINDOWS
+    // The active Windows build is a portable ZIP with FretFight.exe inside.
+    // Never copy an arbitrary server file over the running executable: the
+    // ZIP entry and the extracted PE header are both checked.
+    if (! downloadedFile.hasFileExtension ("zip"))
+        return;
 
-    juce::Component::SafePointer<MainComponent> safeThis (this);
+    juce::ZipFile zip (downloadedFile);
+    juce::File extractedExe;
 
-    prompt->enterModalState (true,
-        juce::ModalCallbackFunction::create (
-            [safeThis, installerFile] (int result)
+    for (int i = 0; i < zip.getNumEntries(); ++i)
+    {
+        const auto* entry = zip.getEntry (i);
+
+        if (entry == nullptr || ! entry->filename.endsWithIgnoreCase (".exe"))
+            continue;
+
+        std::unique_ptr<juce::InputStream> input (zip.createStreamForEntry (i));
+
+        if (input == nullptr)
+            continue;
+
+        const auto candidate = downloadedFile.getSiblingFile ("FretFight-update.exe");
+        candidate.deleteFile();
+
+        juce::FileOutputStream output (candidate);
+
+        if (! output.openedOk())
+            return;
+
+        if (output.writeFromInputStream (*input, entry->uncompressedSize) <= 0)
+            return;
+
+        output.flush();
+
+        juce::FileInputStream check (candidate);
+        char header[2] {};
+
+        if (check.read (header, 2) != 2
+            || header[0] != 'M' || header[1] != 'Z')
+        {
+            candidate.deleteFile();
+            return;
+        }
+
+        extractedExe = candidate;
+        break;
+    }
+
+    if (! extractedExe.existsAsFile())
+        return;
+
+    const auto currentExe = juce::File::getSpecialLocation (
+        juce::File::currentExecutableFile);
+
+    if (! currentExe.getParentDirectory().hasWriteAccess())
+    {
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::MessageBoxIconType::WarningIcon,
+            "Auto-update needs a writable folder",
+            "FretFight cannot replace itself in:\n"
+                + currentExe.getParentDirectory().getFullPathName()
+                + "\n\nMove the app to a user folder (for example %LOCALAPPDATA%\\FretFight) "
+                  "to let future versions update automatically.",
+            "OK");
+        return;
+    }
+
+    const auto helper = downloadedFile.getSiblingFile ("apply-update.bat");
+    const auto pid = static_cast<int> (GetCurrentProcessId());
+
+    juce::String script;
+    script << "@echo off\r\n"
+           << "setlocal\r\n"
+           << "set \"TARGET=" << currentExe.getFullPathName() << "\"\r\n"
+           << "set \"SOURCE=" << extractedExe.getFullPathName() << "\"\r\n"
+           << ":wait\r\n"
+           << "tasklist /FI \"PID eq " << pid << "\" 2>nul | find \"" << pid << "\" >nul\r\n"
+           << "if not errorlevel 1 (\r\n"
+           << "  timeout /t 1 /nobreak >nul\r\n"
+           << "  goto wait\r\n"
+           << ")\r\n"
+           << "copy /Y \"%SOURCE%\" \"%TARGET%\" >nul\r\n"
+           << "start \"\" \"%TARGET%\"\r\n"
+           << "del \"%~f0\"\r\n";
+
+    if (! helper.replaceWithText (script))
+        return;
+
+    juce::ChildProcess process;
+    process.start (juce::StringArray { "cmd.exe", "/c", helper.getFullPathName() }, 0);
+
+    juce::MessageManager::callAsync ([]()
+    {
+        if (auto* app = juce::JUCEApplication::getInstance())
+            app->systemRequestedQuit();
+    });
+
+   #elif JUCE_MAC
+    // The active macOS build is the .dmg (or the CI .zip) with FretFight.app.
+    // Stage the new bundle, then let a shell helper replace the running bundle
+    // after this process exits.
+    auto updateDirectory = downloadedFile.getParentDirectory();
+    juce::File stagedApp;
+
+    if (downloadedFile.hasFileExtension ("dmg"))
+    {
+        const auto mountPoint = updateDirectory.getChildFile ("dmg");
+        mountPoint.deleteRecursively();
+        mountPoint.createDirectory();
+
+        {
+            juce::ChildProcess attach;
+            attach.start (juce::StringArray {
+                "/usr/bin/hdiutil", "attach", "-nobrowse", "-readonly",
+                "-mountpoint", mountPoint.getFullPathName(),
+                downloadedFile.getFullPathName() }, 0);
+
+            if (! attach.waitForProcessToFinish (60000)
+                || attach.getExitCode() != 0)
+                return;
+        }
+
+        const auto mountedApp = mountPoint.getChildFile ("FretFight.app");
+
+        if (! mountedApp.isDirectory())
+        {
+            juce::ChildProcess detach;
+            detach.start (juce::StringArray {
+                "/usr/bin/hdiutil", "detach", mountPoint.getFullPathName() }, 0);
+            detach.waitForProcessToFinish (30000);
+            return;
+        }
+
+        stagedApp = updateDirectory.getChildFile ("FretFight.app");
+        stagedApp.deleteRecursively();
+
+        {
+            juce::ChildProcess copy;
+            copy.start (juce::StringArray {
+                "/bin/cp", "-R", mountedApp.getFullPathName(),
+                stagedApp.getFullPathName() }, 0);
+
+            if (! copy.waitForProcessToFinish (60000)
+                || copy.getExitCode() != 0)
             {
-                if (result != 1)
-                    return;
+                juce::ChildProcess detach;
+                detach.start (juce::StringArray {
+                    "/usr/bin/hdiutil", "detach", mountPoint.getFullPathName() }, 0);
+                detach.waitForProcessToFinish (30000);
+                return;
+            }
+        }
 
-                // Silent in-place upgrade. The installer keeps the same AppId,
-                // the same folder and the settings in %APPDATA%, so the wizard
-                // would only add clicks; it relaunches the game when it is done
-                // (see the [Run] section of docs/FretFight.iss).
-                const juce::String updateArguments (
-                    "/SILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /SP-");
+        {
+            juce::ChildProcess detach;
+            detach.start (juce::StringArray {
+                "/usr/bin/hdiutil", "detach", mountPoint.getFullPathName() }, 0);
+            detach.waitForProcessToFinish (30000);
+        }
+    }
+    else if (downloadedFile.hasFileExtension ("zip"))
+    {
+        const auto extracted = updateDirectory.getChildFile ("zip");
+        extracted.deleteRecursively();
+        extracted.createDirectory();
 
-                if (! installerFile.startAsProcess (updateArguments))
-                {
-                    juce::AlertWindow::showMessageBoxAsync (
-                        juce::MessageBoxIconType::WarningIcon,
-                        "Could not start the installer",
-                        "The installer was downloaded to:\n"
-                            + installerFile.getFullPathName()
-                            + "\n\nStart it manually to finish the update.",
-                        "OK");
-                    return;
-                }
+        {
+            juce::ChildProcess unzip;
+            unzip.start (juce::StringArray {
+                "/usr/bin/ditto", "-x", "-k",
+                downloadedFile.getFullPathName(),
+                extracted.getFullPathName() }, 0);
 
-                // Quit after the modal callback returns: the installer replaces
-                // the running executable and needs this process gone.
-                juce::MessageManager::callAsync ([]()
-                {
-                    if (auto* app = juce::JUCEApplication::getInstance())
-                        app->systemRequestedQuit();
-                });
-            }),
-        true);
+            if (! unzip.waitForProcessToFinish (60000)
+                || unzip.getExitCode() != 0)
+                return;
+        }
+
+        stagedApp = extracted.getChildFile ("FretFight.app");
+
+        if (! stagedApp.isDirectory())
+            return;
+    }
+    else
+    {
+        return;
+    }
+
+    auto currentApp = juce::File::getSpecialLocation (juce::File::currentApplicationFile);
+
+    if (! currentApp.hasFileExtension (".app"))
+        currentApp = juce::File::getSpecialLocation (juce::File::currentExecutableFile)
+                         .getParentDirectory()
+                         .getParentDirectory()
+                         .getParentDirectory();
+
+    if (! currentApp.getParentDirectory().hasWriteAccess())
+    {
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::MessageBoxIconType::WarningIcon,
+            "Auto-update needs a writable folder",
+            "FretFight cannot replace itself in:\n"
+                + currentApp.getParentDirectory().getFullPathName()
+                + "\n\nMove FretFight.app to a user folder (for example ~/Applications) "
+                  "to let future versions update automatically.",
+            "OK");
+        return;
+    }
+
+    const auto helper = updateDirectory.getChildFile ("apply-update.sh");
+    const auto pid = static_cast<int> (getpid());
+
+    juce::String script;
+    script << "#!/bin/sh\n"
+           << "while kill -0 " << pid << " 2>/dev/null; do sleep 0.5; done\n"
+           << "xattr -dr com.apple.quarantine \"" << stagedApp.getFullPathName() << "\" 2>/dev/null\n"
+           << "rm -rf \"" << currentApp.getFullPathName() << "\"\n"
+           << "/bin/cp -R \"" << stagedApp.getFullPathName() << "\" \""
+           << currentApp.getFullPathName() << "\"\n"
+           << "open \"" << currentApp.getFullPathName() << "\"\n"
+           << "rm -f \"$0\"\n";
+
+    if (! helper.replaceWithText (script))
+        return;
+
+    helper.setExecutePermission (true);
+
+    juce::ChildProcess process;
+    process.start (juce::StringArray { "/bin/sh", helper.getFullPathName() }, 0);
+
+    juce::MessageManager::callAsync ([]()
+    {
+        if (auto* app = juce::JUCEApplication::getInstance())
+            app->systemRequestedQuit();
+    });
+   #endif
 }
-
