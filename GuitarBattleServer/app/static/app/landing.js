@@ -292,6 +292,21 @@
       }
     }
 
+    b = block('support');
+    if (b) {
+      setVisible('#support-project', b.visible);
+      if (b.data) {
+        text(document.querySelector('#support-project .kicker'), b.data.kicker);
+        text(document.getElementById('support-project-title'), b.data.title);
+        text(
+          document.querySelector('#support-project .support-project__copy > p:last-child'),
+          b.data.text
+        );
+        // The button is a plain link: only its label is editable.
+        text(document.querySelector('#support-project .support-project__action'), b.data.button);
+      }
+    }
+
     b = block('cta');
     if (b) {
       setVisible('.cta', b.visible);

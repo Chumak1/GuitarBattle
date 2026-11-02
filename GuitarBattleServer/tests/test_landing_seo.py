@@ -17,9 +17,12 @@ from pathlib import Path
 
 import pytest
 
+from tests import helpers
+
 STATIC_DIR = Path(__file__).resolve().parents[1] / "app" / "static"
 TEMPLATE = STATIC_DIR / "landing" / "index.html"
 LANDING_I18N = STATIC_DIR / "app" / "landing-i18n.js"
+ADMIN_SITE = STATIC_DIR / "admin" / "admin-site.js"
 OG_IMAGES = {
     "ru": STATIC_DIR / "app" / "og-image.png",
     "en": STATIC_DIR / "app" / "og-image-en.png",
@@ -335,3 +338,154 @@ def test_server_and_browser_dictionaries_match() -> None:
         assert set(browser[lang]) | shared == set(LANDING_TEXT[lang]), lang
         for key, value in browser[lang].items():
             assert LANDING_TEXT[lang][key] == value, f"{lang}/{key} drifted"
+
+
+def test_removed_button_labels_are_gone() -> None:
+    """The hero/CTA buttons were dropped, so their labels left the dictionaries."""
+    from app.services.landing_content import LANDING_TEXT
+
+    for lang in ("ru", "en"):
+        assert "landing.how" not in LANDING_TEXT[lang], lang
+        assert "landing.supportCta" not in LANDING_TEXT[lang], lang
+        # The navigation link and the "how" section copy stay.
+        assert "landing.nav.how" in LANDING_TEXT[lang], lang
+        assert "landing.how.title" in LANDING_TEXT[lang], lang
+
+
+# ---------------------------------------------------------------------------
+# Support block and its removal from the hero/CTA
+# ---------------------------------------------------------------------------
+def test_landing_has_no_duplicate_support_buttons() -> None:
+    template = _html(TEMPLATE)
+
+    # "Как это работает" and "Поддержать проект" buttons are gone from the hero
+    # and the final CTA; the #how anchor in the navigation stays.
+    assert 'href="#how" data-i18n="landing.how"' not in template
+    assert "landing.supportCta" not in template
+    assert "{{ landing.how }}" not in template
+    assert 'href="#how" data-i18n="landing.nav.how"' in template
+
+    header = re.search(r'<header class="site-header">.*?</header>', template, re.DOTALL)
+    assert header is not None
+    assert 'href="/support"' in header.group(0)
+    assert 'data-i18n="landing.support"' in header.group(0)
+
+    hero = re.search(r'<section class="hero".*?</section>', template, re.DOTALL)
+    assert hero is not None
+    hero_actions = re.search(r'<div class="hero-actions">.*?</div>', hero.group(0), re.DOTALL)
+    assert hero_actions is not None
+    assert 'href="/support"' not in hero_actions.group(0)
+
+    cta = re.search(r'<section class="cta".*?</section>', template, re.DOTALL)
+    assert cta is not None
+    cta_actions = re.search(r'<div class="hero-actions">.*?</div>', cta.group(0), re.DOTALL)
+    assert cta_actions is not None
+    assert 'href="/support"' not in cta_actions.group(0)
+
+    # Exactly two support actions remain: the header link and the new block.
+    assert template.count('href="/support"') == 2
+
+
+def test_support_project_block_is_standalone() -> None:
+    template = _html(TEMPLATE)
+
+    match = re.search(r'<section id="support-project".*?</section>', template, re.DOTALL)
+    assert match is not None, "the #support-project block is missing"
+    section = match.group(0)
+
+    assert 'aria-labelledby="support-project-title"' in section
+    assert 'id="support-project-title"' in section
+    assert 'href="/support"' in section
+    # Accent button in the style of the site.
+    assert "btn btn-primary" in section
+
+    for key in ("kicker", "title", "text", "button"):
+        full = f"landing.supportProject.{key}"
+        assert f'data-i18n="{full}"' in section, full
+        assert f"{{{{ {full} }}}}" in section, full
+
+    # Its own CSS hook: landing.js hides #support-project, never .cta.
+    assert ".support-project__inner" in template
+    assert ".support-project__action" in template
+
+    # Between the requirements section and the final CTA.
+    assert (
+        template.index('id="requirements"')
+        < template.index('id="support-project"')
+        < template.index('<section class="cta"')
+    )
+
+
+def test_admin_editor_exposes_the_support_block() -> None:
+    script = _html(ADMIN_SITE)
+
+    block = re.search(r'\{\s*key: "support",.*?\n    \},', script, re.DOTALL)
+    assert block is not None, "the support block is missing from SCHEMA"
+    schema = block.group(0)
+    assert 'title: "Поддержать проект"' in schema
+    for key in ("kicker", "title", "text", "button"):
+        assert f'key: "{key}"' in schema, key
+
+    for key in ("kicker", "title", "text", "button"):
+        assert f'r("landing.supportProject.{key}")' in script, key
+
+
+# ---------------------------------------------------------------------------
+# Admin CMS roundtrip (needs the disposable PostgreSQL database)
+# ---------------------------------------------------------------------------
+SUPPORT_BLOCK = {
+    "visible": True,
+    "ru": {
+        "kicker": "Поддержать проект",
+        "title": "Помогите FretFight расти",
+        "text": "FretFight делает небольшая команда.",
+        "button": "Поддержать проект",
+    },
+    "en": {
+        "kicker": "Support the project",
+        "title": "Help FretFight grow",
+        "text": "FretFight is built by a small team.",
+        "button": "Support the project",
+    },
+}
+
+
+@pytest.mark.db
+def test_support_block_roundtrip_through_the_admin_api(db_client, admin_user) -> None:
+    """Saving the block in the editor returns it from both API views."""
+    response = db_client.put(
+        f"{helpers.API}/admin/site/landing",
+        json={"blocks": {"support": SUPPORT_BLOCK}},
+        headers=admin_user["headers"],
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["blocks"]["support"] == SUPPORT_BLOCK
+
+    admin = db_client.get(
+        f"{helpers.API}/admin/site/landing", headers=admin_user["headers"]
+    )
+    assert admin.status_code == 200, admin.text
+    assert admin.json()["blocks"]["support"] == SUPPORT_BLOCK
+
+    public = db_client.get(f"{helpers.API}/landing")
+    assert public.status_code == 200, public.text
+    assert public.json()["blocks"]["support"] == SUPPORT_BLOCK
+
+
+@pytest.mark.db
+def test_hidden_support_block_is_still_served_to_the_page(db_client, admin_user) -> None:
+    """The visibility switch travels with the block; landing.js hides it."""
+    block = json.loads(json.dumps(SUPPORT_BLOCK))
+    block["visible"] = False
+
+    response = db_client.put(
+        f"{helpers.API}/admin/site/landing",
+        json={"blocks": {"support": block}},
+        headers=admin_user["headers"],
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["blocks"]["support"]["visible"] is False
+
+    public = db_client.get(f"{helpers.API}/landing")
+    assert public.status_code == 200, public.text
+    assert public.json()["blocks"]["support"]["visible"] is False

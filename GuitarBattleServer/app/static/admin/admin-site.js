@@ -67,6 +67,16 @@
       ],
     },
     {
+      key: "support",
+      title: "Поддержать проект",
+      rows: [
+        { kind: "field", key: "kicker", label: "Надзаголовок" },
+        { kind: "field", key: "title", label: "Заголовок" },
+        { kind: "text", key: "text", label: "Описание" },
+        { kind: "field", key: "button", label: "Текст кнопки" },
+      ],
+    },
+    {
       key: "cta",
       title: "Финальный блок",
       rows: [
@@ -293,6 +303,12 @@
             { label: r("landing.req.site"), value: r("landing.req.siteValue") },
           ],
         },
+      },
+      support: {
+        kicker: r("landing.supportProject.kicker"),
+        title: r("landing.supportProject.title"),
+        text: r("landing.supportProject.text"),
+        button: r("landing.supportProject.button"),
       },
       cta: {
         title: r("landing.cta.title"),
