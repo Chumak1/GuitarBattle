@@ -17,7 +17,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
 from app.services.game_builds import (
+    DEFAULT_BUILD_ARTIFACT,
     DEFAULT_GAME_BUILD_PLATFORM,
+    artifact_check_sql,
     platform_check_sql,
 )
 
@@ -49,12 +51,16 @@ class LandingSettings(Base):
 
 
 class GameBuild(Base):
-    """An uploaded desktop installer. At most one build is active per platform.
+    """An uploaded desktop build. One active build per ``(platform, artifact)``.
 
     ``platform`` separates the Windows build from the universal macOS one:
     activating a macOS build only unpublishes the other macOS builds, so the
     Windows download (which the desktop client uses) is never taken down by a
     macOS upload.
+
+    ``artifact`` separates what a new user installs (``installer``: ``.exe``,
+    ``.msi``, ``.dmg``) from the portable ZIP the installed client unpacks to
+    update itself (``portable``). Activating one never unpublishes the other.
     """
 
     __tablename__ = "game_builds"
@@ -62,6 +68,10 @@ class GameBuild(Base):
         CheckConstraint(
             platform_check_sql(),
             name="ck_game_builds_platform",
+        ),
+        CheckConstraint(
+            artifact_check_sql(),
+            name="ck_game_builds_artifact",
         ),
     )
 
@@ -72,6 +82,14 @@ class GameBuild(Base):
         nullable=False,
         default=DEFAULT_GAME_BUILD_PLATFORM,
         server_default=DEFAULT_GAME_BUILD_PLATFORM,
+        index=True,
+    )
+    #: ``installer`` | ``portable``. Rows that predate the split are installers.
+    artifact: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default=DEFAULT_BUILD_ARTIFACT,
+        server_default=DEFAULT_BUILD_ARTIFACT,
         index=True,
     )
     version: Mapped[str] = mapped_column(

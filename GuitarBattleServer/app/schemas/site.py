@@ -29,8 +29,10 @@ class LandingDownloads(BaseModel):
     """Per-platform download links of the landing page.
 
     The keys are the ``?platform=`` values; a platform without a published
-    build is ``null``. ``LandingResponse.download`` stays the Windows build for
-    backwards compatibility with the desktop client.
+    build is ``null``. ``LandingResponse.download`` stays the Windows installer
+    for backwards compatibility with the desktop client. The same shape is used
+    for ``updates`` (the portable ZIPs of the automatic updater), so a client
+    can parse both maps with one code path.
     """
 
     windows: DownloadInfo | None = None
@@ -42,6 +44,9 @@ class LandingResponse(BaseModel):
     hero_background: HeroBackground = Field(default_factory=HeroBackground)
     download: DownloadInfo = Field(default_factory=DownloadInfo)
     downloads: LandingDownloads = Field(default_factory=LandingDownloads)
+    #: Portable ZIPs used by the installed client to update itself. Additive:
+    #: ``download``/``downloads`` keep pointing at the installers.
+    updates: LandingDownloads = Field(default_factory=LandingDownloads)
 
 
 class GeoResponse(BaseModel):
@@ -113,6 +118,8 @@ class GameBuildItem(BaseModel):
     id: int
     #: ``windows`` | ``macos``.
     platform: str
+    #: ``installer`` (site download) | ``portable`` (auto-update ZIP).
+    artifact: str = "installer"
     version: str = ""
     filename: str
     size_bytes: int

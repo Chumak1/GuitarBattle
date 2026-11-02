@@ -92,6 +92,7 @@
     builds: [],
     buildsLoaded: false,
     buildsPlatform: "",
+    buildsArtifact: "",
     buildNotesId: null,
     buildNotesModal: null,
     contacts: null,
@@ -99,8 +100,7 @@
     section: "songs",
   };
 
-  // Platform metadata of a game build: the value is the API ``platform``, the
-  // extensions mirror app/services/game_builds.py (the server still validates).
+  // Platform metadata of a game build: the value is the API ``platform``.
   // macOS ships one universal build for Apple Silicon and Intel.
   const BUILD_PLATFORMS = [
     {
@@ -108,16 +108,35 @@
       label: "Windows",
       short: "Windows",
       badge: "badge-platform-windows",
-      accept: ".exe,.zip,.msi",
-      extensions: "EXE, ZIP или MSI",
     },
     {
       value: "macos",
       label: "macOS",
       short: "macOS",
       badge: "badge-platform-macos",
-      accept: ".dmg,.zip",
-      extensions: "DMG или ZIP",
+    },
+  ];
+
+  // Artifact metadata: ``installer`` is what the download button on the site
+  // serves, ``portable`` is the ZIP the installed client unpacks to update
+  // itself. The extensions mirror app/services/game_builds.py; the server still
+  // validates every pair.
+  const BUILD_ARTIFACTS = [
+    {
+      value: "installer",
+      label: "Установщик",
+      short: "Установщик",
+      badge: "badge-artifact-installer",
+      accept: { windows: ".exe,.msi,.zip", macos: ".dmg,.zip" },
+      extensions: { windows: "EXE, MSI или ZIP", macos: "DMG или ZIP" },
+    },
+    {
+      value: "portable",
+      label: "Portable ZIP для автообновления",
+      short: "Portable",
+      badge: "badge-artifact-portable",
+      accept: { windows: ".zip", macos: ".zip" },
+      extensions: { windows: "ZIP", macos: "ZIP" },
     },
   ];
 
@@ -125,6 +144,18 @@
     return (
       BUILD_PLATFORMS.find((item) => item.value === value) || BUILD_PLATFORMS[0]
     );
+  }
+
+  function artifactInfo(value) {
+    return (
+      BUILD_ARTIFACTS.find((item) => item.value === value) || BUILD_ARTIFACTS[0]
+    );
+  }
+
+  // Builds uploaded before the split have no ``artifact`` field: they are
+  // installers, which is also what the column default backfills.
+  function buildArtifact(build) {
+    return (build && build.artifact) || "installer";
   }
 
   const el = (id) => document.getElementById(id);
@@ -710,15 +741,20 @@
     const empty = el("buildsEmpty");
     if (!body) return;
     body.textContent = "";
-    // Group by platform (Windows, macOS), newest first inside a group: the
-    // builds of the same platform are what the admin compares.
-    const order = (value) => {
-      const index = BUILD_PLATFORMS.findIndex((item) => item.value === value);
-      return index === -1 ? BUILD_PLATFORMS.length : index;
+    // Group by platform (Windows, macOS) and inside it by artifact (installer,
+    // portable), newest first: those are the builds the admin compares.
+    const order = (items, value) => {
+      const index = items.findIndex((item) => item.value === value);
+      return index === -1 ? items.length : index;
     };
     const items = (state.builds || []).slice().sort((a, b) => {
-      const delta = order(a.platform) - order(b.platform);
-      if (delta !== 0) return delta;
+      const byPlatform =
+        order(BUILD_PLATFORMS, a.platform) - order(BUILD_PLATFORMS, b.platform);
+      if (byPlatform !== 0) return byPlatform;
+      const byArtifact =
+        order(BUILD_ARTIFACTS, buildArtifact(a)) -
+        order(BUILD_ARTIFACTS, buildArtifact(b));
+      if (byArtifact !== 0) return byArtifact;
       return new Date(b.uploaded_at || 0) - new Date(a.uploaded_at || 0);
     });
     empty.hidden = items.length > 0;
@@ -728,14 +764,24 @@
     items.forEach((build) => {
       const row = document.createElement("tr");
       const info = platformInfo(build.platform);
+      const artifact = artifactInfo(buildArtifact(build));
 
-      // PLATFORM: the badge tells the three builds apart at a glance.
+      // PLATFORM: the badge tells Windows and macOS apart at a glance.
       const platform = document.createElement("td");
       const badge = document.createElement("span");
       badge.className = "badge " + info.badge;
       badge.textContent = info.short;
       platform.appendChild(badge);
       row.appendChild(platform);
+
+      // ARTIFACT: installer for the site button, portable for auto-updates.
+      const artifactCell = document.createElement("td");
+      const artifactBadge = document.createElement("span");
+      artifactBadge.className = "badge " + artifact.badge;
+      artifactBadge.textContent = artifact.short;
+      artifactBadge.title = artifact.label;
+      artifactCell.appendChild(artifactBadge);
+      row.appendChild(artifactCell);
 
       const version = document.createElement("td");
       version.textContent = build.version || "—";
@@ -796,33 +842,45 @@
     });
   }
 
-  // "Windows: v1.2.0 · macOS: нет сборки" — the admin sees which build is
-  // published for every platform without scanning the table.
+  // "Windows: Установщик v1.2.0 · Portable v1.2.1 | macOS: Установщик —, ..." -
+  // the admin sees which build is published for every platform and artifact
+  // without scanning the table. Installer and portable are reported separately
+  // because they are activated independently.
   function renderBuildsSummary(items) {
     const target = el("buildsActiveSummary");
     if (!target) return;
-    // With an active filter the response only carries one platform, so only
-    // that platform is summarised.
-    const visible = BUILD_PLATFORMS.filter(
+    // With an active filter the response only carries the matching rows, so
+    // only the visible platforms/artifacts are summarised.
+    const visiblePlatforms = BUILD_PLATFORMS.filter(
       (info) => !state.buildsPlatform || info.value === state.buildsPlatform
     );
-    const parts = visible.map((info) => {
-      const active = items.find(
-        (build) => build.platform === info.value && build.is_active
-      );
-      const value = active ? "v" + (active.version || "—") : "нет сборки";
-      return info.short + ": " + value;
+    const visibleArtifacts = BUILD_ARTIFACTS.filter(
+      (info) => !state.buildsArtifact || info.value === state.buildsArtifact
+    );
+    const parts = visiblePlatforms.map((platform) => {
+      const perArtifact = visibleArtifacts.map((artifact) => {
+        const active = items.find(
+          (build) =>
+            build.platform === platform.value &&
+            buildArtifact(build) === artifact.value &&
+            build.is_active
+        );
+        const value = active ? "v" + (active.version || "—") : "нет сборки";
+        return artifact.short + ": " + value;
+      });
+      return platform.short + " — " + perArtifact.join(", ");
     });
-    target.textContent = parts.join(" · ");
+    target.textContent = parts.join(" | ");
   }
 
   async function loadBuilds() {
     state.buildsLoaded = true;
     showAlert("buildAlert", "");
     try {
-      const query = state.buildsPlatform
-        ? "?platform=" + encodeURIComponent(state.buildsPlatform)
-        : "";
+      const params = new URLSearchParams();
+      if (state.buildsPlatform) params.set("platform", state.buildsPlatform);
+      if (state.buildsArtifact) params.set("artifact", state.buildsArtifact);
+      const query = params.toString() ? "?" + params.toString() : "";
       const data = await api("/admin/site/game-builds" + query);
       state.builds = (data && data.items) || [];
       renderBuilds();
@@ -840,8 +898,8 @@
       return;
     }
 
-    const platform = el("buildPlatform").value;
-    const info = platformInfo(platform);
+    const platform = platformInfo(el("buildPlatform").value);
+    const artifact = artifactInfo(el("buildArtifact").value);
 
     const button = el("buildUpload");
     const spinner = el("buildSpinner");
@@ -852,16 +910,18 @@
     try {
       const form = new FormData();
       form.append("file", file);
-      form.append("platform", info.value);
+      form.append("platform", platform.value);
+      form.append("artifact", artifact.value);
       form.append("version", el("buildVersion").value.trim());
       form.append("release_notes", el("buildReleaseNotes").value.trim());
       await api("/admin/site/game-builds", { method: "POST", body: form });
       el("buildForm").reset();
-      syncPlatformHint();
+      syncBuildHints();
       await loadBuilds();
       showAlert(
         "buildAlert",
-        "Сборка " + info.label + " загружена. Активируйте её, чтобы опубликовать.",
+        "Сборка «" + artifact.short + "», " + platform.label +
+          " загружена. Активируйте её, чтобы опубликовать.",
         "success"
       );
     } catch (error) {
@@ -878,7 +938,11 @@
         method: "POST",
       });
       await loadBuilds();
-      showAlert("buildAlert", "Сборка опубликована для своей платформы.", "success");
+      showAlert(
+        "buildAlert",
+        "Сборка опубликована для своей платформы и артефакта.",
+        "success"
+      );
     } catch (error) {
       showAlert("buildAlert", errorText(error));
     }
@@ -895,21 +959,28 @@
     }
   }
 
-  // Keep the file picker and the hint in step with the selected platform, so a
-  // .dmg cannot be chosen for the Windows slot (the server rejects it with 415).
-  function syncPlatformHint() {
-    const select = el("buildPlatform");
-    if (!select) return;
-    const info = platformInfo(select.value);
+  // Keep the file picker and the hint in step with the selected platform and
+  // artifact, so a .dmg cannot be chosen for the Windows slot and a .exe cannot
+  // be chosen as a portable ZIP (the server rejects both with 415).
+  function syncBuildHints() {
+    const platformSelect = el("buildPlatform");
+    if (!platformSelect) return;
+    const platform = platformInfo(platformSelect.value);
+    const artifactSelect = el("buildArtifact");
+    const artifact = artifactInfo(
+      artifactSelect ? artifactSelect.value : "installer"
+    );
     const input = el("buildFile");
     if (input) {
-      input.setAttribute("accept", info.accept);
-      input.setAttribute("data-platform", info.value);
+      input.setAttribute("accept", artifact.accept[platform.value]);
+      input.setAttribute("data-platform", platform.value);
+      input.setAttribute("data-artifact", artifact.value);
     }
     const hint = el("buildFileHint");
     if (hint) {
       hint.textContent =
-        info.label + ": " + info.extensions + ". До 500 МБ. " +
+        platform.label + " — " + artifact.label + ": " +
+        artifact.extensions[platform.value] + ". До 500 МБ. " +
         "Новая сборка не публикуется автоматически.";
     }
   }
@@ -1095,9 +1166,14 @@
     el("landingBgRemove")?.addEventListener("click", removeBackground);
     el("buildsReload")?.addEventListener("click", loadBuilds);
     el("buildForm")?.addEventListener("submit", uploadBuild);
-    el("buildPlatform")?.addEventListener("change", syncPlatformHint);
+    el("buildPlatform")?.addEventListener("change", syncBuildHints);
+    el("buildArtifact")?.addEventListener("change", syncBuildHints);
     el("buildsPlatformFilter")?.addEventListener("change", (event) => {
       state.buildsPlatform = event.target.value;
+      loadBuilds();
+    });
+    el("buildsArtifactFilter")?.addEventListener("change", (event) => {
+      state.buildsArtifact = event.target.value;
       loadBuilds();
     });
     el("buildNotesSave")?.addEventListener("click", saveBuildNotes);
@@ -1116,7 +1192,7 @@
       if (remove) deleteBuild(remove.getAttribute("data-build-delete"));
     });
     el("refreshButtonTop")?.addEventListener("click", refreshCurrent);
-    syncPlatformHint();
+    syncBuildHints();
   }
 
   if (document.readyState === "loading") {

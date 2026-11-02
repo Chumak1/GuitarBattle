@@ -502,6 +502,19 @@ code {
   border-color: rgba(160, 132, 255, 0.24);
 }
 
+/* Artifact badge of a game build: installer vs portable update ZIP. */
+.badge-artifact-installer {
+  color: #f6d37c;
+  background: rgba(243, 196, 81, 0.10);
+  border-color: rgba(243, 196, 81, 0.22);
+}
+
+.badge-artifact-portable {
+  color: #8ff0c3;
+  background: rgba(66, 211, 146, 0.10);
+  border-color: rgba(66, 211, 146, 0.22);
+}
+
 .action-group {
   display: inline-flex;
   align-items: center;

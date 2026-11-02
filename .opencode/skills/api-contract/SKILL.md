@@ -62,8 +62,9 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/daily/history` | Bearer, `limit` (1–100, по умолчанию 20), `offset` | официальные результаты игрока по дням с `rank` и `participants` |
 | GET | `/client-assets/manifest` | — (публичный) | `schema`, `version`, `archive_url`, `archive_size_bytes`, `archive_sha256`, `files[]`; 503, если manifest или bundle отсутствует |
 | GET/HEAD | `/client-assets/bundle.zip` | — (публичный) | zip `guitarbattle-sounds.zip`; 503, если архив отсутствует |
-| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` (Windows, для обратной совместимости) и аддитивный `downloads` (`{"windows": DownloadInfo\|null, "macos": DownloadInfo\|null}`); `DownloadInfo` = `available`, `version`, `filename`, `size_bytes`, `url`, `release_notes` |
-| GET | `/downloads/game` | — (публичный), `platform=windows\|macos` (по умолчанию `windows`) | активная сборка платформы; 404, если для платформы нет активной сборки; 422 для неизвестного `platform` |
+| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` (Windows installer, для обратной совместимости) и аддитивные `downloads` (`{"windows": DownloadInfo\|null, "macos": DownloadInfo\|null}`) — установщики; `updates` — та же карта для **portable** ZIP автообновления (`url` = `/api/v1/downloads/game/update?platform=...`, `available=false`, если portable-сборки нет). `DownloadInfo` = `available`, `version`, `filename`, `size_bytes`, `url`, `release_notes` |
+| GET | `/downloads/game` | — (публичный), `platform=windows\|macos` (по умолчанию `windows`) | активный **installer** платформы (Windows `.exe/.msi`, macOS `.dmg`); 404, если установщика нет; 422 для неизвестного `platform` |
+| GET | `/downloads/game/update` | — (публичный), `platform=windows\|macos` (по умолчанию `windows`) | активный **portable** ZIP платформы; 404, если portable-сборки нет; 422 для неизвестного `platform` |
 | GET | `/geo` | — (публичный) | `country`, `language` (`ru`/`en`/`null`) по IP из локальной DB-IP Lite |
 | GET | `/site/contacts` | — (публичный) | `name` (`ru`/`en`), `email`, `telegram` (`@handle`), `telegram_url`, `socials` (`youtube`/`instagram`/`twitter`/`vk`; `null` — заглушка «Скоро»); без записи в CMS отдаёт дефолты |
 | POST | `/activity/heartbeat` | Bearer, `client_session_id` (≤64), `app_version?`, `platform?`, `final=false` | 200, `session_id`, `started_at`, `last_seen_at`; upsert по `(user_id, client_session_id)`, `final=true` ставит `ended_at` |
@@ -78,10 +79,10 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | DELETE | `/admin/site/landing/background` | Bearer admin | 200, `hero_background.type = "none"` |
 | GET | `/admin/site/contacts` | Bearer admin | `name_ru`, `name_en`, `email`, `telegram`, `socials` (сохранённые значения или дефолты) |
 | PUT | `/admin/site/contacts` | Bearer admin, те же поля | сохранённые нормализованные значения; 422 с именем поля в `detail` для битого email/telegram/URL соцсети; пишет `content["contacts"]`, не трогая `blocks`/`hero_background` |
-| GET | `/admin/site/game-builds` | Bearer admin, `platform?` (`windows`/`macos`) | список загруженных сборок; у каждой `platform` и `url` |
-| POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `platform?` (по умолчанию `windows`), `version?`, `release_notes?` (≤8000) | 201, сборка создаётся неактивной; Windows — `.exe/.zip/.msi`, macOS — `.dmg/.zip`; неверная пара платформа/расширение → 415, неизвестная платформа → 422 |
-| PATCH | `/admin/site/game-builds/{id}` | Bearer admin, JSON `{release_notes}` (≤8000) | 200, обновлённая сборка; меняет только описание, файл и `is_active` не трогает |
-| POST | `/admin/site/game-builds/{id}/activate` | Bearer admin | 200, сборка становится единственной активной в своей платформе; сборка другой платформы остаётся активной |
+| GET | `/admin/site/game-builds` | Bearer admin, `platform?` (`windows`/`macos`), `artifact?` (`installer`/`portable`) | список загруженных сборок; у каждой `platform`, `artifact` и `url` (у portable — `/downloads/game/update?...`); 422 для неизвестного фильтра |
+| POST | `/admin/site/game-builds` | Bearer admin, multipart `file`, `platform?` (по умолчанию `windows`), `artifact?` (по умолчанию `installer`), `version?`, `release_notes?` (≤8000) | 201, сборка создаётся неактивной; installer: Windows — `.exe/.msi/.zip`, macOS — `.dmg/.zip`; portable: только `.zip` на обеих платформах; неверная пара платформа/артефакт/расширение → 415, неизвестная `platform`/`artifact` → 422 |
+| PATCH | `/admin/site/game-builds/{id}` | Bearer admin, JSON `{release_notes}` (≤8000) | 200, обновлённая сборка; меняет только описание, файл, `artifact` и `is_active` не трогает |
+| POST | `/admin/site/game-builds/{id}/activate` | Bearer admin | 200, сборка становится единственной активной в своей паре `(platform, artifact)`; installer и portable друг друга не снимают, другая платформа тоже остаётся активной |
 | DELETE | `/admin/site/game-builds/{id}` | Bearer admin | 204 |
 | GET | `/app/background-music` | — (публичный) | всегда 200: `{url: str \| null, content_type: str \| null, size_bytes: int}`; без файла — `null`/`null`/`0` |
 | GET | `/app/background-music/file` | — (публичный) | текущий MP3 (`audio/mpeg`, `Cache-Control: no-cache`); 404, если трека нет |
@@ -123,13 +124,23 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   `app/static/app/contacts.js` подменяет значения из API, без JS остаются
   дефолты и 4 заглушки соцсетей.
 - Сборки игры лежат в `GAME_BUILDS_DIR` (`/data/game_builds`), лимит 500 МиБ.
-  Платформы (`game_builds.platform`, миграция `0017_game_build_platform`):
-  `windows` (по умолчанию) и `macos` — одна универсальная сборка для Apple
-  Silicon и Intel. Активна максимум одна сборка на платформу; активация macOS
-  не снимает `is_active` у Windows. `/downloads/game` отдаёт активную сборку
-  платформы с `Content-Disposition: attachment`; без `?platform=` — Windows.
+  У сборки две координаты: `platform` (`windows`/`macos`, миграция
+  `0017_game_build_platform`; macOS — одна универсальная сборка для Apple
+  Silicon и Intel) и `artifact` (`installer`/`portable`, миграция
+  `0018_game_build_artifact`, `server_default='installer'`, CHECK, индекс).
+  `installer` — то, что ставит новый пользователь и что отдаёт кнопка на сайте;
+  `portable` — ZIP, который установленный клиент распаковывает сам.
+  Правила расширений — `app/services/game_builds.py`
+  (`GAME_BUILD_TYPES[platform][artifact]`): installer — Windows
+  `.exe/.msi/.zip` (zip legacy), macOS `.dmg/.zip` (zip legacy); portable —
+  только `.zip` на обеих платформах. Неверная пара → 415 с текстом
+  `Windows portable ZIP must be .zip`, неизвестные значения → 422.
+  Активна максимум одна сборка на пару `(platform, artifact)`; активация
+  portable не снимает `is_active` у installer той же платформы и наоборот.
+  `GET /downloads/game` отдаёт активный installer (без `?platform=` — Windows),
+  `GET /downloads/game/update?platform=...` — активный portable ZIP.
   На лендинге рядом с кнопкой Windows стоит ссылка
-  `/api/v1/downloads/game?platform=macos`; пока macOS-сборки нет, она
+  `/api/v1/downloads/game?platform=macos`; пока macOS-установщика нет, она
   отключена и подписана «Скоро»/«Coming soon».
 - `game_builds.release_notes` (Text, NOT NULL, default `''`, миграция
   `0016_game_build_release_notes`) — текст «что нового», который администратор
@@ -137,11 +148,19 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   (пустая строка, если описания нет) и в админском `GameBuildItem`.
   `PATCH /admin/site/game-builds/{id}` меняет описание без повторной загрузки
   установщика; `POST` принимает `release_notes` в multipart-форме.
-- Клиент (`MainComponent::checkForUpdatesOnLaunch`) читает
-  `download.release_notes`; если текст непустой, `promptForUpdate` показывает
-  его в read-only многострочном `TextEditor` внутри `AlertWindow`
-  («What's new in <version>»), иначе остаётся прежний короткий диалог.
-  Поле аддитивное: старый сервер без него не ломает обновление.
+- Клиент (`MainComponent::checkForUpdatesOnLaunch`) читает `updates` из
+  `/landing` (`updates[windows|macos]`), а `downloads` использует только как
+  fallback для старых серверов: установщик с сайта и канал автообновления
+  разведены. `updates.*.url` — `/api/v1/downloads/game/update?platform=...`,
+  `available=false` — portable-сборки нет. `release_notes` показывается в
+  диалоге обновления, если он непустой.
+- Админка (`app/static/admin/index.html`, `admin-site.js`): у формы загрузки
+  два селектора — `Платформа` и `Артефакт` (`Установщик` /
+  `Portable ZIP для автообновления`); `accept` и подсказка считаются из пары
+  `platform+artifact` (`BUILD_ARTIFACTS` в JS). В таблице колонка `Артефакт`
+  с бейджем `Установщик`/`Portable`, фильтр по артефакту рядом с фильтром
+  платформ, а сводка активных сборок выводится отдельно для installer и
+  portable по каждой видимой платформе.
 - Язык публичного сайта — cookie `ff_lang` (`ru`/`en`). Middleware на первом HTML-
   запросе определяет страну по локальной базе DB-IP Lite (`GEOIP_DB_PATH`,
   обновляется `scripts/fetch_geoip.py`) и ставит cookie для России/СНГ → `ru`,

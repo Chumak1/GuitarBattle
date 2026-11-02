@@ -643,7 +643,7 @@
           <div>
             <div class="eyebrow">Публичный сайт</div>
             <h1 class="page-title">Сборка игры</h1>
-            <p class="page-subtitle">Загрузите сборку для Windows или macOS и активируйте её — на лендинге появится кнопка скачивания для этой платформы. macOS-сборка одна и универсальная: работает и на Apple Silicon, и на Intel. У каждой платформы своя активная сборка.</p>
+            <p class="page-subtitle">Загрузите установщик для Windows или macOS — на лендинге появится кнопка скачивания для этой платформы. Отдельно загрузите portable ZIP для автообновления: установленный клиент скачивает его сам. macOS-сборка одна и универсальная: работает и на Apple Silicon, и на Intel. Для каждой пары «платформа + артефакт» активна одна сборка.</p>
           </div>
           <button id="buildsReload" class="btn btn-outline-light" type="button">
             <i class="bi bi-arrow-clockwise me-1"></i>Обновить
@@ -656,22 +656,29 @@
           <div class="card-body p-4">
             <h2 class="h5 mb-3">Загрузить новую сборку</h2>
             <form id="buildForm" class="row g-2 align-items-end">
-              <div class="col-12 col-md-3">
+              <div class="col-6 col-md-2">
                 <label class="form-label" for="buildPlatform">Платформа</label>
                 <select id="buildPlatform" class="form-select">
                   <option value="windows" selected>Windows</option>
                   <option value="macos">macOS (универсальная)</option>
                 </select>
               </div>
+              <div class="col-6 col-md-3">
+                <label class="form-label" for="buildArtifact">Артефакт</label>
+                <select id="buildArtifact" class="form-select">
+                  <option value="installer" selected>Установщик</option>
+                  <option value="portable">Portable ZIP для автообновления</option>
+                </select>
+              </div>
               <div class="col-6 col-md-2">
                 <label class="form-label" for="buildVersion">Версия</label>
                 <input id="buildVersion" class="form-control" type="text" maxlength="64" placeholder="0.9.0">
               </div>
-              <div class="col-12 col-md-4">
+              <div class="col-6 col-md-3">
                 <label class="form-label" for="buildFile">Файл</label>
-                <input id="buildFile" class="form-control" type="file" accept=".exe,.zip,.msi" required>
+                <input id="buildFile" class="form-control" type="file" accept=".exe,.msi,.zip" required>
               </div>
-              <div class="col-12 col-md-3">
+              <div class="col-12 col-md-2">
                 <button id="buildUpload" class="btn btn-warning fw-semibold w-100" type="submit">
                   <span id="buildSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
                   Загрузить
@@ -682,19 +689,25 @@
                 <textarea id="buildReleaseNotes" class="form-control" rows="3" maxlength="8000" placeholder="Что нового в этой версии…"></textarea>
               </div>
             </form>
-            <p id="buildFileHint" class="form-hint mt-2 mb-0">Windows: .exe, .zip или .msi. macOS: .dmg или .zip. До 500 МБ. Новая сборка не публикуется автоматически.</p>
+            <p id="buildFileHint" class="form-hint mt-2 mb-0">Windows — Установщик: EXE, MSI или ZIP. До 500 МБ. Новая сборка не публикуется автоматически.</p>
           </div>
         </section>
 
         <section class="card content-card">
           <div class="card-body p-0">
             <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 px-3 py-3 border-bottom">
-              <div class="d-flex align-items-center gap-2">
+              <div class="d-flex flex-wrap align-items-center gap-2">
                 <label class="form-label mb-0 small text-secondary" for="buildsPlatformFilter">Платформа</label>
                 <select id="buildsPlatformFilter" class="form-select form-select-sm w-auto">
                   <option value="">Все платформы</option>
                   <option value="windows">Windows</option>
                   <option value="macos">macOS (универсальная)</option>
+                </select>
+                <label class="form-label mb-0 small text-secondary ms-md-2" for="buildsArtifactFilter">Артефакт</label>
+                <select id="buildsArtifactFilter" class="form-select form-select-sm w-auto">
+                  <option value="">Все артефакты</option>
+                  <option value="installer">Установщик</option>
+                  <option value="portable">Portable</option>
                 </select>
               </div>
               <p id="buildsActiveSummary" class="form-hint mb-0 text-md-end"></p>
@@ -704,6 +717,7 @@
                 <thead>
                   <tr>
                     <th scope="col">Платформа</th>
+                    <th scope="col">Артефакт</th>
                     <th scope="col">Версия</th>
                     <th scope="col">Файл</th>
                     <th scope="col">Описание</th>
@@ -714,14 +728,14 @@
                   </tr>
                 </thead>
                 <tbody id="buildsBody">
-                  <tr><td colspan="8" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                  <tr><td colspan="9" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
                 </tbody>
               </table>
             </div>
             <div id="buildsEmpty" class="empty-state" hidden>
               <div class="empty-icon"><i class="bi bi-box-seam"></i></div>
               <h2>Сборок пока нет</h2>
-              <p>Загрузите сборку для нужной платформы выше, затем активируйте её.</p>
+              <p>Загрузите установщик или portable ZIP для нужной платформы выше, затем активируйте сборку.</p>
             </div>
           </div>
         </section>

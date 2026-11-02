@@ -398,16 +398,23 @@ Three extra directories are mounted into the API container:
 | Directory | Volume | Used for |
 |---|---|---|
 | `/data/landing_media` | `landing_media_data` | Hero image/video uploaded from the admin panel, served at `/media/landing/<name>`. Max 50 MiB (`MAX_LANDING_MEDIA_BYTES`). |
-| `/data/game_builds` | `game_builds_data` | Desktop builds: Windows (`.exe`, `.zip`, `.msi`) and one universal macOS build (`.dmg`, `.zip`). One active build per platform; `/api/v1/downloads/game` serves Windows by default, `?platform=macos` the Mac build. Max 500 MiB (`MAX_GAME_BUILD_BYTES`). |
+| `/data/game_builds` | `game_builds_data` | Desktop builds, two artifacts per platform: `installer` (Windows `.exe`/`.msi`, macOS `.dmg`, legacy `.zip`) for the download button and `portable` (`.zip` only) for automatic updates. One active build per `(platform, artifact)` pair. `GET /api/v1/downloads/game` serves the Windows installer by default (`?platform=macos` the Mac installer); `GET /api/v1/downloads/game/update?platform=...` serves the portable ZIP. Max 500 MiB (`MAX_GAME_BUILD_BYTES`). |
 | `/data/geoip` | `geoip_data` | DB-IP Lite country database for `GET /api/v1/geo`. |
 
-Both upload directories are backed by named volumes, so `docker compose up --build` keeps the files; do not replace the volumes. The landing page reads its content from `GET /api/v1/landing` (blocks, hero background and the active build), so text and the download link change without a redeploy.
+Both upload directories are backed by named volumes, so `docker compose up --build` keeps the files; do not replace the volumes. The landing page reads its content from `GET /api/v1/landing` (blocks, hero background, the active installer and the active portable ZIP), so text and the download links change without a redeploy.
 
 Administrator endpoints (`Bearer` token with `is_admin`, same as `/admin/songs`):
 
 - `GET /api/v1/admin/site/landing`, `PUT /api/v1/admin/site/landing` — read/replace the CMS blocks (max 256 KiB serialized, 5000 characters per string, nesting depth 8).
 - `POST /api/v1/admin/site/landing/background` (multipart `file`), `DELETE /api/v1/admin/site/landing/background` — hero JPEG/PNG/WebP/GIF/MP4/WebM.
-- `GET /api/v1/admin/site/game-builds` (`?platform=windows|macos`), `POST /api/v1/admin/site/game-builds` (multipart `file` + optional `platform`, `version`), `POST /api/v1/admin/site/game-builds/{id}/activate` (activates within the build's platform), `DELETE /api/v1/admin/site/game-builds/{id}`.
+- `GET /api/v1/admin/site/game-builds` (`?platform=windows|macos`, `?artifact=installer|portable`), `POST /api/v1/admin/site/game-builds` (multipart `file` + optional `platform` (default `windows`), `artifact` (default `installer`), `version`, `release_notes`), `POST /api/v1/admin/site/game-builds/{id}/activate` (activates within the build's `(platform, artifact)` pair), `PATCH` (release notes), `DELETE /api/v1/admin/site/game-builds/{id}`.
+
+Upload rules are enforced per pair (`app/services/game_builds.py`): an installer must be `.exe`/`.msi`/`.zip` on Windows and `.dmg`/`.zip` on macOS; a portable build must be a `.zip` on both platforms. A wrong extension **or** a wrong platform/artifact pair returns `415` with a detail naming the expected extensions; an unknown `platform`/`artifact` returns `422`. The migration `0018_game_build_artifact` added the column with `server_default='installer'`, so every pre-existing build became an installer and stayed active.
+
+Public contract (additive, older clients keep working):
+- `GET /api/v1/downloads/game?platform=windows|macos` — the active **installer**; `404` if there is none.
+- `GET /api/v1/downloads/game/update?platform=windows|macos` — the active **portable** ZIP; `404` if there is none.
+- `GET /api/v1/landing` — `download`/`downloads` stay the installers; `updates` is the portable map (`{"windows": DownloadInfo|null, "macos": DownloadInfo|null}`) whose `url` is `/api/v1/downloads/game/update?platform=...`. The installed client reads `updates`; `available=false` means no portable build is published.
 
 ### Support page CMS (`/support`)
 

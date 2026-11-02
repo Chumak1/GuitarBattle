@@ -30,6 +30,7 @@ from app.api.v1.admin_songs import require_admin
 from app.api.v1.site import (
     LANDING_MEDIA_URL_PREFIX,
     LANDING_SETTINGS_ID,
+    ArtifactParam,
     PlatformParam,
     blocks_from_content,
     build_file_path,
@@ -59,12 +60,14 @@ from app.services.contacts import (
     normalize_contacts_update,
 )
 from app.services.game_builds import (
+    BUILD_ARTIFACTS,
+    DEFAULT_BUILD_ARTIFACT,
     DEFAULT_GAME_BUILD_PLATFORM,
     GAME_BUILD_PLATFORMS,
-    allowed_extensions_text,
     content_type_for,
+    normalize_artifact,
     normalize_platform,
-    platform_label,
+    requirements_text,
 )
 
 router = APIRouter(prefix="/admin/site", tags=["admin: site"])
@@ -93,7 +96,8 @@ IMAGE_SIGNATURES = {
 }
 
 # Extension/content-type rules live in app.services.game_builds: they depend on
-# the platform of the build (Windows installers vs macOS disk images).
+# the (platform, artifact) pair of the build (Windows/macOS installers vs the
+# portable ZIP used for automatic updates).
 
 
 def _validate_blocks(blocks: dict[str, Any]) -> None:
@@ -391,6 +395,10 @@ def list_game_builds(
         default=None,
         description="Optional filter: windows or macos",
     ),
+    artifact: ArtifactParam | None = Query(
+        default=None,
+        description="Optional filter: installer or portable",
+    ),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> GameBuildListResponse:
@@ -399,6 +407,8 @@ def list_game_builds(
     )
     if platform is not None:
         query = query.where(GameBuild.platform == platform)
+    if artifact is not None:
+        query = query.where(GameBuild.artifact == artifact)
     builds = db.scalars(query).all()
     return GameBuildListResponse(items=[serialize_build(build) for build in builds])
 
@@ -410,10 +420,19 @@ def list_game_builds(
     summary="Upload a game build",
 )
 async def upload_game_build(
-    file: UploadFile = File(..., description="Desktop build (.exe/.msi/.zip or .dmg/.zip)"),
+    file: UploadFile = File(
+        ...,
+        description=(
+            "Installer (.exe/.msi/.dmg, legacy .zip) or portable update ZIP"
+        ),
+    ),
     platform: str = Form(
         default=DEFAULT_GAME_BUILD_PLATFORM,
         description="windows or macos",
+    ),
+    artifact: str = Form(
+        default=DEFAULT_BUILD_ARTIFACT,
+        description="installer (site download) or portable (auto-update ZIP)",
     ),
     version: str | None = Form(default=None, max_length=64),
     release_notes: str | None = Form(default=None, max_length=8000),
@@ -430,18 +449,26 @@ async def upload_game_build(
             ),
         )
 
+    target_artifact = normalize_artifact(artifact)
+    if not target_artifact:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                "artifact must be one of: "
+                + ", ".join(BUILD_ARTIFACTS)
+            ),
+        )
+
     original_name = Path(file.filename or "").name
     suffix = Path(original_name).suffix.lower()
-    content_type = content_type_for(target_platform, suffix)
+    content_type = content_type_for(target_platform, suffix, target_artifact)
     if content_type is None:
-        # A .exe installer is not a macOS build: reject the pair, not just the
-        # extension, so the admin notices the wrong platform selection.
+        # A .exe installer is not a macOS build and a .exe is not a portable
+        # update payload: reject the pair, not just the extension, so the admin
+        # notices the wrong selection.
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=(
-                f"{platform_label(target_platform)} builds must be "
-                f"{allowed_extensions_text(target_platform)}"
-            ),
+            detail=requirements_text(target_platform, target_artifact),
         )
 
     stored_name = f"build-{uuid.uuid4()}{suffix}"
@@ -450,6 +477,7 @@ async def upload_game_build(
         size = await _write_upload(file, target, settings.max_game_build_bytes)
         build = GameBuild(
             platform=target_platform,
+            artifact=target_artifact,
             version=(version or "").strip(),
             release_notes=(release_notes or "").strip(),
             filename=original_name,
@@ -474,7 +502,7 @@ async def upload_game_build(
 @router.post(
     "/game-builds/{build_id}/activate",
     response_model=GameBuildItem,
-    summary="Make a build the current download of its platform",
+    summary="Make a build the current download of its platform and artifact",
 )
 def activate_game_build(
     build_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)
@@ -484,11 +512,15 @@ def activate_game_build(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="Game build not found"
         )
-    # Only the builds of the same platform compete for the "active" slot: a
-    # macOS release must not unpublish the Windows download.
+    # Only the builds of the same (platform, artifact) pair compete for the
+    # "active" slot: a macOS release must not unpublish the Windows download,
+    # and publishing a portable ZIP must not unpublish the installer.
     db.execute(
         update(GameBuild)
-        .where(GameBuild.platform == build.platform)
+        .where(
+            GameBuild.platform == build.platform,
+            GameBuild.artifact == build.artifact,
+        )
         .values(is_active=False)
     )
     build.is_active = True
