@@ -99,6 +99,13 @@ MainComponent::MainComponent()
         }
 
         currentTuningName = settings->getValue("TuningName", "STANDARD");
+
+        // Frets on the neck. The parser never places a note above this fret and
+        // moves out-of-range notes by whole octaves instead.
+        currentTuning.fretCount = juce::jlimit(
+            GuitarTuning::minFretCount,
+            GuitarTuning::maxFretCount,
+            settings->getIntValue("FretCount", GuitarTuning::defaultFretCount));
     }
 
     inputMonitor = std::make_unique<GuitarInputMonitor>(deviceManager);

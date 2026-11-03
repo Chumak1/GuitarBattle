@@ -34,6 +34,8 @@ void GuitarTuner::setTuning(const GuitarTuning::Tuning& tuning)
     }
 
     stringCount.store(count, std::memory_order_relaxed);
+    fretCount.store(juce::jlimit(0, GuitarTuning::maxFretCount, tuning.fretCount),
+                    std::memory_order_relaxed);
 
     // The previous green lights referred to different target pitches.
     resetTunedStrings();
@@ -44,6 +46,7 @@ GuitarTuning::Tuning GuitarTuner::getTuning() const
     GuitarTuning::Tuning result;
 
     result.count = getStringCount();
+    result.fretCount = fretCount.load(std::memory_order_relaxed);
 
     for (int i = 0; i < result.count; ++i)
         result.notes[static_cast<size_t>(i)] = getOpenMidiNote(i);

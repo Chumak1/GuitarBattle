@@ -596,6 +596,7 @@ private:
     juce::String currentTuningName{ "STANDARD" };
     juce::ComboBox tuningPresetCombo;
     juce::ComboBox stringCountCombo;
+    juce::ComboBox fretCountCombo;
     std::array<juce::ComboBox, GuitarTuning::maxStrings> stringTuningCombos;
     juce::File currentMidiFile;
     bool tuningUiUpdating = false;
@@ -979,6 +980,7 @@ private:
     void syncTuningUi();
     void applyPresetTuning(int presetItemId);
     void applyStringCountFromUi();
+    void applyFretCountFromUi();
     void applyCustomTuningFromUi();
     void setCurrentTuning(const GuitarTuning::Tuning& tuning,
                           const juce::String& name,

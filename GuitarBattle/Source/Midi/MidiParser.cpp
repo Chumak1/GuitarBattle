@@ -82,6 +82,8 @@ bool MidiParser::loadMidi(
     for (size_t i = 0; i < noteCount; ++i)
     {
         const auto& note = outputNotes[i];
+        const int fretLimit = GuitarTuning::fretLimit(tuning);
+
         auto addCandidatesForMaxFret = [&](int maxFret)
         {
             for (int stringIndex = 0; stringIndex < tuning.count; ++stringIndex)
@@ -120,9 +122,9 @@ bool MidiParser::loadMidi(
 
         // First try a comfortable range (0-15). Only notes that cannot be played
         // in that range get a wider fallback, so unusually high notes still work.
-        addCandidatesForMaxFret(15);
+        addCandidatesForMaxFret(juce::jmin(15, fretLimit));
         if (candidates[i].empty())
-            addCandidatesForMaxFret(24);
+            addCandidatesForMaxFret(fretLimit);
     }
 
     if (noteCount > 0)
@@ -307,7 +309,7 @@ bool MidiParser::loadMidi(
                             continue;
 
                         const int fret = note.midiNote - chordOpenStrings[static_cast<size_t>(stringIndex)];
-                        if (fret < 0 || fret > 22)
+                        if (fret < 0 || fret > GuitarTuning::fretLimit(tuning))
                             continue;
                         // The index-finger barre/root is the lowest fretted point of this shape.
                         if (noteOffset > 0 && fret < current[0].fret)
@@ -457,18 +459,23 @@ void MidiParser::processTrack(
                         durationTicks /
                         ticksPerQuarterNote;
 
+                    int fittedNote = midiNote;
                     int stringIndex = 0;
                     int fret = 0;
 
-                    if (TabMapper::midiNoteToPosition(
+                    // A note the selected strings and frets cannot play is
+                    // moved by whole octaves, so a guitar melody stays
+                    // playable on a bass or a balalaika.
+                    if (TabMapper::fitNoteToPosition(
                         midiNote,
+                        tuning,
+                        fittedNote,
                         stringIndex,
-                        fret,
-                        tuning))
+                        fret))
                     {
                         TabNote note;
 
-                        note.midiNote = midiNote;
+                        note.midiNote = fittedNote;
                         note.stringIndex = stringIndex;
                         note.fret = fret;
                         note.startBeat = active.startBeat;

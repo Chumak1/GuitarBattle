@@ -19,11 +19,17 @@ namespace GuitarTuning
     //: six-string basses and six-, seven- and eight-string guitars.
     inline constexpr int maxStrings = 8;
 
+    //: Lowest and highest slot counts the tuner offers.
+    inline constexpr int minStringCount = 1;
+
+    //: Fret range the player can choose from. 22 is a common electric guitar
+    //: neck; the parser never places a note above the selected fret.
+    inline constexpr int minFretCount = 12;
+    inline constexpr int maxFretCount = 36;
+    inline constexpr int defaultFretCount = 22;
+
     //: Sentinel for a slot the player marked as unused.
     inline constexpr int emptyNote = -1;
-
-    //: Lowest and highest slot counts the tuner offers.
-    inline constexpr int minStringCount = 4;
 
     struct Tuning
     {
@@ -31,6 +37,9 @@ namespace GuitarTuning
         //: ``count`` are ignored; ``emptyNote`` marks an unused string.
         std::array<int, maxStrings> notes{};
         int count = 6;
+        //: Frets on the neck. A note that needs a higher fret is moved by
+        //: whole octaves until it fits (see TabMapper::fitNoteToPosition).
+        int fretCount = defaultFretCount;
     };
 
     inline constexpr std::array<int, 6> standard
@@ -47,8 +56,15 @@ namespace GuitarTuning
     {
         Tuning tuning;
         tuning.count = 6;
+        tuning.fretCount = defaultFretCount;
         tuning.notes = { 40, 45, 50, 55, 59, 64, emptyNote, emptyNote };
         return tuning;
+    }
+
+    /** Frets a note may use: the player's neck, clamped to the UI range. */
+    inline int fretLimit(const Tuning& tuning)
+    {
+        return juce::jlimit(0, maxFretCount, tuning.fretCount);
     }
 
     /** A slot that exists in the tuning and is not marked empty. */
@@ -98,10 +114,26 @@ namespace GuitarTuning
         return names.joinIntoString("  ");
     }
 
+    /** Compares the open strings only: two tunings with the same strings but a
+        different neck length are the same preset.
+    */
+    inline bool sameStrings(const Tuning& left, const Tuning& right)
+    {
+        if (left.count != right.count)
+            return false;
+
+        for (int slot = 0; slot < left.count; ++slot)
+            if (left.notes[static_cast<size_t>(slot)]
+                != right.notes[static_cast<size_t>(slot)])
+                return false;
+
+        return true;
+    }
+
     /** Compares only the slots that are part of the tuning. */
     inline bool sameTuning(const Tuning& left, const Tuning& right)
     {
-        if (left.count != right.count)
+        if (left.count != right.count || left.fretCount != right.fretCount)
             return false;
 
         for (int slot = 0; slot < left.count; ++slot)
@@ -134,12 +166,53 @@ public:
                 midiNote - tuning.notes[static_cast<size_t>(i)];
 
             if (calculatedFret >= 0 &&
-                calculatedFret <= 24)
+                calculatedFret <= GuitarTuning::fretLimit(tuning))
             {
                 stringIndex = i;
                 fret = calculatedFret;
 
                 return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** Places a written note on the instrument, moving it by whole octaves
+        when the selected strings and frets cannot play it.
+
+        A melody written for a guitar stays playable on a bass or a balalaika:
+        the note is shifted down or up by one octave at a time (down first when
+        both directions work) until it fits the neck. Returns ``false`` only
+        when no octave of the note fits at all.
+    */
+    static bool fitNoteToPosition(
+        int midiNote,
+        const GuitarTuning::Tuning& tuning,
+        int& fittedMidiNote,
+        int& stringIndex,
+        int& fret)
+    {
+        if (midiNoteToPosition(midiNote, stringIndex, fret, tuning))
+        {
+            fittedMidiNote = midiNote;
+            return true;
+        }
+
+        for (int octave = 1; octave <= 4; ++octave)
+        {
+            for (const int semitones : { -12, 12 })
+            {
+                const int shifted = midiNote + semitones * octave;
+
+                if (shifted < 0 || shifted > 127)
+                    continue;
+
+                if (midiNoteToPosition(shifted, stringIndex, fret, tuning))
+                {
+                    fittedMidiNote = shifted;
+                    return true;
+                }
             }
         }
 
@@ -158,15 +231,18 @@ public:
         note.startBeat = startBeat;
         note.durationBeats = durationBeats;
 
+        int fittedNote = midiNote;
         int stringIndex = 0;
         int fret = 0;
 
-        if (midiNoteToPosition(
+        if (fitNoteToPosition(
             midiNote,
+            tuning,
+            fittedNote,
             stringIndex,
-            fret,
-            tuning))
+            fret))
         {
+            note.midiNote = fittedNote;
             note.stringIndex = stringIndex;
             note.fret = fret;
         }

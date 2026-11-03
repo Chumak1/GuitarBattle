@@ -1136,6 +1136,9 @@ void MainComponent::setCurrentTuning(const GuitarTuning::Tuning& tuning,
     // are marked empty and every active note is a valid MIDI number.
     GuitarTuning::Tuning nextTuning = tuning;
     nextTuning.count = juce::jlimit(1, GuitarTuning::maxStrings, nextTuning.count);
+    nextTuning.fretCount = juce::jlimit(GuitarTuning::minFretCount,
+                                        GuitarTuning::maxFretCount,
+                                        nextTuning.fretCount);
 
     for (int slot = 0; slot < GuitarTuning::maxStrings; ++slot)
     {
@@ -1176,6 +1179,7 @@ void MainComponent::setCurrentTuning(const GuitarTuning::Tuning& tuning,
 
             settings->setValue("TuningNotes", values.joinIntoString(","));
             settings->setValue("TuningName", currentTuningName);
+            settings->setValue("FretCount", currentTuning.fretCount);
             settings->saveIfNeeded();
         }
     }

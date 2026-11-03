@@ -2235,6 +2235,7 @@ void MainComponent::resized()
     tunerSkipButton.setVisible(tunerScreen);
     tuningPresetCombo.setVisible(tunerScreen);
     stringCountCombo.setVisible(tunerScreen);
+    fretCountCombo.setVisible(tunerScreen);
     for (int slot = 0; slot < GuitarTuning::maxStrings; ++slot)
         stringTuningCombos[static_cast<size_t>(slot)].setVisible(
             tunerScreen && slot < currentTuning.count);
@@ -2469,13 +2470,19 @@ void MainComponent::resized()
         tunerStatusLabel.setJustificationType(juce::Justification::centred);
 
         // Tuning selector occupies the old static "STANDARD TUNING" line; the
-        // per-string note combos sit on top of the string tiles. The string
-        // count shares the row so a seven- or eight-string instrument is a
-        // single click away.
-        const int presetWidth = (leftW - 48) * 68 / 100;
+        // per-string note combos sit on top of the string tiles. String count
+        // and fret count share the row so a bass, a balalaika or an
+        // eight-string guitar is a single click away.
+        const int selectorWidth = leftW - 48;
+        const int presetWidth = selectorWidth * 46 / 100;
+        const int stringsWidth = selectorWidth * 27 / 100;
+        const int fretsWidth = selectorWidth - presetWidth - stringsWidth - 16;
+
         tuningPresetCombo.setBounds(margin + 24, panelY + 44, presetWidth, 28);
         stringCountCombo.setBounds(margin + 24 + presetWidth + 8, panelY + 44,
-                                   leftW - 48 - presetWidth - 8, 28);
+                                   stringsWidth, 28);
+        fretCountCombo.setBounds(margin + 24 + presetWidth + stringsWidth + 16,
+                                 panelY + 44, fretsWidth, 28);
 
         const int stringSlots = juce::jlimit(1, GuitarTuning::maxStrings,
                                              currentTuning.count);
@@ -4928,7 +4935,7 @@ const char* MainComponent::presetName(int presetIndex)
 int MainComponent::presetItemIdForTuning(const GuitarTuning::Tuning& tuning)
 {
     for (int i = 0; i < tuningPresetCount; ++i)
-        if (GuitarTuning::sameTuning(presetNotes(i), tuning))
+        if (GuitarTuning::sameStrings(presetNotes(i), tuning))
             return i + 1;
 
     return customTuningItemId;
@@ -4977,6 +4984,29 @@ void MainComponent::initialiseTuningSelector()
         applyStringCountFromUi();
     };
     addAndMakeVisible(stringCountCombo);
+
+    // Frets on the neck. A note that would need a higher fret is moved by
+    // whole octaves so the melody stays playable on a short neck.
+    fretCountCombo.clear(juce::dontSendNotification);
+
+    for (int frets = GuitarTuning::minFretCount;
+         frets <= GuitarTuning::maxFretCount; ++frets)
+    {
+        fretCountCombo.addItem(juce::String(frets) + " FRETS", frets);
+    }
+
+    fretCountCombo.setTooltip(
+        "How many frets the instrument has. Notes that only fit above this fret "
+        "are transposed by an octave so the melody stays playable.");
+    fretCountCombo.setColour(juce::ComboBox::backgroundColourId, UiColors::surface2);
+    fretCountCombo.setColour(juce::ComboBox::textColourId, UiColors::text);
+    fretCountCombo.setColour(juce::ComboBox::outlineColourId, UiColors::border);
+    fretCountCombo.setColour(juce::ComboBox::arrowColourId, UiColors::accent);
+    fretCountCombo.onChange = [this]
+    {
+        applyFretCountFromUi();
+    };
+    addAndMakeVisible(fretCountCombo);
 
     for (int slot = 0; slot < GuitarTuning::maxStrings; ++slot)
     {
@@ -5038,6 +5068,8 @@ void MainComponent::syncTuningUi()
                                     juce::dontSendNotification);
     stringCountCombo.setSelectedId(currentTuning.count,
                                    juce::dontSendNotification);
+    fretCountCombo.setSelectedId(currentTuning.fretCount,
+                                 juce::dontSendNotification);
 
     const bool tunerScreen = gameState == GameState::Tuner;
 
@@ -5086,8 +5118,12 @@ void MainComponent::applyPresetTuning(int presetItemId)
         return;
 
     // A preset describes a six-string guitar, so it also resets an
-    // extended-range instrument back to six slots.
-    setCurrentTuning(presetNotes(index), presetName(index), true);
+    // extended-range instrument back to six slots. The neck length is a
+    // property of the player's instrument, not of the tuning, so it stays.
+    auto preset = presetNotes(index);
+    preset.fretCount = currentTuning.fretCount;
+
+    setCurrentTuning(preset, presetName(index), true);
     syncTuningUi();
 }
 
@@ -5137,6 +5173,26 @@ void MainComponent::applyStringCountFromUi()
     }
 
     setCurrentTuning(next, "CUSTOM", true);
+    syncTuningUi();
+}
+
+void MainComponent::applyFretCountFromUi()
+{
+    if (tuningUiUpdating)
+        return;
+
+    const int requested = fretCountCombo.getSelectedId();
+
+    if (requested < GuitarTuning::minFretCount
+        || requested > GuitarTuning::maxFretCount)
+        return;
+
+    GuitarTuning::Tuning next = currentTuning;
+    next.fretCount = requested;
+
+    // Only the neck length changes: the open strings, the preset name and the
+    // instrument stay exactly as they are.
+    setCurrentTuning(next, currentTuningName, true);
     syncTuningUi();
 }
 

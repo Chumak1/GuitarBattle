@@ -50,5 +50,8 @@ private:
     // lock-free and safe without touching the audio callback.
     std::atomic<int> openMidiNotes[GuitarTuning::maxStrings];
     std::atomic<int> stringCount{ 6 };
+    // Part of the instrument setup: the tuner itself does not use the fret
+    // count, but getTuning() must return the whole Tuning unchanged.
+    std::atomic<int> fretCount{ GuitarTuning::defaultFretCount };
     std::atomic<int> tunedMask{ 0 };
 };
