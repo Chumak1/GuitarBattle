@@ -287,10 +287,11 @@ public:
                                         owner.tuner.areAllStringsTuned();
 
                                     juce::String stringText = "---";
+                                    const int stringCount = owner.tuner.getStringCount();
 
-                                    if (stringIndex >= 0 && stringIndex < 6)
+                                    if (stringIndex >= 0 && stringIndex < stringCount)
                                     {
-                                        const int stringNumber = 6 - stringIndex;
+                                        const int stringNumber = stringCount - stringIndex;
                                         const juce::String ordinal =
                                             stringNumber == 1 ? "1st"
                                             : stringNumber == 2 ? "2nd"

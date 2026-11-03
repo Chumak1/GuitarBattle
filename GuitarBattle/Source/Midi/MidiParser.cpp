@@ -4,7 +4,7 @@
 bool MidiParser::loadMidi(
     const juce::File& file,
     std::vector<TabNote>& outputNotes,
-    const std::array<int, 6>& openMidiNotes)
+    const GuitarTuning::Tuning& tuning)
 {
     outputNotes.clear();
 
@@ -53,7 +53,7 @@ bool MidiParser::loadMidi(
             static_cast<double>(
                 midiFile.getTimeFormat()),
             outputNotes,
-            openMidiNotes);
+            tuning);
     }
 
     std::sort(
@@ -84,10 +84,15 @@ bool MidiParser::loadMidi(
         const auto& note = outputNotes[i];
         auto addCandidatesForMaxFret = [&](int maxFret)
         {
-            for (int stringIndex = 0; stringIndex < 6; ++stringIndex)
+            for (int stringIndex = 0; stringIndex < tuning.count; ++stringIndex)
             {
+                // A string the player marked as empty is not part of the
+                // instrument: no candidate may land on it.
+                if (! GuitarTuning::isActive(tuning, stringIndex))
+                    continue;
+
                 const int fret = note.midiNote
-                    - openMidiNotes[static_cast<size_t>(stringIndex)];
+                    - tuning.notes[static_cast<size_t>(stringIndex)];
                 if (fret < 0 || fret > maxFret)
                     continue;
 
@@ -233,13 +238,15 @@ bool MidiParser::loadMidi(
     // limited to Chords.mid; the existing solo fingering optimiser is untouched.
     if (file.getFileName().equalsIgnoreCase("Chords.mid"))
     {
-        const std::array<int, 4> chordOpenStrings
-        {
-            openMidiNotes[0],
-            openMidiNotes[1],
-            openMidiNotes[2],
-            openMidiNotes[3]
-        };
+        // The chord voicing helper only needs the four lowest slots; an
+        // instrument with fewer strings keeps its own notes there and the
+        // empty slots stay marked as empty.
+        std::array<int, 4> chordOpenStrings {};
+
+        for (int slot = 0; slot < 4; ++slot)
+            chordOpenStrings[static_cast<size_t>(slot)] =
+                slot < tuning.count ? tuning.notes[static_cast<size_t>(slot)]
+                                    : GuitarTuning::emptyNote;
         double previousRootFret = -1.0;
         size_t groupBegin = 0;
 
@@ -293,7 +300,13 @@ bool MidiParser::loadMidi(
                     const int lastString = noteOffset == 0 ? -1 : current[noteOffset - 1].stringIndex;
                     for (int stringIndex = lastString + 1; stringIndex < 4; ++stringIndex)
                     {
-                        const int fret = note.midiNote - chordOpenStrings[stringIndex];
+                        // Slots beyond the tuning (or marked empty) never
+                        // receive a chord tone.
+                        if (chordOpenStrings[static_cast<size_t>(stringIndex)]
+                            == GuitarTuning::emptyNote)
+                            continue;
+
+                        const int fret = note.midiNote - chordOpenStrings[static_cast<size_t>(stringIndex)];
                         if (fret < 0 || fret > 22)
                             continue;
                         // The index-finger barre/root is the lowest fretted point of this shape.
@@ -377,7 +390,7 @@ void MidiParser::processTrack(
     const juce::MidiMessageSequence& sequence,
     double ticksPerQuarterNote,
     std::vector<TabNote>& outputNotes,
-    const std::array<int, 6>& openMidiNotes)
+    const GuitarTuning::Tuning& tuning)
 {
     struct ActiveNote
     {
@@ -451,7 +464,7 @@ void MidiParser::processTrack(
                         midiNote,
                         stringIndex,
                         fret,
-                        openMidiNotes))
+                        tuning))
                     {
                         TabNote note;
 

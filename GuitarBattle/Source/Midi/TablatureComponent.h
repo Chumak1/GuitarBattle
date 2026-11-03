@@ -14,11 +14,12 @@ public:
 
     void setNotes(const std::vector<TabNote>& newNotes);
 
-    /** Open-string MIDI notes, low string first, plus the display name
-        ("STANDARD", "DROP D", "CUSTOM"). The notes themselves come from the
-        parser, which is re-run with the same tuning.
+    /** Open strings of the selected tuning: a chart may be written for an
+        instrument with more or fewer than six strings, and a slot may be
+        marked as empty. The notes themselves come from the parser, which is
+        re-run with the same tuning.
     */
-    void setTuning(const std::array<int, 6>& newOpenMidiNotes,
+    void setTuning(const GuitarTuning::Tuning& newTuning,
                    const juce::String& name);
 
     void setPlayheadBeat(double beat);
@@ -61,13 +62,17 @@ private:
     float layoutStringSpacing = 26.0f;
     float layoutFirstStringY = 60.0f;
 
-    static constexpr int numberOfStrings = 6;
+    static constexpr int maxStrings = GuitarTuning::maxStrings;
 
-    std::array<int, 6> openMidiNotes = GuitarTuning::standard;
+    //: Number of string lines, including the slots marked as empty.
+    int stringCount = 6;
+
+    GuitarTuning::Tuning tuning = GuitarTuning::standardTuning();
     juce::String tuningName = "STANDARD";
 
     static juce::Colour getFingerColour(int finger);
     juce::String getStringName(int stringIndex) const;
+    bool isStringActive(int stringIndex) const;
 
     void drawString(
         juce::Graphics& g,

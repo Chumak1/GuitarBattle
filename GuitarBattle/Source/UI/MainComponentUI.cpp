@@ -1085,15 +1085,17 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     {
         drawBrand(42.0f, 24.0f);
         const int tunedMaskTop = tuner.getTunedMask();
+        const int activeStrings = juce::jmax(1, tuner.getActiveStringCount());
         int tunedCountTop = 0;
-        for (int i = 0; i < 6; ++i)
-            tunedCountTop += (tunedMaskTop & (1 << i)) != 0 ? 1 : 0;
-        const bool allTunedTop = tunedCountTop == 6;
+        for (int slot = 0; slot < currentTuning.count; ++slot)
+            tunedCountTop += (tunedMaskTop & (1 << slot)) != 0 ? 1 : 0;
+        const bool allTunedTop = tunedCountTop >= activeStrings;
 
         GameUi::drawPill(g,
                          juce::Rectangle<float>(width - 178.0f, 29.0f, 136.0f, 22.0f),
                          allTunedTop ? juce::String("READY")
-                                     : "TUNING " + juce::String(tunedCountTop) + "/6",
+                                     : "TUNING " + juce::String(tunedCountTop)
+                                           + "/" + juce::String(activeStrings),
                          allTunedTop ? UiColors::green : UiColors::accent,
                          allTunedTop);
 
@@ -1134,25 +1136,33 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                                           leftPanel.getY() + 24.0f,
                                           leftW - 48.0f, 16.0f),
                    juce::Justification::centredLeft, false);
-        const char* stringNumbers[6] = { "6", "5", "4", "3", "2", "1" };
+        const int stringSlots = juce::jlimit(1, GuitarTuning::maxStrings,
+                                             currentTuning.count);
+        // Six strings keep the familiar 3x2 grid; a seven- or eight-string
+        // instrument uses four columns so the tiles still fit above the input
+        // monitor without shrinking the note combos.
+        const int tileColumns = stringSlots > 6 ? 4 : 3;
         const int tunedMask = tuner.getTunedMask();
         const float tileGap = 12.0f;
-        const float tileW = (leftW - 48.0f - tileGap * 2.0f) / 3.0f;
+        const float tileW = (leftW - 48.0f - tileGap * static_cast<float>(tileColumns - 1))
+            / static_cast<float>(tileColumns);
         const float tileH = 112.0f;
 
-        for (int i = 0; i < 6; ++i)
+        for (int slot = 0; slot < stringSlots; ++slot)
         {
-            const int column = i % 3;
-            const int row = i / 3;
+            const int column = slot % tileColumns;
+            const int row = slot / tileColumns;
             const float x = leftPanel.getX() + 24.0f
                 + static_cast<float>(column) * (tileW + tileGap);
             const float y = leftPanel.getY() + 82.0f
                 + static_cast<float>(row) * (tileH + tileGap);
-            const bool tuned = (tunedMask & (1 << i)) != 0;
-            const auto colour = tuned ? UiColors::green : UiColors::accent;
+            const bool active = GuitarTuning::isActive(currentTuning, slot);
+            const bool tuned = active && (tunedMask & (1 << slot)) != 0;
+            const auto colour = tuned ? UiColors::green
+                                      : (active ? UiColors::accent : UiColors::muted);
 
             g.setColour(tuned ? UiColors::green.withAlpha(0.10f)
-                              : UiColors::surface2.withAlpha(0.72f));
+                              : UiColors::surface2.withAlpha(active ? 0.72f : 0.34f));
             g.fillRoundedRectangle(x, y, tileW, tileH, 14.0f);
             g.setColour(colour.withAlpha(tuned ? 0.46f : 0.22f));
             g.drawRoundedRectangle(x, y, tileW, tileH, 14.0f, 1.0f);
@@ -1161,13 +1171,15 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             // resized(); the paint layer only provides the card and status.
             g.setColour(UiColors::muted);
             g.setFont(GameUi::eyebrow(8.5f));
-            g.drawText("STRING " + juce::String(stringNumbers[i]),
+            g.drawText("STRING " + juce::String(GuitarTuning::stringNumber(currentTuning, slot)),
                        juce::Rectangle<float>(x, y + 52.0f, tileW, 16.0f),
                        juce::Justification::centred, false);
             GameUi::drawPill(g,
                              juce::Rectangle<float>(x + 10.0f, y + 77.0f,
                                                     tileW - 20.0f, 20.0f),
-                             tuned ? "IN TUNE" : "WAITING",
+                             active ? (tuned ? juce::String("IN TUNE")
+                                             : juce::String("WAITING"))
+                                    : juce::String("EMPTY"),
                              colour,
                              tuned);
         }
@@ -1188,8 +1200,8 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         {
             const bool allReady = tuner.areAllStringsTuned();
             int tunedCount = 0;
-            for (int i = 0; i < 6; ++i)
-                tunedCount += (tunedMask & (1 << i)) != 0 ? 1 : 0;
+            for (int slot = 0; slot < currentTuning.count; ++slot)
+                tunedCount += (tunedMask & (1 << slot)) != 0 ? 1 : 0;
 
             const auto readyColour = allReady ? UiColors::green : UiColors::accent;
             const juce::Rectangle<float> readyCard(
@@ -1213,14 +1225,15 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             g.setColour(UiColors::text);
             g.setFont(GameUi::font(12.5f, true));
             g.drawText(allReady ? juce::String("ALL STRINGS READY")
-                                : juce::String(tunedCount) + " / 6 STRINGS READY",
+                                : juce::String(tunedCount) + " / "
+                                      + juce::String(activeStrings) + " STRINGS READY",
                        juce::Rectangle<float>(readyCard.getX() + 58.0f,
                                               readyCard.getY() + 14.0f,
                                               readyCard.getWidth() - 72.0f, 18.0f),
                        juce::Justification::centredLeft, false);
             g.setColour(UiColors::muted);
             g.setFont(GameUi::font(10.5f));
-            g.drawText(allReady ? "All six strings are in tune."
+            g.drawText(allReady ? "All strings are in tune."
                                 : "Keep tuning the remaining strings.",
                        juce::Rectangle<float>(readyCard.getX() + 58.0f,
                                               readyCard.getY() + 38.0f,
@@ -2221,8 +2234,10 @@ void MainComponent::resized()
     tunerStartButton.setVisible(tunerScreen);
     tunerSkipButton.setVisible(tunerScreen);
     tuningPresetCombo.setVisible(tunerScreen);
-    for (auto& combo : stringTuningCombos)
-        combo.setVisible(tunerScreen);
+    stringCountCombo.setVisible(tunerScreen);
+    for (int slot = 0; slot < GuitarTuning::maxStrings; ++slot)
+        stringTuningCombos[static_cast<size_t>(slot)].setVisible(
+            tunerScreen && slot < currentTuning.count);
 
     // One shared input monitor: full size on the song screen and in the tuner,
     // compact in the gameplay HUD.
@@ -2454,24 +2469,41 @@ void MainComponent::resized()
         tunerStatusLabel.setJustificationType(juce::Justification::centred);
 
         // Tuning selector occupies the old static "STANDARD TUNING" line; the
-        // six note combos sit on top of the string tiles.
-        tuningPresetCombo.setBounds(margin + 24, panelY + 44, leftW - 48, 28);
+        // per-string note combos sit on top of the string tiles. The string
+        // count shares the row so a seven- or eight-string instrument is a
+        // single click away.
+        const int presetWidth = (leftW - 48) * 68 / 100;
+        tuningPresetCombo.setBounds(margin + 24, panelY + 44, presetWidth, 28);
+        stringCountCombo.setBounds(margin + 24 + presetWidth + 8, panelY + 44,
+                                   leftW - 48 - presetWidth - 8, 28);
 
+        const int stringSlots = juce::jlimit(1, GuitarTuning::maxStrings,
+                                             currentTuning.count);
+        const int tileColumns = stringSlots > 6 ? 4 : 3;
         const float tileGap = 12.0f;
         const float tileW = (static_cast<float>(leftW) - 48.0f
-                             - tileGap * 2.0f) / 3.0f;
+                             - tileGap * static_cast<float>(tileColumns - 1))
+            / static_cast<float>(tileColumns);
         const float tileH = 112.0f;
 
-        for (int i = 0; i < 6; ++i)
+        for (int slot = 0; slot < GuitarTuning::maxStrings; ++slot)
         {
-            const int column = i % 3;
-            const int row = i / 3;
+            auto& combo = stringTuningCombos[static_cast<size_t>(slot)];
+
+            if (slot >= stringSlots)
+            {
+                combo.setVisible(false);
+                continue;
+            }
+
+            const int column = slot % tileColumns;
+            const int row = slot / tileColumns;
             const float x = static_cast<float>(margin + 24)
                 + static_cast<float>(column) * (tileW + tileGap);
             const float y = static_cast<float>(panelY + 82)
                 + static_cast<float>(row) * (tileH + tileGap);
 
-            stringTuningCombos[static_cast<size_t>(i)].setBounds(
+            combo.setBounds(
                 juce::Rectangle<float>(x + 8.0f, y + 8.0f,
                                        tileW - 16.0f, 34.0f).toNearestInt());
         }
@@ -4845,6 +4877,19 @@ namespace
     constexpr int customTuningItemId = 8;
     constexpr int tuningPresetCount = 7;
 
+    //: ComboBox item id for "EMPTY". MIDI notes start at 0 and the tuner only
+    //: offers 24..96, so 1 cannot collide with a real open note.
+    constexpr int emptyComboItemId = 1;
+
+    bool comboHasItemId(juce::ComboBox& combo, int itemId)
+    {
+        for (int index = 0; index < combo.getNumItems(); ++index)
+            if (combo.getItemId(index) == itemId)
+                return true;
+
+        return false;
+    }
+
     const TuningPreset& tuningPreset(int index)
     {
         static const TuningPreset presets[] =
@@ -4862,9 +4907,17 @@ namespace
     }
 }
 
-std::array<int, 6> MainComponent::presetNotes(int presetIndex)
+GuitarTuning::Tuning MainComponent::presetNotes(int presetIndex)
 {
-    return tuningPreset(presetIndex).notes;
+    // Presets describe a six-string guitar; the slot count is part of the
+    // tuning, so selecting one resets an extended-range instrument to six.
+    GuitarTuning::Tuning tuning = GuitarTuning::standardTuning();
+    const auto& preset = tuningPreset(presetIndex);
+
+    for (int slot = 0; slot < 6; ++slot)
+        tuning.notes[static_cast<size_t>(slot)] = preset.notes[static_cast<size_t>(slot)];
+
+    return tuning;
 }
 
 const char* MainComponent::presetName(int presetIndex)
@@ -4872,10 +4925,10 @@ const char* MainComponent::presetName(int presetIndex)
     return tuningPreset(presetIndex).name;
 }
 
-int MainComponent::presetItemIdForTuning(const std::array<int, 6>& openMidiNotes)
+int MainComponent::presetItemIdForTuning(const GuitarTuning::Tuning& tuning)
 {
     for (int i = 0; i < tuningPresetCount; ++i)
-        if (tuningPreset(i).notes == openMidiNotes)
+        if (GuitarTuning::sameTuning(presetNotes(i), tuning))
             return i + 1;
 
     return customTuningItemId;
@@ -4901,40 +4954,63 @@ void MainComponent::initialiseTuningSelector()
     };
     addAndMakeVisible(tuningPresetCombo);
 
-    for (int i = 0; i < 6; ++i)
+    // The instrument may have more or fewer than six strings. The list length
+    // is the slot count, so "7 STRINGS" really means seven lines in the tab.
+    stringCountCombo.clear(juce::dontSendNotification);
+
+    for (int count = GuitarTuning::minStringCount;
+         count <= GuitarTuning::maxStrings; ++count)
     {
-        auto& combo = stringTuningCombos[static_cast<size_t>(i)];
+        stringCountCombo.addItem(juce::String(count) + " STRINGS", count);
+    }
+
+    stringCountCombo.setTooltip(
+        "Number of strings on the instrument. Extra strings start as the low B "
+        "and low F# of an extended-range guitar; lower the count to drop the "
+        "lowest strings.");
+    stringCountCombo.setColour(juce::ComboBox::backgroundColourId, UiColors::surface2);
+    stringCountCombo.setColour(juce::ComboBox::textColourId, UiColors::text);
+    stringCountCombo.setColour(juce::ComboBox::outlineColourId, UiColors::border);
+    stringCountCombo.setColour(juce::ComboBox::arrowColourId, UiColors::accent);
+    stringCountCombo.onChange = [this]
+    {
+        applyStringCountFromUi();
+    };
+    addAndMakeVisible(stringCountCombo);
+
+    for (int slot = 0; slot < GuitarTuning::maxStrings; ++slot)
+    {
+        auto& combo = stringTuningCombos[static_cast<size_t>(slot)];
         combo.clear(juce::dontSendNotification);
 
+        // An empty slot exists on the instrument but is not tuned and never
+        // receives a note from the MIDI chart.
+        combo.addItem("EMPTY", emptyComboItemId);
+
         // Offer a practical range around the standard open note: enough for
-        // drop tunings and open tunings without a 100-item popup.
-        const int standardNote = GuitarTuning::standard[static_cast<size_t>(i)];
-        for (int note = juce::jmax(24, standardNote - 12);
-             note <= juce::jmin(96, standardNote + 12); ++note)
+        // drop tunings and open tunings without a 100-item popup. Slots above
+        // six continue downwards in perfect fourths (B1, then F#1), which is
+        // what a seven- or eight-string guitar adds.
+        const int reference = slot < static_cast<int>(GuitarTuning::standard.size())
+            ? GuitarTuning::standard[static_cast<size_t>(slot)]
+            : juce::jmax(24, GuitarTuning::standard[0] - 5 * (slot - 5));
+
+        for (int note = juce::jmax(24, reference - 12);
+             note <= juce::jmin(96, reference + 12); ++note)
         {
             combo.addItem(GuitarTuning::noteName(note, true), note);
         }
 
         // A stored custom note may sit outside the practical range: keep it
         // selectable instead of leaving the combo blank.
-        bool hasCurrentNote = false;
-        for (int index = 0; index < combo.getNumItems(); ++index)
+        if (slot < currentTuning.count)
         {
-            if (combo.getItemId(index) == currentTuning[static_cast<size_t>(i)])
-            {
-                hasCurrentNote = true;
-                break;
-            }
+            const int note = currentTuning.notes[static_cast<size_t>(slot)];
+
+            if (note > 0 && ! comboHasItemId(combo, note))
+                combo.addItem(GuitarTuning::noteName(note, true), note);
         }
 
-        if (!hasCurrentNote)
-        {
-            combo.addItem(
-                GuitarTuning::noteName(currentTuning[static_cast<size_t>(i)], true),
-                currentTuning[static_cast<size_t>(i)]);
-        }
-
-        combo.setTooltip("Open note of string " + juce::String(6 - i));
         combo.setColour(juce::ComboBox::backgroundColourId, UiColors::surface2);
         combo.setColour(juce::ComboBox::textColourId, UiColors::accent);
         combo.setColour(juce::ComboBox::outlineColourId, UiColors::borderStrong);
@@ -4944,12 +5020,11 @@ void MainComponent::initialiseTuningSelector()
     }
 
     // A stored tuning that matches a preset should show that preset, even if
-    // the previous session ended on the Custom item.
+    // the previous session ended on the Custom item. Anything else (a custom
+    // open tuning, or an instrument that is not a six-string guitar) is custom.
     const int presetId = presetItemIdForTuning(currentTuning);
-    if (presetId != customTuningItemId)
-        currentTuningName = presetName(presetId - 1);
-    else if (currentTuningName.isEmpty())
-        currentTuningName = "CUSTOM";
+    currentTuningName = presetId != customTuningItemId ? presetName(presetId - 1)
+                                                       : juce::String("CUSTOM");
 
     setCurrentTuning(currentTuning, currentTuningName, false);
     syncTuningUi();
@@ -4961,12 +5036,36 @@ void MainComponent::syncTuningUi()
 
     tuningPresetCombo.setSelectedId(presetItemIdForTuning(currentTuning),
                                     juce::dontSendNotification);
+    stringCountCombo.setSelectedId(currentTuning.count,
+                                   juce::dontSendNotification);
 
-    for (int i = 0; i < 6; ++i)
-        stringTuningCombos[static_cast<size_t>(i)].setSelectedId(
-            currentTuning[static_cast<size_t>(i)], juce::dontSendNotification);
+    const bool tunerScreen = gameState == GameState::Tuner;
+
+    for (int slot = 0; slot < GuitarTuning::maxStrings; ++slot)
+    {
+        auto& combo = stringTuningCombos[static_cast<size_t>(slot)];
+        const bool exists = slot < currentTuning.count;
+        const int note = exists
+            ? currentTuning.notes[static_cast<size_t>(slot)]
+            : GuitarTuning::emptyNote;
+
+        // A note restored from settings may sit outside the offered range.
+        if (note > 0 && ! comboHasItemId(combo, note))
+            combo.addItem(GuitarTuning::noteName(note, true), note);
+
+        combo.setSelectedId(note == GuitarTuning::emptyNote ? emptyComboItemId : note,
+                            juce::dontSendNotification);
+        combo.setTooltip("String "
+                         + juce::String(GuitarTuning::stringNumber(currentTuning, slot))
+                         + ": open note, or EMPTY so the MIDI chart never uses it");
+        combo.setVisible(tunerScreen && exists);
+    }
 
     tuningUiUpdating = false;
+
+    // The tile grid switches between three and four columns, so the layout has
+    // to follow the new slot count.
+    resized();
 }
 
 void MainComponent::applyPresetTuning(int presetItemId)
@@ -4976,8 +5075,9 @@ void MainComponent::applyPresetTuning(int presetItemId)
 
     if (presetItemId == customTuningItemId)
     {
-        // Keep the current notes; the player edits the six string combos next.
+        // Keep the current strings; the player edits the per-string combos.
         setCurrentTuning(currentTuning, "CUSTOM", true);
+        syncTuningUi();
         return;
     }
 
@@ -4985,15 +5085,58 @@ void MainComponent::applyPresetTuning(int presetItemId)
     if (index < 0 || index >= tuningPresetCount)
         return;
 
-    const auto notes = presetNotes(index);
+    // A preset describes a six-string guitar, so it also resets an
+    // extended-range instrument back to six slots.
+    setCurrentTuning(presetNotes(index), presetName(index), true);
+    syncTuningUi();
+}
 
-    tuningUiUpdating = true;
-    for (int i = 0; i < 6; ++i)
-        stringTuningCombos[static_cast<size_t>(i)].setSelectedId(
-            notes[static_cast<size_t>(i)], juce::dontSendNotification);
-    tuningUiUpdating = false;
+void MainComponent::applyStringCountFromUi()
+{
+    if (tuningUiUpdating)
+        return;
 
-    setCurrentTuning(notes, presetName(index), true);
+    const int requested = stringCountCombo.getSelectedId();
+
+    if (requested < GuitarTuning::minStringCount
+        || requested > GuitarTuning::maxStrings)
+        return;
+
+    GuitarTuning::Tuning next = currentTuning;
+    next.count = juce::jlimit(1, GuitarTuning::maxStrings, next.count);
+
+    // Growing adds a lower string in perfect fourths below the current lowest
+    // one, which is exactly what a seven-string (B1) and an eight-string
+    // (F#1) guitar add. Shrinking drops the lowest strings first.
+    while (next.count < requested)
+    {
+        int lowest = 96;
+
+        for (int slot = 0; slot < next.count; ++slot)
+            if (GuitarTuning::isActive(next, slot))
+                lowest = juce::jmin(lowest, next.notes[static_cast<size_t>(slot)]);
+
+        const int added = lowest >= 96 ? 40 : juce::jmax(24, lowest - 5);
+
+        for (int slot = next.count; slot > 0; --slot)
+            next.notes[static_cast<size_t>(slot)] =
+                next.notes[static_cast<size_t>(slot - 1)];
+
+        next.notes[0] = added;
+        ++next.count;
+    }
+
+    while (next.count > requested)
+    {
+        for (int slot = 1; slot < next.count; ++slot)
+            next.notes[static_cast<size_t>(slot - 1)] =
+                next.notes[static_cast<size_t>(slot)];
+
+        --next.count;
+        next.notes[static_cast<size_t>(next.count)] = GuitarTuning::emptyNote;
+    }
+
+    setCurrentTuning(next, "CUSTOM", true);
     syncTuningUi();
 }
 
@@ -5002,22 +5145,29 @@ void MainComponent::applyCustomTuningFromUi()
     if (tuningUiUpdating)
         return;
 
-    std::array<int, 6> notes {};
+    GuitarTuning::Tuning next = currentTuning;
+    next.count = juce::jlimit(1, GuitarTuning::maxStrings, next.count);
 
-    for (int i = 0; i < 6; ++i)
+    for (int slot = 0; slot < next.count; ++slot)
     {
-        const int note = stringTuningCombos[static_cast<size_t>(i)].getSelectedId();
-        if (note <= 0)
-            return;
+        const int selected = stringTuningCombos[static_cast<size_t>(slot)].getSelectedId();
 
-        notes[static_cast<size_t>(i)] = note;
+        next.notes[static_cast<size_t>(slot)] =
+            (selected <= 0 || selected == emptyComboItemId)
+                ? GuitarTuning::emptyNote
+                : selected;
     }
 
-    tuningUiUpdating = true;
-    tuningPresetCombo.setSelectedId(customTuningItemId, juce::dontSendNotification);
-    tuningUiUpdating = false;
+    // The last playable string must stay playable: an all-empty tuning would
+    // silently produce a chart with no notes. Put the combo back where it was.
+    if (GuitarTuning::activeCount(next) == 0)
+    {
+        syncTuningUi();
+        return;
+    }
 
-    setCurrentTuning(notes, "CUSTOM", true);
+    setCurrentTuning(next, "CUSTOM", true);
+    syncTuningUi();
 }
 
 void MainComponent::initialiseUi()
@@ -5116,7 +5266,7 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(tunerCentsLabel);
     addAndMakeVisible(tunerStatusLabel);
 
-    // Tuning selector: presets plus six custom open notes. It lives on the
+    // Tuning selector: presets plus a per-string note (or EMPTY). It lives on the
     // tuner screen, before the player starts the song.
     initialiseTuningSelector();
 

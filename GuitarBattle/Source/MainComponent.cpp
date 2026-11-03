@@ -64,30 +64,36 @@ MainComponent::MainComponent()
 
         // Open-string tuning chosen on the tuner screen. Invalid or missing
         // values fall back to standard tuning; the UI validates the selection.
+        // The list length is the slot count, and -1 marks a string the player
+        // marked as empty, so a four-string or eight-string tuning round-trips.
         const auto storedTuning = settings->getValue("TuningNotes", juce::String());
         if (storedTuning.isNotEmpty())
         {
             juce::StringArray parts;
             parts.addTokens(storedTuning, ",", "");
 
-            if (parts.size() == 6)
+            if (parts.size() >= GuitarTuning::minStringCount
+                && parts.size() <= GuitarTuning::maxStrings)
             {
-                std::array<int, 6> parsed {};
+                GuitarTuning::Tuning parsed;
+                parsed.count = parts.size();
                 bool valid = true;
 
-                for (int i = 0; i < 6; ++i)
+                for (int i = 0; i < parsed.count; ++i)
                 {
                     const int note = parts[i].getIntValue();
-                    if (note < 24 || note > 96)
+
+                    if (note != GuitarTuning::emptyNote
+                        && (note < 24 || note > 96))
                     {
                         valid = false;
                         break;
                     }
 
-                    parsed[static_cast<size_t>(i)] = note;
+                    parsed.notes[static_cast<size_t>(i)] = note;
                 }
 
-                if (valid)
+                if (valid && GuitarTuning::activeCount(parsed) > 0)
                     currentTuning = parsed;
             }
         }

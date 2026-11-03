@@ -585,13 +585,15 @@ private:
 
     juce::TextButton tunerSkipButton{ "SKIP TUNING" };
 
-    // Open-string tuning selected on the tuner screen. The same array is used
+    // Open-string tuning selected on the tuner screen. The same value is used
     // by GuitarTuner (targets) and MidiParser (tab positions), so the tuner
-    // and the tabs can never disagree.
-    std::array<int, 6> currentTuning = GuitarTuning::standard;
+    // and the tabs can never disagree. The instrument may have more or fewer
+    // than six strings, and a slot can be marked as empty.
+    GuitarTuning::Tuning currentTuning = GuitarTuning::standardTuning();
     juce::String currentTuningName{ "STANDARD" };
     juce::ComboBox tuningPresetCombo;
-    std::array<juce::ComboBox, 6> stringTuningCombos;
+    juce::ComboBox stringCountCombo;
+    std::array<juce::ComboBox, GuitarTuning::maxStrings> stringTuningCombos;
     juce::File currentMidiFile;
     bool tuningUiUpdating = false;
 
@@ -973,13 +975,14 @@ private:
     void initialiseTuningSelector();
     void syncTuningUi();
     void applyPresetTuning(int presetItemId);
+    void applyStringCountFromUi();
     void applyCustomTuningFromUi();
-    void setCurrentTuning(const std::array<int, 6>& openMidiNotes,
+    void setCurrentTuning(const GuitarTuning::Tuning& tuning,
                           const juce::String& name,
                           bool persist);
     void rebuildTablatureForTuning();
-    static int presetItemIdForTuning(const std::array<int, 6>& openMidiNotes);
-    static std::array<int, 6> presetNotes(int presetIndex);
+    static int presetItemIdForTuning(const GuitarTuning::Tuning& tuning);
+    static GuitarTuning::Tuning presetNotes(int presetIndex);
     static const char* presetName(int presetIndex);
 
     int getBestScore(const juce::String& songId);

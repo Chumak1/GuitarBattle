@@ -1128,13 +1128,36 @@ void MainComponent::beginTuningForSelectedSong()
     repaint();
 }
 
-void MainComponent::setCurrentTuning(const std::array<int, 6>& openMidiNotes,
+void MainComponent::setCurrentTuning(const GuitarTuning::Tuning& tuning,
                                      const juce::String& name,
                                      bool persist)
 {
-    const bool changed = openMidiNotes != currentTuning;
+    // Normalise the value once: the slot count stays in range, unused slots
+    // are marked empty and every active note is a valid MIDI number.
+    GuitarTuning::Tuning nextTuning = tuning;
+    nextTuning.count = juce::jlimit(1, GuitarTuning::maxStrings, nextTuning.count);
 
-    currentTuning = openMidiNotes;
+    for (int slot = 0; slot < GuitarTuning::maxStrings; ++slot)
+    {
+        if (slot >= nextTuning.count)
+        {
+            nextTuning.notes[static_cast<size_t>(slot)] = GuitarTuning::emptyNote;
+            continue;
+        }
+
+        const int note = nextTuning.notes[static_cast<size_t>(slot)];
+
+        if (note != GuitarTuning::emptyNote)
+            nextTuning.notes[static_cast<size_t>(slot)] = juce::jlimit(24, 96, note);
+    }
+
+    // A tuning with no playable string would silently produce an empty chart.
+    if (GuitarTuning::activeCount(nextTuning) == 0)
+        return;
+
+    const bool changed = ! GuitarTuning::sameTuning(nextTuning, currentTuning);
+
+    currentTuning = nextTuning;
     currentTuningName = name.isNotEmpty() ? name : juce::String("CUSTOM");
 
     // Tuner targets and tab positions share one source of truth.
@@ -1145,9 +1168,11 @@ void MainComponent::setCurrentTuning(const std::array<int, 6>& openMidiNotes,
     {
         if (auto* settings = appProperties.getUserSettings())
         {
+            // The list length is the slot count and -1 marks an empty string,
+            // so the selector restores exactly what the player configured.
             juce::StringArray values;
-            for (int note : currentTuning)
-                values.add(juce::String(note));
+            for (int slot = 0; slot < currentTuning.count; ++slot)
+                values.add(juce::String(currentTuning.notes[static_cast<size_t>(slot)]));
 
             settings->setValue("TuningNotes", values.joinIntoString(","));
             settings->setValue("TuningName", currentTuningName);

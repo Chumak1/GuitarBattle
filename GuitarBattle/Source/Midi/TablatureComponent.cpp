@@ -57,10 +57,12 @@ void TablatureComponent::setNotes(const std::vector<TabNote>& newNotes)
 
 //==============================================================================
 
-void TablatureComponent::setTuning(const std::array<int, 6>& newOpenMidiNotes,
+void TablatureComponent::setTuning(const GuitarTuning::Tuning& newTuning,
                                    const juce::String& name)
 {
-    openMidiNotes = newOpenMidiNotes;
+    tuning = newTuning;
+    tuning.count = juce::jlimit(1, maxStrings, tuning.count);
+    stringCount = tuning.count;
     tuningName = name.isNotEmpty() ? name : juce::String("CUSTOM");
     repaint();
 }
@@ -158,11 +160,21 @@ juce::Colour TablatureComponent::getFingerColour(int finger)
 
 juce::String TablatureComponent::getStringName(int stringIndex) const
 {
-    if (stringIndex < 0 || stringIndex >= numberOfStrings)
+    if (stringIndex < 0 || stringIndex >= stringCount)
         return "?";
 
+    if (! isStringActive(stringIndex))
+        return "-";
+
     return GuitarTuning::noteName(
-        openMidiNotes[static_cast<size_t>(stringIndex)], false);
+        tuning.notes[static_cast<size_t>(stringIndex)], false);
+}
+
+//==============================================================================
+
+bool TablatureComponent::isStringActive(int stringIndex) const
+{
+    return GuitarTuning::isActive(tuning, stringIndex);
 }
 
 //==============================================================================
@@ -170,8 +182,13 @@ juce::String TablatureComponent::getStringName(int stringIndex) const
 void TablatureComponent::drawString(juce::Graphics& g, int stringIndex, float y)
 {
     // Bass strings read slightly heavier than the treble strings.
-    const float thickness = 1.0f + static_cast<float>(numberOfStrings - 1 - stringIndex) * 0.28f;
-    const float alpha = 0.30f + static_cast<float>(numberOfStrings - 1 - stringIndex) * 0.04f;
+    const float thickness = 1.0f + static_cast<float>(stringCount - 1 - stringIndex) * 0.28f;
+
+    // A string the player marked as empty keeps its place in the diagram but
+    // is drawn faintly: it exists on the instrument, yet no note may land on it.
+    const float alpha = isStringActive(stringIndex)
+        ? 0.30f + static_cast<float>(stringCount - 1 - stringIndex) * 0.04f
+        : 0.12f;
 
     g.setColour(UiColors::borderStrong.withAlpha(alpha));
     g.fillRect(leftMargin, y - thickness * 0.5f,
@@ -189,7 +206,7 @@ void TablatureComponent::drawMeasureLines(juce::Graphics& g, float playheadX)
     const double firstMeasure = std::floor(playheadBeat / beatsPerMeasure) - 2.0;
     const int firstMeasureIndex = static_cast<int>(firstMeasure);
     const float top = layoutFirstStringY - 14.0f;
-    const float bottom = layoutFirstStringY + layoutStringSpacing * 5.0f + 14.0f;
+    const float bottom = layoutFirstStringY + layoutStringSpacing * static_cast<float>(juce::jmax(1, stringCount - 1)) + 14.0f;
 
     for (int measure = firstMeasureIndex; measure < firstMeasureIndex + 8; ++measure)
     {
@@ -227,7 +244,7 @@ void TablatureComponent::drawBeatGuides(juce::Graphics& g, float playheadX)
         static_cast<int>(std::floor(playheadBeat / clickStep)) - 8;
 
     const float top = layoutFirstStringY - 5.0f;
-    const float bottom = layoutFirstStringY + layoutStringSpacing * 5.0f + 7.0f;
+    const float bottom = layoutFirstStringY + layoutStringSpacing * static_cast<float>(juce::jmax(1, stringCount - 1)) + 7.0f;
 
     for (int index = firstIndex; index < firstIndex + 16; ++index)
     {
@@ -376,7 +393,7 @@ void TablatureComponent::paint(juce::Graphics& g)
     g.setColour(UiColors::muted);
     g.setFont(GameUi::font(10.5f));
     g.drawText(tuningName + " TUNING  /  "
-                   + GuitarTuning::label(openMidiNotes, false)
+                   + GuitarTuning::label(tuning, false)
                    + "  /  " + juce::String(timeSignatureNumerator)
                    + "/" + juce::String(timeSignatureDenominator),
                juce::Rectangle<float>(180.0f, 12.0f, 420.0f, 18.0f),
@@ -406,16 +423,23 @@ void TablatureComponent::paint(juce::Graphics& g)
     //==========================================================================
     // Adaptive string layout
 
-    // Use the full height of the enlarged tablature card: centre the six-string
-    // staff between the header and the footer beat pill, and let the strings
-    // breathe much further apart than the old fixed 30 px ceiling.
+    // Use the full height of the enlarged tablature card: centre the staff
+    // between the header and the footer beat pill, and let the strings
+    // breathe much further apart than the old fixed 30 px ceiling. The
+    // instrument may have more or fewer than six strings, so the spacing is
+    // derived from the actual gap count.
     const float headerHeight = 56.0f;
     const float footerHeight = 38.0f;
     const float available = juce::jmax(0.0f, static_cast<float>(getHeight())
                                              - headerHeight - footerHeight);
-    layoutStringSpacing = juce::jlimit(18.0f, 56.0f, available / 5.0f);
+    const int gapCount = juce::jmax(1, stringCount - 1);
+    const float gapCountF = static_cast<float>(gapCount);
 
-    const float staffHeight = layoutStringSpacing * 5.0f;
+    layoutStringSpacing = juce::jlimit(stringCount > 6 ? 14.0f : 18.0f,
+                                       56.0f,
+                                       available / gapCountF);
+
+    const float staffHeight = layoutStringSpacing * gapCountF;
     layoutFirstStringY = juce::jmax(58.0f,
                                     headerHeight + (available - staffHeight) * 0.5f);
 
@@ -425,13 +449,13 @@ void TablatureComponent::paint(juce::Graphics& g)
     drawMeasureLines(g, playheadX);
     drawMeasureNumbers(g, playheadX);
 
-    for (int stringIndex = 0; stringIndex < numberOfStrings; ++stringIndex)
+    for (int stringIndex = 0; stringIndex < stringCount; ++stringIndex)
     {
-        const int displayRow = numberOfStrings - 1 - stringIndex;
+        const int displayRow = stringCount - 1 - stringIndex;
         const float y = layoutFirstStringY + displayRow * layoutStringSpacing;
         drawString(g, stringIndex, y);
 
-        g.setColour(UiColors::muted.withAlpha(0.82f));
+        g.setColour(UiColors::muted.withAlpha(isStringActive(stringIndex) ? 0.82f : 0.40f));
         g.setFont(GameUi::font(10.0f, true));
         g.drawText(getStringName(stringIndex),
                    juce::Rectangle<float>(8.0f, y - 9.0f, 30.0f, 18.0f),
@@ -477,7 +501,11 @@ void TablatureComponent::paint(juce::Graphics& g)
             if (x < leftMargin - 20.0f)
                 continue;
 
-            const int displayRow = numberOfStrings - 1 - it->stringIndex;
+            // A chart parsed for an older tuning can briefly hold a string
+            // index that no longer exists; keep it inside the staff instead of
+            // drawing the note above the card.
+            const int displayRow = stringCount - 1
+                - juce::jlimit(0, stringCount - 1, it->stringIndex);
             const float y = layoutFirstStringY + displayRow * layoutStringSpacing;
             drawNote(g, *it, x, y, noteRadius);
         }
@@ -487,7 +515,7 @@ void TablatureComponent::paint(juce::Graphics& g)
     // Playhead
 
     const float playheadTop = layoutFirstStringY - 12.0f;
-    const float playheadHeight = layoutStringSpacing * 5.0f + 24.0f;
+    const float playheadHeight = layoutStringSpacing * static_cast<float>(juce::jmax(1, stringCount - 1)) + 24.0f;
 
     g.setColour(UiColors::accent.withAlpha(0.055f));
     g.fillRoundedRectangle(playheadX - 8.0f, playheadTop,
@@ -514,7 +542,7 @@ void TablatureComponent::paint(juce::Graphics& g)
         const float barH = 6.0f;
 
         const float staffBottom = layoutFirstStringY
-            + layoutStringSpacing * 5.0f + 8.0f;
+            + layoutStringSpacing * static_cast<float>(juce::jmax(1, stringCount - 1)) + 8.0f;
 
         if (barW > 40.0f && barY > staffBottom + 2.0f)
         {

@@ -9,14 +9,25 @@
 // recognition, cents error, and per-string tuning progress. The tuning is
 // shared with the tab mapper, so the tuner and the tabs always agree.
 // UI presentation stays in MainComponent.
+//
+// The instrument may have more or fewer than six strings, and a slot may be
+// marked as empty (``GuitarTuning::emptyNote``): such a slot has no target, is
+// never detected and does not block "all strings tuned".
 class GuitarTuner
 {
 public:
     GuitarTuner();
 
-    /** Open-string MIDI notes, low string first (6th -> 1st). */
-    void setTuning(const std::array<int, 6>& newOpenMidiNotes);
-    std::array<int, 6> getTuning() const;
+    void setTuning(const GuitarTuning::Tuning& tuning);
+    GuitarTuning::Tuning getTuning() const;
+
+    /** Slot count, including the slots marked as empty. */
+    int getStringCount() const;
+
+    /** Strings the player actually tunes and plays. */
+    int getActiveStringCount() const;
+
+    /** Open MIDI note of a slot, or ``GuitarTuning::emptyNote``. */
     int getOpenMidiNote(int stringIndex) const;
 
     int detectString(double frequency) const;
@@ -32,9 +43,12 @@ public:
     bool areAllStringsTuned() const;
 
 private:
+    bool isActiveSlot(int stringIndex) const;
+
     // Written from the message thread when the player picks a tuning; read by
     // the pitch worker on every analysed block. Plain atomics keep the handoff
     // lock-free and safe without touching the audio callback.
-    std::atomic<int> openMidiNotes[6];
+    std::atomic<int> openMidiNotes[GuitarTuning::maxStrings];
+    std::atomic<int> stringCount{ 6 };
     std::atomic<int> tunedMask{ 0 };
 };
