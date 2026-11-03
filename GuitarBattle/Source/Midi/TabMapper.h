@@ -2,6 +2,7 @@
 
 #include <JuceHeader.h>
 #include <array>
+#include <vector>
 
 #include "TabNote.h"
 
@@ -248,5 +249,49 @@ public:
         }
 
         return note;
+    }
+
+    /** The octave offset (a multiple of 12 semitones) that lets the chart play
+        the most notes as written.
+
+        Moving every note by the same number of octaves keeps the melody's up
+        and down steps intact; changing notes one by one does not. The parser
+        therefore picks the best offset first and only shifts the leftovers
+        individually. Ties prefer the smaller shift and, at equal size, the
+        lower octave.
+    */
+    static int bestChartOctaveOffset(
+        const std::vector<TabNote>& notes,
+        const GuitarTuning::Tuning& tuning)
+    {
+        int bestOffset = 0;
+        int bestPlayable = -1;
+
+        for (const int offset : { 0, -12, 12, -24, 24, -36, 36, -48, 48 })
+        {
+            int playable = 0;
+
+            for (const auto& note : notes)
+            {
+                const int shifted = note.midiNote + offset;
+
+                if (shifted < 0 || shifted > 127)
+                    continue;
+
+                int stringIndex = 0;
+                int fret = 0;
+
+                if (midiNoteToPosition(shifted, stringIndex, fret, tuning))
+                    ++playable;
+            }
+
+            if (playable > bestPlayable)
+            {
+                bestPlayable = playable;
+                bestOffset = offset;
+            }
+        }
+
+        return bestOffset;
     }
 };

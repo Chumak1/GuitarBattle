@@ -19,6 +19,5 @@ private:
     static void processTrack(
         const juce::MidiMessageSequence& sequence,
         double ticksPerQuarterNote,
-        std::vector<TabNote>& outputNotes,
-        const GuitarTuning::Tuning& tuning);
+        std::vector<TabNote>& outputNotes);
 };

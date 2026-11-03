@@ -1,6 +1,54 @@
 ﻿#include <functional>
 #include "MidiParser.h"
 
+namespace
+{
+    /** Moves the whole chart to the selected instrument, keeping the melody.
+
+        A melody is a line of intervals: shifting every note by the same number
+        of octaves keeps every up and down step intact, while changing single
+        notes breaks them. So the offset that plays the most notes as written
+        wins; only the notes that still do not fit are moved individually, and
+        a note that has no playable octave at all is dropped.
+    */
+    void fitChartToInstrument(std::vector<TabNote>& notes,
+                              const GuitarTuning::Tuning& tuning)
+    {
+        if (notes.empty())
+            return;
+
+        const int bestOffset = TabMapper::bestChartOctaveOffset(notes, tuning);
+
+        size_t writeIndex = 0;
+
+        for (const auto& original : notes)
+        {
+            TabNote note = original;
+            note.midiNote = juce::jlimit(0, 127, original.midiNote + bestOffset);
+
+            int fittedNote = note.midiNote;
+            int stringIndex = 0;
+            int fret = 0;
+
+            // Last resort: a note that the chosen octave still cannot play is
+            // shifted on its own (down first, then up).
+            if (! TabMapper::fitNoteToPosition(note.midiNote,
+                                               tuning,
+                                               fittedNote,
+                                               stringIndex,
+                                               fret))
+                continue; // no octave of this note exists on the instrument
+
+            note.midiNote = fittedNote;
+            note.stringIndex = stringIndex;
+            note.fret = fret;
+            notes[writeIndex++] = note;
+        }
+
+        notes.resize(writeIndex);
+    }
+}
+
 bool MidiParser::loadMidi(
     const juce::File& file,
     std::vector<TabNote>& outputNotes,
@@ -52,8 +100,7 @@ bool MidiParser::loadMidi(
             *track,
             static_cast<double>(
                 midiFile.getTimeFormat()),
-            outputNotes,
-            tuning);
+            outputNotes);
     }
 
     std::sort(
@@ -63,6 +110,10 @@ bool MidiParser::loadMidi(
         {
             return a.startBeat < b.startBeat;
         });
+
+    // Pick the chart-wide octave before any note is placed, so the melody
+    // keeps its contour as long as possible.
+    fitChartToInstrument(outputNotes, tuning);
 
     // Optimise complete phrases for a stable left-hand position and practical
     // fingering. Each candidate includes a string, fret, hand position (index
@@ -405,8 +456,7 @@ bool MidiParser::loadMidi(
 void MidiParser::processTrack(
     const juce::MidiMessageSequence& sequence,
     double ticksPerQuarterNote,
-    std::vector<TabNote>& outputNotes,
-    const GuitarTuning::Tuning& tuning)
+    std::vector<TabNote>& outputNotes)
 {
     struct ActiveNote
     {
@@ -473,30 +523,16 @@ void MidiParser::processTrack(
                         durationTicks /
                         ticksPerQuarterNote;
 
-                    int fittedNote = midiNote;
-                    int stringIndex = 0;
-                    int fret = 0;
+                    // Keep the written pitch: the chart-wide octave is chosen
+                    // once all tracks are collected, so a melody keeps its
+                    // up/down contour instead of being shifted note by note.
+                    TabNote note;
 
-                    // A note the selected strings and frets cannot play is
-                    // moved by whole octaves, so a guitar melody stays
-                    // playable on a bass or a balalaika.
-                    if (TabMapper::fitNoteToPosition(
-                        midiNote,
-                        tuning,
-                        fittedNote,
-                        stringIndex,
-                        fret))
-                    {
-                        TabNote note;
+                    note.midiNote = midiNote;
+                    note.startBeat = active.startBeat;
+                    note.durationBeats = durationBeats;
 
-                        note.midiNote = fittedNote;
-                        note.stringIndex = stringIndex;
-                        note.fret = fret;
-                        note.startBeat = active.startBeat;
-                        note.durationBeats = durationBeats;
-
-                        outputNotes.push_back(note);
-                    }
+                    outputNotes.push_back(note);
 
                     activeNotes.erase(
                         activeNotes.begin() + j);
