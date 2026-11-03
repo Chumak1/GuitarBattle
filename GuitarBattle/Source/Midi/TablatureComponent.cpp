@@ -9,7 +9,6 @@ namespace
     constexpr float rightMargin = 22.0f;
 
     constexpr float playheadPosition = 0.50f;
-    constexpr double beatsPerMeasure = 4.0;
 
     juce::String formatClock(double seconds)
     {
@@ -72,6 +71,22 @@ void TablatureComponent::setBpm(double newBpm)
 {
     if (newBpm > 0.0)
         bpm = newBpm;
+}
+
+//==============================================================================
+
+void TablatureComponent::setTimeSignature(int numerator, int denominator)
+{
+    timeSignatureNumerator = juce::jlimit(1, 32, numerator);
+    timeSignatureDenominator = denominator > 0 ? denominator : 4;
+
+    // Bars are measured in quarter notes because the playhead and the MIDI
+    // note positions are: 4/4 = 4.0, 3/4 = 3.0, 7/8 = 3.5.
+    beatsPerMeasure = static_cast<double>(timeSignatureNumerator)
+        * 4.0
+        / static_cast<double>(timeSignatureDenominator);
+
+    repaint();
 }
 
 //==============================================================================
@@ -197,18 +212,29 @@ void TablatureComponent::drawBeatGuides(juce::Graphics& g, float playheadX)
     if (pixelsPerBeat <= 0.0)
         return;
 
-    const double firstBeat = std::floor(playheadBeat) - 4.0;
-    const int firstBeatIndex = static_cast<int>(firstBeat);
+    // Guides follow the meter's beat unit: a 7/8 bar shows seven eighth-note
+    // guides instead of four quarter-note ones. Bar lines are drawn by
+    // drawMeasureLines(), so the first click of every bar is skipped here.
+    const int beatsPerBar = juce::jmax(1, timeSignatureNumerator);
+
+    const double clickStep =
+        beatsPerMeasure / static_cast<double>(beatsPerBar);
+
+    if (clickStep <= 0.0)
+        return;
+
+    const int firstIndex =
+        static_cast<int>(std::floor(playheadBeat / clickStep)) - 8;
+
     const float top = layoutFirstStringY - 5.0f;
     const float bottom = layoutFirstStringY + layoutStringSpacing * 5.0f + 7.0f;
 
-    for (int beat = firstBeatIndex; beat < firstBeatIndex + 12; ++beat)
+    for (int index = firstIndex; index < firstIndex + 16; ++index)
     {
-        const double beatPosition = static_cast<double>(beat);
-
-        if (std::fmod(std::abs(beatPosition), beatsPerMeasure) < 0.001)
+        if (index % beatsPerBar == 0)
             continue;
 
+        const double beatPosition = static_cast<double>(index) * clickStep;
         const double relativeBeat = beatPosition - playheadBeat;
         const float x = playheadX + static_cast<float>(relativeBeat * pixelsPerBeat);
 
@@ -350,7 +376,9 @@ void TablatureComponent::paint(juce::Graphics& g)
     g.setColour(UiColors::muted);
     g.setFont(GameUi::font(10.5f));
     g.drawText(tuningName + " TUNING  /  "
-                   + GuitarTuning::label(openMidiNotes, false),
+                   + GuitarTuning::label(openMidiNotes, false)
+                   + "  /  " + juce::String(timeSignatureNumerator)
+                   + "/" + juce::String(timeSignatureDenominator),
                juce::Rectangle<float>(180.0f, 12.0f, 420.0f, 18.0f),
                juce::Justification::centredLeft, false);
 

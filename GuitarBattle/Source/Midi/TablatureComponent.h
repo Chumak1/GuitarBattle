@@ -25,6 +25,13 @@ public:
     void setPlayheadRunning(bool shouldRun);
     void setCountInDisplay(bool active, int count);
 
+    /** Meter of the loaded song. The values are already normalised by the
+        metronome; the tablature only needs them to place bar lines and to
+        label the header. ``beatsPerMeasure`` is measured in quarter notes,
+        so 7/8 gives 3.5.
+    */
+    void setTimeSignature(int numerator, int denominator);
+
     void setBpm(double newBpm);
 
     void paint(juce::Graphics& g) override;
@@ -43,6 +50,12 @@ private:
 
     double syncedBeat = 0.0;
     juce::Time lastSyncTime;
+
+    // Song meter. ``beatsPerMeasure`` is in quarter notes, so 4/4 = 4.0 and
+    // 7/8 = 3.5. Bar lines, measure numbers and beat guides follow it.
+    int timeSignatureNumerator = 4;
+    int timeSignatureDenominator = 4;
+    double beatsPerMeasure = 4.0;
 
     double pixelsPerBeat = 160.0;
     float layoutStringSpacing = 26.0f;

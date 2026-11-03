@@ -486,6 +486,8 @@ void MainComponent::SongListModel::paintListBoxItem(int rowNumber,
     if (song.artist.isNotEmpty())
         meta.add(song.artist);
     meta.add(juce::String(juce::roundToInt(song.bpm)) + " BPM");
+    meta.add(MainComponent::formatTimeSignature(song.timeSignatureNumerator,
+                                                song.timeSignatureDenominator));
     meta.add(song.downloaded ? "ONLINE / CACHED" : "ONLINE");
 
     const auto titleFont = GameUi::font(14.0f, true);
@@ -986,9 +988,15 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             : juce::String("SERVER CATALOG");
         const double headerBpm = headerSong != nullptr ? headerSong->bpm : baseBpm;
 
+        const juce::String headerMeter = headerSong != nullptr
+            ? formatTimeSignature(headerSong->timeSignatureNumerator,
+                                  headerSong->timeSignatureDenominator)
+            : juce::String("4/4");
+
         g.setColour(UiColors::muted);
         g.setFont(GameUi::font(10.0f, true));
-        g.drawText(headerKind + "  /  " + juce::String(juce::roundToInt(headerBpm)) + " BPM",
+        g.drawText(headerKind + "  /  " + juce::String(juce::roundToInt(headerBpm)) + " BPM"
+                       + "  /  " + headerMeter,
                    juce::Rectangle<float>(art.getRight() + 20.0f,
                                           leftCard.getY() + 26.0f,
                                           leftW - 360.0f, 16.0f),
@@ -1995,6 +2003,9 @@ void MainComponent::paintModalOverlay(juce::Graphics& g)
         else
         {
             const int count = juce::jmax(1, countInRemaining.load(std::memory_order_relaxed));
+            const int total = juce::jlimit(1, 16,
+                                           countInTotal.load(std::memory_order_relaxed));
+
             g.setColour(count <= 1 ? UiColors::accentStrong : UiColors::accent);
             g.setFont(GameUi::heading(92.0f));
             g.drawText(juce::String(count),
@@ -2003,11 +2014,21 @@ void MainComponent::paintModalOverlay(juce::Graphics& g)
                                               cardWidth, 110.0f),
                        juce::Justification::centred, false);
 
-            for (int i = 0; i < 3; ++i)
+            // One dot per click of the bar, so a 7/8 count-in is visibly
+            // longer than a 4/4 one. The spacing shrinks for long bars
+            // (12/8, 16/8) instead of overflowing the card.
+            const float spacing = total > 1
+                ? juce::jmin(22.0f, (cardWidth - 80.0f) / static_cast<float>(total - 1))
+                : 0.0f;
+
+            const float firstDotX = countCard.getCentreX()
+                - spacing * static_cast<float>(total - 1) * 0.5f;
+
+            for (int i = 0; i < total; ++i)
             {
-                const float dotX = countCard.getCentreX() - 22.0f + static_cast<float>(i) * 22.0f;
+                const float dotX = firstDotX + static_cast<float>(i) * spacing;
                 g.setColour(i < count ? UiColors::accent : UiColors::borderStrong);
-                g.fillEllipse(dotX, countCard.getBottom() - 42.0f, 6.0f, 6.0f);
+                g.fillEllipse(dotX - 3.0f, countCard.getBottom() - 42.0f, 6.0f, 6.0f);
             }
         }
     }

@@ -69,6 +69,91 @@ double Metronome::getBeatLengthSamples() const
 }
 
 //==============================================================================
+// Meter
+//==============================================================================
+
+namespace
+{
+// MIDI only allows power-of-two denominators; anything else is a caller bug
+// and falls back to a quarter note instead of producing a broken grid.
+int normaliseBeatUnit(int denominator)
+{
+    switch (denominator)
+    {
+        case 1:
+        case 2:
+        case 4:
+        case 8:
+        case 16:
+        case 32:
+            return denominator;
+
+        default:
+            return 4;
+    }
+}
+}
+
+//==============================================================================
+
+void Metronome::setTimeSignature(
+    int numerator,
+    int denominator)
+{
+    beatsPerBar.store(
+        std::clamp(
+            numerator,
+            1,
+            32),
+        std::memory_order_relaxed);
+
+    beatUnit.store(
+        normaliseBeatUnit(
+            denominator),
+        std::memory_order_relaxed);
+}
+
+//==============================================================================
+
+int Metronome::getBeatsPerBar() const
+{
+    return beatsPerBar.load(
+        std::memory_order_relaxed);
+}
+
+//==============================================================================
+
+int Metronome::getBeatUnit() const
+{
+    return beatUnit.load(
+        std::memory_order_relaxed);
+}
+
+//==============================================================================
+
+double Metronome::getQuartersPerClick() const
+{
+    return 4.0
+        / static_cast<double>(
+            beatUnit.load(
+                std::memory_order_relaxed));
+}
+
+//==============================================================================
+
+double Metronome::getClickIntervalSamples() const
+{
+    const double quarterLength =
+        getBeatLengthSamples();
+
+    if (quarterLength <= 0.0)
+        return 0.0;
+
+    return quarterLength
+        * getQuartersPerClick();
+}
+
+//==============================================================================
 // Timeline
 //==============================================================================
 
@@ -120,12 +205,19 @@ void Metronome::resetScheduler(
     uint64_t startSample,
     uint64_t initialBeatCounter)
 {
+    // ``initialBeatCounter`` is the click index of the first scheduled click:
+    // 0 accents the downbeat, which is what the count-in needs.
+    const auto barLength =
+        static_cast<uint64_t>(
+            beatsPerBar.load(
+                std::memory_order_relaxed));
+
     beatCounter.store(
         initialBeatCounter,
         std::memory_order_relaxed);
 
     beatInBar.store(
-        static_cast<int>(initialBeatCounter % 4),
+        static_cast<int>(initialBeatCounter % barLength),
         std::memory_order_relaxed);
 
     nextBeatSample.store(
@@ -160,8 +252,8 @@ void Metronome::resumeScheduler(
     uint64_t currentSample,
     uint64_t songStartSample)
 {
-    const auto beatLength =
-        getBeatLengthSamples();
+    const auto clickLength =
+        getClickIntervalSamples();
 
     metronomeTrigger.store(
         false,
@@ -171,7 +263,7 @@ void Metronome::resumeScheduler(
         false,
         std::memory_order_relaxed);
 
-    if (beatLength <= 0.0)
+    if (clickLength <= 0.0)
     {
         nextBeatSample.store(
             static_cast<double>(currentSample),
@@ -184,16 +276,25 @@ void Metronome::resumeScheduler(
     // exactly one beat from the resume sample, which shifted the metronome
     // relative to the MIDI/audio timeline when the pause happened between
     // beats. ceil() gives the next grid beat strictly after currentSample.
-    const double elapsed =
-        static_cast<double>(currentSample)
-        - static_cast<double>(songStartSample);
+    //
+    // The song timeline is measured in quarter notes, while the grid counts
+    // clicks of the current meter, so the elapsed quarters are converted to
+    // click positions first: a 7/8 song clicks on every eighth note.
+    const double elapsedQuarters =
+        (static_cast<double>(currentSample)
+         - static_cast<double>(songStartSample))
+        / getBeatLengthSamples();
 
-    const double nextBeatIndex =
-        std::ceil(elapsed / beatLength + 1.0e-9);
+    const double clickPosition =
+        elapsedQuarters
+        / getQuartersPerClick();
+
+    const double nextClickIndex =
+        std::ceil(clickPosition + 1.0e-9);
 
     nextBeatSample.store(
         static_cast<double>(songStartSample)
-            + nextBeatIndex * beatLength,
+            + nextClickIndex * clickLength,
         std::memory_order_relaxed);
 }
 
@@ -203,37 +304,46 @@ void Metronome::resumeAtBeat(
     uint64_t currentSample,
     double currentBeat)
 {
-    const auto beatLength = getBeatLengthSamples();
+    const auto clickLength = getClickIntervalSamples();
 
     metronomeTrigger.store(false, std::memory_order_relaxed);
     metronomeAccent.store(false, std::memory_order_relaxed);
 
-    if (beatLength <= 0.0)
+    if (clickLength <= 0.0)
     {
         nextBeatSample.store(static_cast<double>(currentSample),
                              std::memory_order_relaxed);
         return;
     }
 
-    // Next whole beat strictly after the current fractional position. The
-    // epsilon keeps an exact integer beat from being played twice.
-    const double nextBeatIndex =
-        std::ceil(currentBeat + 1.0e-6);
+    // ``currentBeat`` is a position on the quarter-note song timeline; the
+    // scheduler counts clicks of the current meter, so convert it first.
+    const double clickPosition =
+        currentBeat / getQuartersPerClick();
 
-    const auto beatIndex = nextBeatIndex > 0.0
-        ? static_cast<uint64_t>(std::llround(nextBeatIndex))
+    // Next whole click strictly after the current fractional position. The
+    // epsilon keeps an exact integer click from being played twice.
+    const double nextClickIndex =
+        std::ceil(clickPosition + 1.0e-6);
+
+    const auto clickIndex = nextClickIndex > 0.0
+        ? static_cast<uint64_t>(std::llround(nextClickIndex))
         : 0;
 
     // beatCounter stores how many clicks have already been scheduled. A
-    // trigger at song beat n produces beatInBar = n % 4, so the accented
-    // first beat of every bar survives tempo changes.
-    beatCounter.store(beatIndex, std::memory_order_relaxed);
-    beatInBar.store(static_cast<int>(beatIndex % 4),
+    // trigger at click index n produces beatInBar = n % beatsPerBar, so the
+    // accented first click of every bar survives tempo changes.
+    const auto barLength =
+        static_cast<uint64_t>(
+            beatsPerBar.load(std::memory_order_relaxed));
+
+    beatCounter.store(clickIndex, std::memory_order_relaxed);
+    beatInBar.store(static_cast<int>(clickIndex % barLength),
                     std::memory_order_relaxed);
 
     nextBeatSample.store(
         static_cast<double>(currentSample)
-            + (nextBeatIndex - currentBeat) * beatLength,
+            + (nextClickIndex - clickPosition) * clickLength,
         std::memory_order_relaxed);
 }
 
@@ -243,10 +353,10 @@ int Metronome::processScheduler(
     uint64_t currentSample,
     int numSamples)
 {
-    const auto beatLength =
-        getBeatLengthSamples();
+    const auto clickLength =
+        getClickIntervalSamples();
 
-    if (beatLength <= 0.0 || numSamples <= 0)
+    if (clickLength <= 0.0 || numSamples <= 0)
         return -1;
 
     const double blockStart =
@@ -274,28 +384,32 @@ int Metronome::processScheduler(
         0,
         std::min(triggerOffset, numSamples - 1));
 
-    // Advance to the first beat after this block. Keeping the fractional
-    // beat length here prevents cumulative drift against the MIDI timeline.
+    // Advance to the first click after this block. Keeping the fractional
+    // click length here prevents cumulative drift against the MIDI timeline.
     const double delta =
         blockEnd - nextBeat;
 
-    const auto beatsToSkip =
+    const auto clicksToSkip =
         static_cast<uint64_t>(
-            std::floor(delta / beatLength) + 1.0);
+            std::floor(delta / clickLength) + 1.0);
 
     nextBeatSample.store(
-        nextBeat + static_cast<double>(beatsToSkip) * beatLength,
+        nextBeat + static_cast<double>(clicksToSkip) * clickLength,
         std::memory_order_relaxed);
 
-    const auto beat =
+    const auto click =
         beatCounter.fetch_add(
-            beatsToSkip,
+            clicksToSkip,
             std::memory_order_relaxed)
         + 1;
 
+    const auto barLength =
+        static_cast<uint64_t>(
+            beatsPerBar.load(std::memory_order_relaxed));
+
     const int currentBeatInBar =
         static_cast<int>(
-            (beat - 1) % 4);
+            (click - 1) % barLength);
 
     beatInBar.store(
         currentBeatInBar,

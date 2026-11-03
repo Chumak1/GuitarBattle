@@ -15,6 +15,35 @@
 // Gameplay-only implementation for MainComponent: session lifecycle, tuning,
 // MIDI targets and scoring.
 
+void MainComponent::applySongTimeSignature(int numerator, int denominator)
+{
+    // 0 means "the server did not publish a meter": 4/4 is the historical
+    // default and the value the admin form starts with.
+    const int safeNumerator = numerator > 0 ? numerator : 4;
+    const int safeDenominator = denominator > 0 ? denominator : 4;
+
+    metronome.setTimeSignature(safeNumerator, safeDenominator);
+
+    // The metronome normalises both values; everything else follows its copy
+    // so the tablature, the header and the count-in cannot disagree.
+    songSignatureNumerator = metronome.getBeatsPerBar();
+    songSignatureDenominator = metronome.getBeatUnit();
+
+    tablatureComponent.setTimeSignature(songSignatureNumerator,
+                                        songSignatureDenominator);
+}
+
+//==============================================================================
+
+juce::String MainComponent::formatTimeSignature(int numerator, int denominator)
+{
+    return juce::String(numerator > 0 ? numerator : 4)
+        + "/"
+        + juce::String(denominator > 0 ? denominator : 4);
+}
+
+//==============================================================================
+
 double MainComponent::getSongBeatForSample(uint64_t sample) const
 {
     const double sampleRate = cachedSampleRate.load(std::memory_order_relaxed);
@@ -281,18 +310,25 @@ void MainComponent::beginGameplayCountIn()
         audioSampleCounter.load(
             std::memory_order_relaxed);
 
-    const double beatLengthSamples =
-        metronome.getBeatLengthSamples();
+    const double clickIntervalSamples =
+        metronome.getClickIntervalSamples();
 
-    // Three audible metronome clicks (3-2-1); the song timeline starts on
-    // the beat immediately after the last click.
-    countInRemaining.store(3, std::memory_order_relaxed);
+    // One full bar of the current meter: 4/4 counts four clicks, 3/4 counts
+    // three and 7/8 counts seven. The first click is the bar's downbeat and
+    // the song starts on the next one, which is why the scheduler is reset at
+    // click 0 instead of 1.
+    const int countInClicks =
+        juce::jlimit(1, 16, metronome.getBeatsPerBar());
+
+    countInRemaining.store(countInClicks, std::memory_order_relaxed);
+    countInTotal.store(countInClicks, std::memory_order_relaxed);
     countInActive.store(true, std::memory_order_release);
     tablatureComponent.setPlayheadRunning(false);
 
     const auto countInSamples =
         static_cast<uint64_t>(
-            std::llround(beatLengthSamples * 3.0));
+            std::llround(clickIntervalSamples
+                         * static_cast<double>(countInClicks)));
 
     gameplayStartSample.store(
         currentSample + countInSamples,
@@ -306,7 +342,7 @@ void MainComponent::beginGameplayCountIn()
     currentPlayheadBeat.store(0.0, std::memory_order_relaxed);
     tablatureComponent.setPlayheadBeat(0.0);
 
-    metronome.resetScheduler(currentSample, 1);
+    metronome.resetScheduler(currentSample, 0);
 
     metronomeSamplesRemaining = 0;
     metronomePlaybackPosition = 0;
@@ -742,24 +778,65 @@ bool MainComponent::loadSongMidi(const juce::String& songId)
     dailyChallengeLoaded.store(false, std::memory_order_relaxed);
     gameSongTitleLabel.setText(found->title, juce::dontSendNotification);
 
-    // Read the MIDI tempo map; use 120 BPM only if the MIDI contains no tempo event.
+    // Read the MIDI tempo map and the time-signature meta event. The tempo is
+    // always taken from the file (the stems are rendered at that tempo); the
+    // meter prefers the admin value published by the server and falls back to
+    // the file, then to 4/4.
     juce::MidiFile tempoMidi;
+    int midiSignatureNumerator = 0;
+    int midiSignatureDenominator = 0;
+    bool tempoFound = false;
+    bool signatureFound = false;
     juce::FileInputStream tempoInput(found->soloMidi);
     if (tempoInput.openedOk() && tempoMidi.readFrom(tempoInput))
     {
-        for (int t = 0; t < tempoMidi.getNumTracks(); ++t)
+        for (int t = 0;
+             t < tempoMidi.getNumTracks() && ! (tempoFound && signatureFound);
+             ++t)
             if (const auto* track = tempoMidi.getTrack(t))
                 for (int e = 0; e < track->getNumEvents(); ++e)
                 {
                     const auto& message = track->getEventPointer(e)->message;
-                    if (message.isTempoMetaEvent())
+
+                    if (! tempoFound && message.isTempoMetaEvent())
                     {
                         const double secondsPerBeat = message.getTempoSecondsPerQuarterNote();
-                        if (secondsPerBeat > 0.0) { found->bpm = 60.0 / secondsPerBeat; break; }
+                        if (secondsPerBeat > 0.0)
+                        {
+                            found->bpm = 60.0 / secondsPerBeat;
+                            tempoFound = true;
+                        }
                     }
+
+                    if (! signatureFound && message.isTimeSignatureMetaEvent())
+                    {
+                        int numerator = 0;
+                        int denominator = 0;
+                        message.getTimeSignatureInfo(numerator, denominator);
+
+                        if (numerator > 0 && denominator > 0)
+                        {
+                            midiSignatureNumerator = numerator;
+                            midiSignatureDenominator = denominator;
+                            signatureFound = true;
+                        }
+                    }
+
+                    if (tempoFound && signatureFound)
+                        break;
                 }
     }
     const double midiBpm = juce::jlimit(30.0, 300.0, found->bpm);
+
+    // The admin value wins: a chart may be written in 3/4 or 7/8 and the
+    // server stores it explicitly. The MIDI meta event only fills the gap for
+    // local files and for servers that predate the field.
+    applySongTimeSignature(found->timeSignatureNumerator > 0
+                               ? found->timeSignatureNumerator
+                               : midiSignatureNumerator,
+                           found->timeSignatureDenominator > 0
+                               ? found->timeSignatureDenominator
+                               : midiSignatureDenominator);
 
     // The chart runs to the end of the MIDI file: no fixed duration cap.
     // Instrumental stems are loaded to their full length as well.
@@ -1001,6 +1078,10 @@ bool MainComponent::loadGeneratedMelody()
     bpm.store(actualBpm, std::memory_order_relaxed);
     audioPlaybackRate.store(speedPercent / 100.0, std::memory_order_relaxed);
     metronome.setBpm(actualBpm);
+
+    // The generator writes a 4/4 time-signature meta event; applying it here
+    // keeps the metronome in step after a 7/8 server song was played.
+    applySongTimeSignature(4, 4);
     gameSession.setBaseBpm(baseBpm);
     gameSession.setSpeedPercent(speedPercent);
     gameSession.setBpm(actualBpm);

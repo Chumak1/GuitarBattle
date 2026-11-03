@@ -15,9 +15,32 @@ public:
     double getBpm() const;
     double getSampleRate() const;
 
-    // Fractional beat length. Keeping the fractional part prevents the
-    // metronome from drifting against the MIDI timeline over long songs.
+    // Fractional length of one quarter note. Keeping the fractional part
+    // prevents the metronome from drifting against the MIDI timeline over
+    // long songs. The public timeline (song beats, MIDI note positions) is
+    // always measured in quarter notes.
     double getBeatLengthSamples() const;
+
+    //======================================================================
+    // Meter
+
+    // A song may be written in 3/4, 7/8 or any other meter. The accent falls
+    // on the first click of every bar, and the click grid follows the meter's
+    // beat unit: a 7/8 bar produces seven eighth-note clicks, not four
+    // quarter-note ones. Both values are read from the audio thread, so they
+    // are stored in atomics.
+    void setTimeSignature(int numerator, int denominator);
+
+    int getBeatsPerBar() const;
+    int getBeatUnit() const;
+
+    // Quarter notes per click: 1 for /4 meters, 0.5 for /8 meters.
+    double getQuartersPerClick() const;
+
+    // Interval between two clicks of the current meter. This is what the
+    // count-in and the scheduler use; getBeatLengthSamples() stays quarter
+    // based because the MIDI timeline is.
+    double getClickIntervalSamples() const;
 
     //======================================================================
     // Timeline
@@ -74,6 +97,11 @@ private:
 
     std::atomic<double> nextBeatSample{ 0.0 };
     std::atomic<uint64_t> beatCounter{ 0 };
+
+    // Meter. Defaults keep the historical 4/4 behaviour for songs that do not
+    // declare a time signature.
+    std::atomic<int> beatsPerBar{ 4 };
+    std::atomic<int> beatUnit{ 4 };
 
     std::atomic<int> beatInBar{ 0 };
 

@@ -242,9 +242,11 @@ private:
 
     GameState stateBeforePause = GameState::Playing;
 
-    // Four-beat count-in before the song timeline begins.
+    // Count-in before the song timeline begins. The length is one full bar of
+    // the song's meter, so 4/4 counts four clicks and 7/8 counts seven.
     std::atomic<bool> countInActive{ false };
     std::atomic<int> countInRemaining{ 0 };
+    std::atomic<int> countInTotal{ 3 };
 
     std::atomic<bool> tunerActive{ false };
 
@@ -436,6 +438,11 @@ private:
         juce::File rhythmGuitar;
         juce::File others;
         double bpm = 120.0;
+        // Time signature published by the server. 0 means "unknown" (local
+        // songs, or a server that predates the field); loadSongMidi() then
+        // falls back to the MIDI meta event and finally to 4/4.
+        int timeSignatureNumerator = 0;
+        int timeSignatureDenominator = 0;
     };
     std::vector<SongEntry> songLibrary;
     SongEntry selectedSong;
@@ -464,6 +471,10 @@ private:
         // ``is_published`` from the server (additive field). Older servers do
         // not send it, so the default keeps every row a published song.
         bool published = true;
+        // Time signature from the server; 0 keeps the 4/4 default for older
+        // servers and for rows that have not been downloaded yet.
+        int timeSignatureNumerator = 0;
+        int timeSignatureDenominator = 0;
     };
 
     // A song unlocks by its published difficulty. Levels 1-4 are always open,
@@ -830,6 +841,18 @@ private:
     std::atomic<double> speedPercent{ 100.0 };
 
     double baseBpm = 140.0;
+
+    // Meter of the loaded song, normalised by Metronome. Read on the message
+    // thread only: the audio thread reads the metronome's own atomics.
+    int songSignatureNumerator = 4;
+    int songSignatureDenominator = 4;
+
+    // Applies the meter to the metronome and the tablature in one place, so a
+    // song load, the daily challenge and the 4/4 default cannot disagree.
+    void applySongTimeSignature(int numerator, int denominator);
+
+    // "7/8" for a valid meter, "4/4" when the value is unknown.
+    static juce::String formatTimeSignature(int numerator, int denominator);
 
     //==========================================================================
     // Difficulty / scoring

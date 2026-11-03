@@ -1039,6 +1039,8 @@ namespace
         juce::String artist;
         juce::String songId;
         double bpm = 120.0;
+        int timeSignatureNumerator = 0;
+        int timeSignatureDenominator = 0;
         int version = 0;
         bool usedCache = false;
         juce::String assetState;
@@ -1093,6 +1095,12 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
             row.genre = item.getProperty("genre", juce::var()).toString();
             row.previewUrl = item.getProperty("preview_url", juce::var()).toString();
             row.bpm = static_cast<double>(item.getProperty("bpm", 120));
+            // Additive: an older server does not send the meter, and the
+            // metronome then keeps its 4/4 default.
+            row.timeSignatureNumerator = static_cast<int>(
+                item.getProperty("time_signature_numerator", juce::var(0)));
+            row.timeSignatureDenominator = static_cast<int>(
+                item.getProperty("time_signature_denominator", juce::var(0)));
             row.difficulty = static_cast<int>(item.getProperty("difficulty", 1));
             row.version = static_cast<int>(item.getProperty("version", 0));
             // Additive: an older server does not send the field, and every row
@@ -1808,6 +1816,10 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
         if (download->songId.isEmpty())
             download->songId = serverId;
         download->bpm = static_cast<double>(detail.getProperty("bpm", 120));
+        download->timeSignatureNumerator = static_cast<int>(
+            detail.getProperty("time_signature_numerator", juce::var(0)));
+        download->timeSignatureDenominator = static_cast<int>(
+            detail.getProperty("time_signature_denominator", juce::var(0)));
         download->version = serverVersion;
         download->usedCache = usedCache;
         download->songFolder = songFolder;
@@ -1854,6 +1866,8 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
                 entry.rhythmGuitar = download->guitarFile;
                 entry.others = download->othersFile;
                 entry.bpm = download->bpm;
+                entry.timeSignatureNumerator = download->timeSignatureNumerator;
+                entry.timeSignatureDenominator = download->timeSignatureDenominator;
                 self->songLibrary.push_back(entry);
             }
             else
@@ -1867,6 +1881,8 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
                 found->rhythmGuitar = download->guitarFile;
                 found->others = download->othersFile;
                 found->bpm = download->bpm;
+                found->timeSignatureNumerator = download->timeSignatureNumerator;
+                found->timeSignatureDenominator = download->timeSignatureDenominator;
             }
 
             // Mark the catalogue row as cached so the list reflects the state.
@@ -1878,6 +1894,8 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
                 row.serverId = download->songId;
                 row.title = download->title;
                 row.bpm = download->bpm;
+                row.timeSignatureNumerator = download->timeSignatureNumerator;
+                row.timeSignatureDenominator = download->timeSignatureDenominator;
                 row.version = download->version;
                 row.downloaded = true;
             }
