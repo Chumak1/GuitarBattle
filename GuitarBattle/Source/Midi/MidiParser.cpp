@@ -98,7 +98,12 @@ bool MidiParser::loadMidi(
                 if (fret < 0 || fret > maxFret)
                     continue;
 
-                for (int handPosition = 1; handPosition <= (maxFret > 15 ? 21 : 12); ++handPosition)
+                // The hand frame must reach the highest allowed fret: a
+                // 36-fret neck would otherwise leave notes above fret 24 with
+                // no candidate at all.
+                for (int handPosition = 1;
+                     handPosition <= juce::jmax(12, maxFret);
+                     ++handPosition)
             {
                 int finger = 0;
                 if (fret > 0)
@@ -125,6 +130,15 @@ bool MidiParser::loadMidi(
         addCandidatesForMaxFret(juce::jmin(15, fretLimit));
         if (candidates[i].empty())
             addCandidatesForMaxFret(fretLimit);
+
+        // Safety net: never hand the optimiser an empty column, otherwise its
+        // back-tracking reads candidate 0 of a note that has none.
+        if (candidates[i].empty())
+            candidates[i].push_back({ note.stringIndex,
+                                      note.fret,
+                                      juce::jmax(1, note.fret - 3),
+                                      0,
+                                      0 });
     }
 
     if (noteCount > 0)
