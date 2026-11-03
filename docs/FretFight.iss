@@ -3,7 +3,7 @@
 ; Non-commercial use only.
 
 #define MyAppName "FretFight"
-#define MyAppVersion "1.1.9"
+#define MyAppVersion "1.1.10"
 #define MyAppPublisher "ChumakEvgeny"
 #define MyAppURL "https://fretfight.online/"
 #define MyAppExeName "GuitarBattle.exe"
@@ -38,9 +38,17 @@ DisableProgramGroupPage=yes
 LicenseFile=D:\GuitarBattle\docs\fretFight_License.txt
 InfoBeforeFile=D:\GuitarBattle\docs\Before.txt
 InfoAfterFile=D:\GuitarBattle\docs\After.txt
-; Uncomment the following line to run in non administrative install mode (install for current user only).
-;PrivilegesRequired=lowest
+; Install per-user by default: {autopf} then resolves to
+; %LOCALAPPDATA%\Programs, which the player owns. The folder is writable, so the
+; portable ZIP downloaded by the app can replace FretFight.exe silently.
+; A per-machine copy (Program Files, installed by an older version) is upgraded
+; in place by the in-app updater, which passes /ALLUSERS and elevates once.
+PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=commandline
+; The in-app updater starts the installer with /VERYSILENT while FretFight is
+; still running; let Setup close it and replace the files.
+CloseApplications=yes
+RestartApplications=no
 OutputBaseFilename=FretFight
 SetupIconFile=D:\GuitarBattle\Logo\Logo-Black.ico
 SolidCompression=yes

@@ -2216,18 +2216,59 @@ void MainComponent::checkForUpdatesOnLaunch()
             if (self->gameState != GameState::SongSelect)
                 return;
 
-            self->startAutomaticUpdate (
-                remoteVersion,
-                downloadUrl,
-                download.getProperty ("filename", {}).toString(),
-                static_cast<juce::int64> (download.getProperty ("size_bytes", 0)));
+            juce::String effectiveUrl = downloadUrl;
+            juce::String effectiveName = download.getProperty ("filename", {}).toString();
+            auto effectiveSize = static_cast<juce::int64> (download.getProperty ("size_bytes", 0));
+            bool installerMode = false;
+
+           #if JUCE_WINDOWS
+            // A per-user install (the installer default) owns its folder, so
+            // the portable ZIP replaces the exe directly. An older per-machine
+            // copy in Program Files is read-only: only the installer can
+            // upgrade it in place, and only it can elevate.
+            const auto appFolder = juce::File::getSpecialLocation (
+                juce::File::currentExecutableFile).getParentDirectory();
+
+            if (! appFolder.hasWriteAccess())
+            {
+                const auto installer = downloads.getProperty ("windows", {});
+
+                if (installer.isObject()
+                    && static_cast<bool> (installer.getProperty ("available", false)))
+                {
+                    const auto installerUrl = installer.getProperty ("url", {}).toString().trim();
+                    const auto installerVersion =
+                        installer.getProperty ("version", {}).toString().trim();
+
+                    // Never install an older build than the update that was
+                    // advertised: the installer and the portable ZIP are
+                    // uploaded separately and can lag behind each other.
+                    if (installerUrl.isNotEmpty()
+                        && compareVersionStrings (installerVersion, remoteVersion) >= 0)
+                    {
+                        effectiveUrl = installerUrl;
+                        effectiveName = installer.getProperty ("filename", {}).toString();
+                        effectiveSize = static_cast<juce::int64> (
+                            installer.getProperty ("size_bytes", 0));
+                        installerMode = true;
+                    }
+                }
+            }
+           #endif
+
+            self->startAutomaticUpdate (remoteVersion,
+                                        effectiveUrl,
+                                        effectiveName,
+                                        effectiveSize,
+                                        installerMode);
         });
 }
 
 void MainComponent::startAutomaticUpdate (const juce::String& version,
                                           const juce::String& downloadUrl,
                                           const juce::String& filename,
-                                          juce::int64 sizeBytes)
+                                          juce::int64 sizeBytes,
+                                          bool installerMode)
 {
     if (updateDownloadInProgress)
         return;
@@ -2249,11 +2290,11 @@ void MainComponent::startAutomaticUpdate (const juce::String& version,
         resolveUpdateUrl (downloadUrl),
         version,
         sizeBytes,
-        [safeThis] (bool success, juce::File downloadedFile)
+        [safeThis, installerMode] (bool success, juce::File downloadedFile)
         {
             // The progress window has already closed; defer the follow-up so
             // it is not created from inside the window's teardown.
-            juce::MessageManager::callAsync ([safeThis, success, downloadedFile]
+            juce::MessageManager::callAsync ([safeThis, success, downloadedFile, installerMode]
             {
                 auto* self = safeThis.getComponent();
 
@@ -2265,11 +2306,65 @@ void MainComponent::startAutomaticUpdate (const juce::String& version,
                 if (! success)
                     return; // offline or cancelled: stay on the current build
 
-                self->applyDownloadedUpdate (downloadedFile);
+                if (installerMode)
+                    self->runDownloadedInstaller (downloadedFile);
+                else
+                    self->applyDownloadedUpdate (downloadedFile);
             });
         });
 
     task->launchThread();
+}
+
+void MainComponent::runDownloadedInstaller (const juce::File& installerFile)
+{
+    if (! installerFile.existsAsFile())
+        return;
+
+   #if JUCE_WINDOWS
+    // A file downloaded from the server is about to be executed with the
+    // user's privileges: require a PE header before handing it to the shell.
+    juce::FileInputStream header (installerFile);
+    char signature[2] {};
+
+    if (header.read (signature, 2) != 2
+        || signature[0] != 'M' || signature[1] != 'Z')
+        return;
+
+    const auto appFolder = juce::File::getSpecialLocation (
+        juce::File::currentExecutableFile).getParentDirectory();
+
+    juce::StringArray arguments;
+    arguments.add (installerFile.getFullPathName());
+    arguments.add ("/VERYSILENT");
+    arguments.add ("/SUPPRESSMSGBOXES");
+    arguments.add ("/NORESTART");
+    // Setup closes FretFight, replaces the files and the [Run] entry starts the
+    // new build again, so the player lands back in the game.
+    arguments.add ("/CLOSEAPPLICATIONS");
+    arguments.add ("/DIR=" + appFolder.getFullPathName());
+
+    // Program Files belongs to the system account. The same AppId has to be
+    // installed for all users again, otherwise Setup would create a second,
+    // per-user copy next to the read-only one.
+    if (appFolder.getFullPathName().containsIgnoreCase ("Program Files"))
+        arguments.add ("/ALLUSERS");
+
+    juce::ChildProcess process;
+
+    if (! process.start (arguments, 0))
+        return;
+
+    juce::MessageManager::callAsync ([]()
+    {
+        if (auto* app = juce::JUCEApplication::getInstance())
+            app->systemRequestedQuit();
+    });
+   #else
+    // macOS updates the .app bundle directly; the installer path is Windows
+    // only, so this is unreachable there.
+    juce::ignoreUnused (installerFile);
+   #endif
 }
 
 void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile)
@@ -2336,11 +2431,12 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile)
     {
         juce::AlertWindow::showMessageBoxAsync (
             juce::MessageBoxIconType::WarningIcon,
-            "Auto-update needs a writable folder",
+            "Update needs the installer",
             "FretFight cannot replace itself in:\n"
                 + currentExe.getParentDirectory().getFullPathName()
-                + "\n\nMove the app to a user folder (for example %LOCALAPPDATA%\\FretFight) "
-                  "to let future versions update automatically.",
+                + "\n\nDownload the new version from https://fretfight.online and run the "
+                  "installer. It installs the game in a per-user folder, so later versions "
+                  "update themselves.",
             "OK");
         return;
     }

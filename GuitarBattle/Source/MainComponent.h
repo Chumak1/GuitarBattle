@@ -373,14 +373,17 @@ private:
     // Self-update: once per launch the client asks the public landing endpoint
     // for the active portable build of its own platform. A newer build is
     // downloaded automatically, then a tiny platform helper replaces the
-    // running app and relaunches it; no installer UI is involved. Never
-    // touches the audio thread.
+    // running app and relaunches it; no installer UI is involved. A read-only
+    // per-machine install (Program Files) falls back to the installer, which
+    // can elevate and upgrade in place. Never touches the audio thread.
     void checkForUpdatesOnLaunch();
     void startAutomaticUpdate(const juce::String& version,
                               const juce::String& downloadUrl,
                               const juce::String& filename,
-                              juce::int64 sizeBytes);
+                              juce::int64 sizeBytes,
+                              bool installerMode = false);
     void applyDownloadedUpdate(const juce::File& downloadedFile);
+    void runDownloadedInstaller(const juce::File& installerFile);
     bool updateCheckStarted = false;
     bool updateDownloadInProgress = false;
     // All server communication is asynchronous: requests run on this client's
