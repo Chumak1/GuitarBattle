@@ -12,6 +12,14 @@ class Song(Base):
             "daily_weekday IS NULL OR (daily_weekday >= 0 AND daily_weekday <= 6)",
             name="ck_songs_daily_weekday_range",
         ),
+        CheckConstraint(
+            "time_signature_numerator >= 1 AND time_signature_numerator <= 32",
+            name="ck_songs_time_signature_numerator",
+        ),
+        CheckConstraint(
+            "time_signature_denominator IN (1, 2, 4, 8, 16, 32)",
+            name="ck_songs_time_signature_denominator",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
@@ -20,6 +28,16 @@ class Song(Base):
     artist: Mapped[str | None] = mapped_column(String(200), nullable=True)
     genre: Mapped[str] = mapped_column(String(80), nullable=False, default="Other")
     bpm: Mapped[int] = mapped_column(Integer, nullable=False)
+    #: Meter of the song, used by the client for the metronome and bar lines.
+    #: ``4/4`` is the default so existing songs keep their previous behaviour.
+    #: The denominator is a power of two because MIDI time signatures only
+    #: allow 1, 2, 4, 8, 16, 32.
+    time_signature_numerator: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=4, server_default="4"
+    )
+    time_signature_denominator: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=4, server_default="4"
+    )
     difficulty: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     duration_seconds: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
     cover_key: Mapped[str | None] = mapped_column(String(512), nullable=True)

@@ -291,7 +291,9 @@ def test_admin_songs_page_has_level_badge_and_inline_player():
     assert 'id="songPreviewAudio"' in html
     assert 'id="songPreviewClose"' in html
     assert ">LVL</th>" in html
-    assert 'colspan="8"' in html
+    # Songs table: Песня, Статус, Готовность, LVL, BPM, Размер, Длительность,
+    # Обновлена, Действия.
+    assert 'colspan="9"' in html
 
     # The player reports download progress (determinate or indeterminate).
     assert 'id="songPreviewProgress"' in html

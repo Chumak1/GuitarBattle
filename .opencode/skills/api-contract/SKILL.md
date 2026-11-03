@@ -27,13 +27,13 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/auth/me` | Bearer | профиль, аддитивно `privacy_consent_at` (`str \| null`) и `is_admin` (`bool`, по умолчанию `false`) |
 | PATCH | `/auth/me` | `display_name?`, `username?` (хотя бы одно поле; `username` — 3–32 символа `[A-Za-z0-9_.-]`, приводится к нижнему регистру, 409 если занят) | профиль |
 | POST | `/auth/change-password` | Bearer, `current_password`, `new_password` | 204, без тела; старые токены инвалидируются |
-| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `include_drafts?`, `limit`, `offset` | список опубликованных **без** песен со слотом Daily Challenge; у каждого элемента `readiness`, `preview_url` (`str \| null`, абсолютный URL) и `is_published` (`bool`); `include_drafts=1` c admin-JWT добавляет черновики |
-| GET | `/songs/{slug}` | Bearer admin (опционально) | детали + `version` + `files` + `assets` + `readiness` + `preview_url` + `is_published`; песня дня тоже резолвится (клиент качает ассеты без токена); черновик — только админу, архив — никому |
+| GET | `/songs` | `search?`, `genre?`, `difficulty?`, `include_drafts?`, `limit`, `offset` | список опубликованных **без** песен со слотом Daily Challenge; у каждого элемента `readiness`, `preview_url` (`str \| null`, абсолютный URL) и `is_published` (`bool`), а также аддитивные `time_signature_numerator` / `time_signature_denominator` (`int`, по умолчанию `4`/`4`); `include_drafts=1` c admin-JWT добавляет черновики |
+| GET | `/songs/{slug}` | Bearer admin (опционально) | детали + `version` + `files` + `assets` + `readiness` + `preview_url` + `is_published` + `time_signature_numerator` / `time_signature_denominator` (размер такта, аддитивно); песня дня тоже резолвится (клиент качает ассеты без токена); черновик — только админу, архив — никому |
 | GET | `/songs/{slug}/files/{file_id}/download` | Bearer admin (опционально) | MIDI/MP3; разрешены роли `midi`, `drums`, `bass`, `guitar`, `others`, `preview`; файлы черновика — только админу |
 | GET | `/admin/songs` | Bearer admin, `search?`, `published?`, `limit`, `offset` | черновики и опубликованные; у каждой песни `daily_weekday` |
-| POST | `/admin/songs` | Bearer admin, `slug`, `title`, `bpm`, остальные поля опциональны, `daily_weekday?` (0–6 или `null`) | черновик |
-| GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `files[]` (все версии с `is_active`) + `readiness` + `daily_weekday` |
-| PATCH | `/admin/songs/{id}` | Bearer admin, поля песни; `daily_weekday: null` снимает слот | обновлённая песня |
+| POST | `/admin/songs` | Bearer admin, `slug`, `title`, `bpm`, остальные поля опциональны, `daily_weekday?` (0–6 или `null`), `time_signature_numerator?` (1–32), `time_signature_denominator?` (1/2/4/8/16/32) | черновик |
+| GET | `/admin/songs/{id}` | Bearer admin | детали + `assets` + `files[]` (все версии с `is_active`) + `readiness` + `daily_weekday` + `time_signature_numerator` / `time_signature_denominator` |
+| PATCH | `/admin/songs/{id}` | Bearer admin, поля песни; `daily_weekday: null` снимает слот; `time_signature_numerator`/`time_signature_denominator` — NOT NULL, `null` → 422 | обновлённая песня |
 | GET | `/admin/daily` | Bearer admin | 7 слотов `{weekday, weekday_name, song \| null, updated_at}` |
 | PUT | `/admin/daily/{weekday}` | Bearer admin, `{song_id: UUID \| null}`, weekday 0–6 | слот; назначение переносит песню, `422` вне 0–6, `404` неизвестная песня |
 | POST | `/admin/songs/{id}/publish` | Bearer admin | публикация |
@@ -321,6 +321,26 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   ожидаемым `size_bytes`, скачивание пропускается. Иначе скачиваются MIDI и все стемы,
   а `version.txt` пишется только после полного успеха. При `version <= 0` клиент всегда
   скачивает файлы и версию не пишет.
+
+### Размер такта (миграция `0020_song_time_signature`)
+
+- `songs.time_signature_numerator` (1–32) и `songs.time_signature_denominator`
+  (1, 2, 4, 8, 16, 32) — `SMALLINT NOT NULL DEFAULT 4`; существующие песни
+  становятся `4/4` без отдельного UPDATE. CHECK-ограничения
+  `ck_songs_time_signature_numerator` / `ck_songs_time_signature_denominator`
+  дублируют правила Pydantic.
+- Клиент использует размер для метронома и тактовых линий: `7/8` — семь
+  восьмых кликов в такте, `3/4` — три четвертных. Поля аддитивные: записи и
+  ответы без них читаются как `4/4` (дефолт в `SongSummaryResponse`,
+  `AdminSongResponse`).
+- Админка (`app/static/admin/index.html`, `admin.js`): в форме песни после BPM
+  — «Доли в такте» (`songTimeSignatureNumerator`, number 1–32, по умолчанию 4)
+  и «Размер (знаменатель)» (`songTimeSignatureDenominator`, select
+  1/2/4/8/16/32, по умолчанию 4 — четверть). В таблице песен колонка «Размер»
+  (`7/8`, скрыта до `lg`), в карточке файлов `7/8` выводится рядом с BPM/LVL.
+- Ошибки: numerator вне 1–32 и denominator вне набора — 422
+  (`Time signature denominator must be one of 1, 2, 4, 8, 16, 32`);
+  `PATCH` с `null` для любого из полей — 422, как у `bpm` (NOT NULL).
 
 ## Ассеты и готовность песни
 

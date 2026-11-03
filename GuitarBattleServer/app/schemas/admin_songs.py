@@ -2,7 +2,17 @@ from datetime import datetime
 from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
-from app.schemas.songs import SongReadinessResponse
+from app.schemas.songs import TIME_SIGNATURE_DENOMINATORS, SongReadinessResponse
+
+
+def _check_time_signature_denominator(value: int | None) -> int | None:
+    """Reject denominators MIDI (and therefore the client metronome) rejects."""
+    if value is None:
+        return None
+    if value not in TIME_SIGNATURE_DENOMINATORS:
+        raise ValueError("Time signature denominator must be one of 1, 2, 4, 8, 16, 32")
+    return value
+
 
 class AdminSongCreate(BaseModel):
     slug: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
@@ -10,6 +20,9 @@ class AdminSongCreate(BaseModel):
     artist: str | None = Field(default=None, max_length=200)
     genre: str = Field(default="Other", min_length=1, max_length=80)
     bpm: int = Field(ge=1, le=400)
+    #: Meter of the song; ``4/4`` when omitted.
+    time_signature_numerator: int = Field(default=4, ge=1, le=32)
+    time_signature_denominator: int = Field(default=4)
     difficulty: int = Field(default=1, ge=1, le=10)
     duration_seconds: int = Field(default=60, ge=1, le=86400)
     cover_key: str | None = Field(default=None, max_length=512)
@@ -33,12 +46,21 @@ class AdminSongCreate(BaseModel):
         cleaned = value.strip()
         return cleaned or None
 
+    @field_validator("time_signature_denominator")
+    @classmethod
+    def validate_time_signature_denominator(cls, value: int | None) -> int | None:
+        return _check_time_signature_denominator(value)
+
 class AdminSongUpdate(BaseModel):
     slug: str | None = Field(default=None, min_length=1, max_length=120, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
     title: str | None = Field(default=None, min_length=1, max_length=200)
     artist: str | None = Field(default=None, max_length=200)
     genre: str | None = Field(default=None, min_length=1, max_length=80)
     bpm: int | None = Field(default=None, ge=1, le=400)
+    #: Omitted keeps the stored meter; ``null`` is rejected by the endpoint
+    #: because both columns are NOT NULL.
+    time_signature_numerator: int | None = Field(default=None, ge=1, le=32)
+    time_signature_denominator: int | None = Field(default=None)
     difficulty: int | None = Field(default=None, ge=1, le=10)
     duration_seconds: int | None = Field(default=None, ge=1, le=86400)
     cover_key: str | None = Field(default=None, max_length=512)
@@ -64,6 +86,11 @@ class AdminSongUpdate(BaseModel):
         cleaned = value.strip()
         return cleaned or None
 
+    @field_validator("time_signature_denominator")
+    @classmethod
+    def validate_time_signature_denominator(cls, value: int | None) -> int | None:
+        return _check_time_signature_denominator(value)
+
 class AdminSongResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: UUID
@@ -72,6 +99,10 @@ class AdminSongResponse(BaseModel):
     artist: str | None
     genre: str
     bpm: int
+    #: Defaults keep ``model_validate`` working for rows (and objects) created
+    #: before the meter existed. Only the admin panel reads these fields.
+    time_signature_numerator: int = 4
+    time_signature_denominator: int = 4
     difficulty: int
     duration_seconds: int
     cover_key: str | None

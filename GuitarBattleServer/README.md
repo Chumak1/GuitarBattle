@@ -66,9 +66,12 @@ All paths below use `/api/v1`.
 ### Public song catalog
 - `GET /songs?limit=20&offset=0` — published songs only. Songs that hold a Daily
   Challenge slot (`songs.daily_weekday IS NOT NULL`) are not listed here.
+  Response items carry the additive `time_signature_numerator` /
+  `time_signature_denominator` (`4`/`4` by default).
 - `GET /songs/{slug}` — details and public file metadata. It still resolves a
   daily-challenge song: the client requests it without a token before playing
-  the official attempt, and the assets must stay downloadable by slug.
+  the official attempt, and the assets must stay downloadable by slug. The same
+  meter fields are returned here (see migration `0020`).
 - `GET /songs/{slug}/files/{file_id}/download` — download MIDI or an instrumental MP3 stem for a published song.
 - `GET /leaderboard?limit=20&offset=0` — global top scores.
 - `GET /leaderboard?song_slug=pridumay-svetly-mir` — scores for one song.
@@ -521,6 +524,18 @@ Migration `0019_user_country` adds the nullable `users.registration_ip` and
 (`TIMESTAMP WITH TIME ZONE`) and the `ix_users_country_code` index. There is no
 backfill: existing accounts keep `NULL` and the admin panel shows “—”. Downgrade
 drops the index and all five columns.
+
+Migration `0020_song_time_signature` stores the meter of a song:
+`songs.time_signature_numerator` (`SMALLINT NOT NULL DEFAULT 4`, check 1–32)
+and `songs.time_signature_denominator` (`SMALLINT NOT NULL DEFAULT 4`, check
+`IN (1, 2, 4, 8, 16, 32)` — MIDI time signatures only allow powers of two).
+Both columns are added with `server_default '4'`, so every existing song is
+`4/4` without a separate UPDATE. `GET /songs` and `GET /songs/{slug}` return
+the additive fields; the admin panel edits them as “Доли в такте” (1–32) and
+“Размер (знаменатель)” (1/2/4/8/16/32); the client uses them for the metronome
+and bar lines (`7/8` = seven eighth-note clicks per bar). Invalid values are
+rejected with 422, and `PATCH` with `null` is refused because the columns are
+NOT NULL. Downgrade drops both checks and both columns.
 
 
 ### Глобальный рейтинг игроков

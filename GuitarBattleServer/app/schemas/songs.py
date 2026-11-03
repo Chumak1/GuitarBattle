@@ -5,6 +5,12 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 
+#: Denominators accepted by MIDI time signatures (powers of two). The client
+#: uses the pair for the metronome and bar lines, so anything else would make
+#: it render a meter it cannot click.
+TIME_SIGNATURE_DENOMINATORS: tuple[int, ...] = (1, 2, 4, 8, 16, 32)
+
+
 class SongFileResponse(BaseModel):
     """Public file metadata. Internal object-storage keys are never exposed."""
     model_config = ConfigDict(from_attributes=True)
@@ -59,6 +65,11 @@ class SongSummaryResponse(BaseModel):
     artist: str | None
     genre: str
     bpm: int
+    #: Meter of the song. Additive with a ``4`` default so cached/older
+    #: payloads without the fields keep validating; ``4/4`` preserves the
+    #: behaviour every song had before the meter was stored.
+    time_signature_numerator: int = 4
+    time_signature_denominator: int = 4
     difficulty: int
     duration_seconds: int
     cover_key: str | None

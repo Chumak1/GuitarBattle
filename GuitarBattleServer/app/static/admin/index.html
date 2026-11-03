@@ -284,13 +284,14 @@
                   <th scope="col">Готовность</th>
                   <th scope="col">LVL</th>
                   <th scope="col" class="d-none d-lg-table-cell">BPM</th>
+                  <th scope="col" class="d-none d-lg-table-cell">Размер</th>
                   <th scope="col" class="d-none d-xl-table-cell">Длительность</th>
                   <th scope="col" class="d-none d-xl-table-cell">Обновлена</th>
                   <th scope="col" class="text-end">Действия</th>
                 </tr>
               </thead>
               <tbody id="songsBody">
-                <tr><td colspan="8" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                <tr><td colspan="9" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
               </tbody>
             </table>
           </div>
@@ -1025,6 +1026,22 @@
                 <div class="invalid-feedback">От 1 до 400.</div>
               </div>
               <div class="col-6 col-md-3">
+                <label for="songTimeSignatureNumerator" class="form-label">Доли в такте <span class="text-danger">*</span></label>
+                <input id="songTimeSignatureNumerator" class="form-control" type="number" min="1" max="32" value="4" required>
+                <div class="invalid-feedback">От 1 до 32.</div>
+              </div>
+              <div class="col-6 col-md-3">
+                <label for="songTimeSignatureDenominator" class="form-label">Размер (знаменатель)</label>
+                <select id="songTimeSignatureDenominator" class="form-select">
+                  <option value="1">1 — целая</option>
+                  <option value="2">2 — половина</option>
+                  <option value="4" selected>4 — четверть</option>
+                  <option value="8">8 — восьмая</option>
+                  <option value="16">16 — шестнадцатая</option>
+                  <option value="32">32 — тридцать вторая</option>
+                </select>
+              </div>
+              <div class="col-6 col-md-3">
                 <label for="songDifficulty" class="form-label">Сложность</label>
                 <select id="songDifficulty" class="form-select">
                   <option value="1">1 — новичок</option>
@@ -1222,7 +1239,7 @@
   </noscript>
 
   <script src="./vendor/bootstrap.bundle.min.js"></script>
-  <script src="./admin.js?v=20261102-1"></script>
+  <script src="./admin.js?v=20261103-3"></script>
   <script src="/app/i18n.js"></script>
   <script src="/app/landing-i18n.js"></script>
   <script src="./admin-statistics.js?v=20261103-2"></script>

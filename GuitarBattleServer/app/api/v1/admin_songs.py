@@ -174,7 +174,16 @@ def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(g
     if not changes:
         files_by_role = load_active_files_by_song(db, [song.id]).get(song.id, {})
         return _admin_song_response(song, files_by_role)
-    non_nullable_fields = {"slug", "title", "genre", "bpm", "difficulty", "duration_seconds"}
+    non_nullable_fields = {
+        "slug",
+        "title",
+        "genre",
+        "bpm",
+        "time_signature_numerator",
+        "time_signature_denominator",
+        "difficulty",
+        "duration_seconds",
+    }
     if any(key in non_nullable_fields and value is None for key, value in changes.items()):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Required song fields cannot be null")
     if changes.get("daily_weekday") is not None and song.archived_at is not None:

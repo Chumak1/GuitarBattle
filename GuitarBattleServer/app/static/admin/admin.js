@@ -399,7 +399,7 @@
       }
     });
     if (loading) {
-      el("songsBody").innerHTML = '<tr><td colspan="8" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
+      el("songsBody").innerHTML = '<tr><td colspan="9" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
       const table = el("songsBody").closest(".table-responsive");
       if (table) {
         table.hidden = false;
@@ -465,6 +465,9 @@
     const publishIcon = song.is_published ? "bi-eye-slash" : "bi-cloud-arrow-up";
     const publishTitle = song.is_published ? "Снять с публикации" : "Опубликовать";
     const level = songLevel(song);
+    // Meter is additive: payloads from before migration 0020 (or a cached
+    // response) fall back to 4/4.
+    const timeSignature = `${song?.time_signature_numerator ?? 4}/${song?.time_signature_denominator ?? 4}`;
     // The preview download needs the admin token, so the button is only a
     // trigger for the blob player; without an uploaded preview it is disabled.
     const hasPreview = Boolean(song.preview_url);
@@ -496,6 +499,7 @@
         <td>${readinessBadge(song)}</td>
         <td><span class="badge-soft badge-level" title="Уровень сложности">LVL ${level}</span></td>
         <td class="d-none d-lg-table-cell"><span class="text-nowrap">${escapeHtml(song.bpm)}</span></td>
+        <td class="d-none d-lg-table-cell"><span class="text-nowrap">${escapeHtml(timeSignature)}</span></td>
         <td class="d-none d-xl-table-cell"><span class="text-nowrap">${formatDuration(song.duration_seconds)}</span></td>
         <td class="d-none d-xl-table-cell"><span class="text-nowrap small text-secondary">${formatDate(song.updated_at)}</span></td>
         <td class="text-end">
@@ -782,6 +786,8 @@
     el("songArtist").value = song?.artist || "";
     el("songGenre").value = song?.genre || "Other";
     el("songBpm").value = song?.bpm ?? 120;
+    el("songTimeSignatureNumerator").value = song?.time_signature_numerator ?? 4;
+    el("songTimeSignatureDenominator").value = String(song?.time_signature_denominator ?? 4);
     el("songDifficulty").value = String(song?.difficulty ?? 1);
     el("songDuration").value = song?.duration_seconds ?? 180;
     el("songDailyWeekday").value =
@@ -826,6 +832,10 @@
       artist: el("songArtist").value.trim() || null,
       genre: el("songGenre").value.trim() || "Other",
       bpm: Number(el("songBpm").value),
+      // Meter of the song: the client places the metronome and bar lines from
+      // it (7/8 → seven eighth-note clicks per bar).
+      time_signature_numerator: Number(el("songTimeSignatureNumerator").value),
+      time_signature_denominator: Number(el("songTimeSignatureDenominator").value),
       difficulty: Number(el("songDifficulty").value),
       duration_seconds: Number(el("songDuration").value),
       description: el("songDescription").value.trim() || null,
@@ -1441,7 +1451,7 @@
   function renderFiles(detail) {
     const byRole = versionsByRole(detail);
     el("filesTitle").textContent = detail.title;
-    el("filesMeta").textContent = `${detail.archived_at ? "В архиве" : detail.is_published ? "Опубликована" : "Черновик"} · ${detail.slug} · ${detail.bpm} BPM · LVL ${songLevel(detail)} · ${formatDuration(detail.duration_seconds)}`;
+    el("filesMeta").textContent = `${detail.archived_at ? "В архиве" : detail.is_published ? "Опубликована" : "Черновик"} · ${detail.slug} · ${detail.bpm} BPM · ${detail.time_signature_numerator ?? 4}/${detail.time_signature_denominator ?? 4} · LVL ${songLevel(detail)} · ${formatDuration(detail.duration_seconds)}`;
     el("filesReadiness").innerHTML = renderReadiness(detail);
     el("filesBody").innerHTML = `
       <div class="file-list">
