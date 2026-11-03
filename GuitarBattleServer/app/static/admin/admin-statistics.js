@@ -37,6 +37,7 @@
     loaded: false,
     days: 30,
     search: "",
+    country: "",
     sort: "last_seen",
     order: "desc",
     offset: 0,
@@ -272,6 +273,62 @@
     return '<div class="stats-platforms">' + badges.join("") + "</div>";
   }
 
+  /* ---------- country ---------- */
+
+  /* The server resolves the country from the registration IP (a free geo-IP
+   * service, best effort) and also sends the emoji flag, so every admin client
+   * renders the same value. Accounts created before migration 0019 have no
+   * country and show a dash. Both IP addresses live in the tooltip only. */
+  function countryTooltip(user) {
+    return (
+      "IP регистрации: " + (user.registration_ip || "нет данных") + "\n" +
+      "IP последнего входа: " + (user.last_login_ip || "нет данных")
+    );
+  }
+
+  function countryCell(user) {
+    const tooltip = escapeHtml(countryTooltip(user));
+    if (!user.country_code) {
+      return '<span class="stats-country-empty" title="' + tooltip + '">—</span>';
+    }
+    const name = user.country_name || user.country_code;
+    const flag = user.country_flag
+      ? '<span class="stats-country-flag">' + escapeHtml(user.country_flag) + "</span>"
+      : "";
+    return (
+      '<span class="stats-country" title="' + tooltip + '">' +
+      flag +
+      '<span class="stats-country-name">' + escapeHtml(name) + "</span>" +
+      "</span>"
+    );
+  }
+
+  /* The filter list comes from overview.countries (top ten by players). A
+   * selected country that dropped out of that list keeps its own option so
+   * the filter never silently resets. */
+  function renderCountryOptions(countries) {
+    const select = el("statsCountry");
+    if (!select) return;
+    const selected = state.country;
+    const options = ['<option value="">Все страны</option>'];
+    (countries || []).forEach((item) => {
+      if (!item || !item.code) return;
+      const label = (item.name || item.code) + " (" + item.code + ")";
+      options.push(
+        '<option value="' + escapeHtml(item.code) + '">' + escapeHtml(label) + "</option>"
+      );
+    });
+    select.innerHTML = options.join("");
+    select.value = selected;
+    if (selected && select.value !== selected) {
+      const extra = document.createElement("option");
+      extra.value = selected;
+      extra.textContent = selected;
+      select.appendChild(extra);
+      select.value = selected;
+    }
+  }
+
   /* ---------- overview ---------- */
 
   function renderOverview(overview) {
@@ -285,6 +342,7 @@
     el("statsLaunches").textContent = formatNumber(overview.launches_total);
     el("statsLaunches24h").textContent = "за 24 ч: " + formatNumber(overview.launches_24h);
     el("statsGenerated").textContent = "Данные на " + formatDateTime(overview.generated_at);
+    renderCountryOptions(overview.countries);
   }
 
   async function loadOverview() {
@@ -365,6 +423,7 @@
       (isSelf ? '<div class="stats-mono stats-self">это вы</div>' : "") +
       "</td>" +
       "<td>" + nick + "</td>" +
+      '<td class="d-none d-md-table-cell">' + countryCell(user) + "</td>" +
       '<td class="d-none d-lg-table-cell">' + escapeHtml(user.email) + "</td>" +
       "<td>" +
       '<span class="text-nowrap">' + escapeHtml(formatAppTime(user.app_seconds_total)) + "</span>" +
@@ -401,9 +460,11 @@
     if (!state.users.length) {
       const message = state.search
         ? "Никого не нашли по этому запросу."
-        : "Пока нет ни одного игрока.";
+        : state.country
+          ? "В этой стране пока нет игроков."
+          : "Пока нет ни одного игрока.";
       body.innerHTML =
-        '<tr><td colspan="12" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
+        '<tr><td colspan="13" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
     } else {
       body.innerHTML = state.users.map(userRow).join("");
     }
@@ -423,7 +484,7 @@
     });
     if (loading) {
       el("statsUsersBody").innerHTML =
-        '<tr><td colspan="12" class="table-loading">' +
+        '<tr><td colspan="13" class="table-loading">' +
         '<span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
     }
   }
@@ -439,6 +500,7 @@
         offset: String(state.offset),
       });
       if (state.search) params.set("search", state.search);
+      if (state.country) params.set("country", state.country);
       const data = await api("/admin/statistics/users?" + params.toString());
       if (requestId !== state.usersRequestId) return;
       state.users = data.items || [];
@@ -587,6 +649,12 @@
       state.days = Number(event.target.value) || 30;
       state.offset = 0;
       loadAll();
+    });
+
+    el("statsCountry")?.addEventListener("change", (event) => {
+      state.country = event.target.value || "";
+      state.offset = 0;
+      loadUsers();
     });
 
     let searchTimer = null;

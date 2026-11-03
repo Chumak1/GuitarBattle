@@ -38,6 +38,9 @@ services:
       GAME_BUILDS_DIR: /data/game_builds
       APP_AUDIO_DIR: /data/app_audio
       GEOIP_DB_PATH: /data/geoip/dbip-country-lite.mmdb
+      GEOIP_ENABLED: ${GEOIP_ENABLED:-true}
+      GEOIP_URL: ${GEOIP_URL:-https://ipwho.is}
+      GEOIP_TIMEOUT_SECONDS: ${GEOIP_TIMEOUT_SECONDS:-2.0}
       MAX_LANDING_MEDIA_BYTES: ${MAX_LANDING_MEDIA_BYTES:-52428800}
       MAX_GAME_BUILD_BYTES: ${MAX_GAME_BUILD_BYTES:-524288000}
       MAX_MIDI_UPLOAD_BYTES: 20971520

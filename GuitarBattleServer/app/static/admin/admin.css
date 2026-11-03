@@ -1252,6 +1252,29 @@ code {
   color: var(--gb-muted);
 }
 
+/* Country of registration in the users table: emoji flag plus the provider's
+ * English name; both IP addresses are in the tooltip. Accounts created before
+ * migration 0019 keep a dash. */
+.stats-country {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  white-space: nowrap;
+}
+
+.stats-country-flag {
+  font-size: 0.95rem;
+  line-height: 1;
+}
+
+.stats-country-name {
+  font-size: 0.82rem;
+}
+
+.stats-country-empty {
+  color: var(--gb-muted);
+}
+
 /* ---------- support page CMS (admin-support.js) ---------- */
 
 .support-status {

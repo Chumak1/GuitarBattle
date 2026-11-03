@@ -69,8 +69,8 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/site/contacts` | — (публичный) | `name` (`ru`/`en`), `email`, `telegram` (`@handle`), `telegram_url`, `socials` (`youtube`/`instagram`/`twitter`/`vk`; `null` — заглушка «Скоро»); без записи в CMS отдаёт дефолты |
 | POST | `/activity/heartbeat` | Bearer, `client_session_id` (≤64), `app_version?`, `platform?`, `final=false` | 200, `session_id`, `started_at`, `last_seen_at`; upsert по `(user_id, client_session_id)`, `final=true` ставит `ended_at` |
 | POST | `/activity/game-launch` | Bearer, `client_session_id?`, `game_key` (≤120), `song_id?`, `mode?` | 201, `id`; неизвестные `song_id`/сессия сохраняются как `NULL`, а не 4xx |
-| GET | `/admin/statistics/overview` | Bearer admin, `days=30` (1–365) | `generated_at`, `users_total`, `users_active_24h`, `users_active_7d`, `sessions_total`, `app_seconds_total`, `avg_session_seconds`, `launches_total`, `launches_24h` |
-| GET | `/admin/statistics/users` | Bearer admin, `search?`, `sort=last_seen\|username\|display_name\|email\|created_at\|app_seconds\|sessions_count\|launches_count\|scores_count`, `order=asc\|desc` (по умолчанию `asc` для текста, `desc` для чисел/дат), `limit=50` (1–200), `offset=0` | `items[]` (`user_id`, `username`, `display_name`, `email`, `is_active`, `created_at`, `app_seconds_total`, `sessions_count`, `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`, `scores_count`, `best_score`), `total`, `limit`, `offset` |
+| GET | `/admin/statistics/overview` | Bearer admin, `days=30` (1–365) | `generated_at`, `users_total`, `users_active_24h`, `users_active_7d`, `sessions_total`, `app_seconds_total`, `avg_session_seconds`, `launches_total`, `launches_24h`, `countries[]` (`code`, `name`, `users` — топ-10 стран регистрации, аддитивно) |
+| GET | `/admin/statistics/users` | Bearer admin, `search?`, `country?` (ISO 3166-1 alpha-2, регистр не важен), `sort=last_seen\|username\|display_name\|email\|created_at\|app_seconds\|sessions_count\|launches_count\|scores_count`, `order=asc\|desc` (по умолчанию `asc` для текста, `desc` для чисел/дат), `limit=50` (1–200), `offset=0` | `items[]` (`user_id`, `username`, `display_name`, `email`, `is_active`, `created_at`, `app_seconds_total`, `sessions_count`, `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`, `scores_count`, `best_score`, `country_code`, `country_name`, `country_flag`, `registration_ip`, `last_login_ip`), `total`, `limit`, `offset` |
 | GET | `/admin/statistics/games` | Bearer admin, `days=30`, `limit=100` | `items[]` (`game_key`, `title`, `launches`, `unique_users`, `last_launch_at`), `total` |
 | DELETE | `/admin/users/{user_id}` | Bearer admin | 204; 400 при удалении себя (`"You cannot delete your own account"`), 404 если нет, 409 если связанные данные мешают; жёсткое удаление, все FK на `users.id` — `CASCADE` |
 | GET | `/admin/site/landing` | Bearer admin | `blocks`, `hero_background` |
@@ -199,6 +199,23 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   `NULLS LAST` в обе стороны, tiebreaker — `username`, затем `id`.
   `scores_count`/`best_score` считаются подзапросом `scores` через
   `game_sessions` (без N+1); `best_score = null`, если результатов нет.
+- `/admin/statistics/users?country=RU` — фильтр по стране регистрации
+  (ISO 3166-1 alpha-2; принимается в любом регистре, в БД хранится верхним).
+  В строке — аддитивные `country_code`, `country_name`, `country_flag`
+  (эмодзи флага), `registration_ip`, `last_login_ip`; у аккаунтов до миграции
+  `0019` все пять полей `null`, админка показывает «—».
+- `overview.countries` — топ-10 стран регистрации: `code`, `name`, `users`;
+  одна группирующая выборка по `country_code` (имя — `max(country_name)`,
+  чтобы переименование у провайдера не раздваивало страну), сортировка
+  `users desc, code asc`. Поле аддитивное, пустой список — стран ещё нет.
+- Страна определяется сервером в фоне по IP регистрации/входа через
+  бесплатный `https://ipwho.is` (без ключа, таймаут 2 с, без ретраев,
+  успешный ответ кэшируется на 24 ч; неудача не кэшируется и повторяется
+  при следующем входе). Регистрация/вход не ждут резолв и не падают из-за
+  него. IP пишутся в `users.registration_ip`/`last_login_ip` (`INET`,
+  только публичные адреса), полный IP не логируется. `GEOIP_ENABLED=false`
+  отключает только резолв страны, IP по-прежнему сохраняются; `GEOIP_URL`
+  и `GEOIP_TIMEOUT_SECONDS` переопределяют провайдера и таймаут.
 - `DELETE /admin/users/{user_id}` — жёсткое удаление аккаунта (204). Себя
   удалить нельзя (400 `"You cannot delete your own account"`), неизвестный id —
   404, блокирующие связи — 409. Все FK на `users.id` (`game_sessions`,
@@ -212,7 +229,10 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
   первом открытии вкладки и обновляются при повторном открытии/`Обновить`;
   заголовки таблицы сортируют по клику (▲/▼, серверные `sort`/`order`,
   `offset=0`), столбец Scores показывает число результатов и лучший счёт,
-  кнопка-корзина удаляет игрока через `DELETE /admin/users/{id}` после
+  столбец «Страна» — флаг и название страны регистрации (или «—»), рядом с
+  поиском — фильтр по стране из `overview.countries`; в `title` ячейки видны
+  `registration_ip`/`last_login_ip`. Кнопка-корзина удаляет игрока через
+  `DELETE /admin/users/{id}` после
   `confirm()` с логином и почтой; своя строка — disabled.
   Токен — общий админский из `sessionStorage` (`guitarbattle.admin.token`),
   при 401/403 вызывается `window.FFAdmin.handleUnauthorized()` (общий

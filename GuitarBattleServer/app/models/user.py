@@ -1,9 +1,34 @@
 import uuid
 from datetime import datetime
 from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, func
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import TypeDecorator
 from app.database import Base
+
+
+class IPAddressString(TypeDecorator):
+    """``INET`` column exposed to Python as a plain string.
+
+    psycopg returns ``ipaddress.IPv4Address``/``IPv6Address`` objects for an
+    ``INET`` column. The API, the admin schemas and the tests all speak
+    strings, so the conversion lives here once instead of at every call site.
+    """
+
+    impl = INET
+    cache_ok = True
+
+    def process_bind_param(self, value, dialect):
+        if value is None:
+            return None
+        cleaned = str(value).strip()
+        return cleaned or None
+
+    def process_result_value(self, value, dialect):
+        if value is None:
+            return None
+        return str(value)
+
 
 class User(Base):
     __tablename__ = "users"
@@ -20,6 +45,23 @@ class User(Base):
     # Accounts created before the consent requirement keep NULL: the existing
     # data is never touched.
     privacy_consent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Country of registration, resolved in the background from the IP the
+    # account was created with. ``registration_ip``/``last_login_ip`` hold the
+    # public addresses only (a private or loopback address is never stored);
+    # both stay NULL for accounts created before migration 0019.
+    registration_ip: Mapped[str | None] = mapped_column(IPAddressString, nullable=True)
+    last_login_ip: Mapped[str | None] = mapped_column(IPAddressString, nullable=True)
+    # ISO 3166-1 alpha-2 (upper case) plus the provider's English name. NULL
+    # means "not resolved yet": a failed lookup leaves ``country_checked_at``
+    # NULL too, so the next sign-in tries again instead of caching a failure
+    # for good.
+    country_code: Mapped[str | None] = mapped_column(
+        String(2), nullable=True, index=True
+    )
+    country_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    country_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
     # Incremented when the password changes so older JWTs stop working.

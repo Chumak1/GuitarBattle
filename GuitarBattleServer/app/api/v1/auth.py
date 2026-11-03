@@ -3,7 +3,16 @@ from datetime import datetime, timedelta, timezone
 from uuid import UUID
 
 import jwt
-from fastapi import APIRouter, Body, Depends, HTTPException, Request, Response, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Body,
+    Depends,
+    HTTPException,
+    Request,
+    Response,
+    status,
+)
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pwdlib import PasswordHash
@@ -34,11 +43,13 @@ from app.services.auth_codes import (
     purge_codes,
     verify_code,
 )
+from app.services.client_ip import client_ip
 from app.services.email_service import (
     EmailDeliveryError,
     send_password_reset_email,
     send_verification_email,
 )
+from app.services.geolocation import apply_country
 from app.services.refresh_tokens import (
     find_refresh_session,
     is_expired,
@@ -259,7 +270,12 @@ def _send_password_reset_code(db: Session, user: User) -> bool:
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
+def register(
+    payload: RegisterRequest,
+    request: Request,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> User:
     # Consent is checked before the duplicate lookup so a request without
     # consent never reveals whether an account already exists.
     if not payload.privacy_consent:
@@ -292,6 +308,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
         is_active=True,
         token_version=0,
         privacy_consent_at=datetime.now(timezone.utc),
+        registration_ip=client_ip(request),
     )
     db.add(user)
     try:
@@ -315,6 +332,14 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)) -> User:
 
     db.commit()
     db.refresh(user)
+
+    # The country lookup is a network call: run it after the response, in its
+    # own database session, so registration neither waits for it nor fails
+    # when the provider is unreachable.
+    if user.registration_ip:
+        background.add_task(
+            apply_country, user.id, user.registration_ip, only_if_missing=False
+        )
     return user
 
 
@@ -323,6 +348,7 @@ def login(
     payload: LoginRequest,
     request: Request,
     response: Response,
+    background: BackgroundTasks,
     db: Session = Depends(get_db),
 ) -> TokenResponse:
     # Sign-in never asks for (and never stores) privacy consent: the policy is
@@ -351,7 +377,25 @@ def login(
             detail="Email address is not verified",
         )
 
-    return _issue_tokens(db, user, request, response)
+    # The audit columns are written in the same transaction as the refresh
+    # session (``_issue_tokens`` commits). A private/loopback peer has no
+    # usable IP and must not erase a previously stored public one.
+    ip = client_ip(request)
+    if ip is not None:
+        user.last_login_ip = ip
+    needs_country = user.country_code is None
+    # Read before the commit inside ``_issue_tokens`` expires the instance.
+    user_id = user.id
+
+    tokens = _issue_tokens(db, user, request, response)
+
+    if ip is not None and needs_country:
+        # Only accounts whose country is still unknown are looked up again;
+        # ``apply_country`` re-checks the row, so two parallel sign-ins make
+        # one provider call at most.
+        background.add_task(apply_country, user_id, ip, only_if_missing=True)
+
+    return tokens
 
 
 @router.post("/refresh", response_model=TokenResponse)

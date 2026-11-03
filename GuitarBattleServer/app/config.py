@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     app_audio_dir: Path = Path("/data/app_audio")
     # DB-IP Lite country database used for IP-based language detection.
     geoip_db_path: Path = Path("/data/geoip/dbip-country-lite.mmdb")
+    # Country of registration/sign-in for the admin statistics. This is a
+    # separate, external HTTPS service without an API key (ipwho.is); the
+    # lookup runs in the background and never blocks a request. Disabling it
+    # only skips the network call — the IP addresses are still stored.
+    geoip_enabled: bool = True
+    geoip_url: str = "https://ipwho.is"
+    geoip_timeout_seconds: float = 2.0
     max_landing_media_bytes: int = 50 * 1024 * 1024
     max_game_build_bytes: int = 500 * 1024 * 1024
 

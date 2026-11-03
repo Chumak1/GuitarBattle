@@ -74,6 +74,14 @@ class GameLaunchResponse(BaseModel):
     id: UUID
 
 
+class StatisticsCountryItem(BaseModel):
+    """One country of registration in the overview top list."""
+
+    code: str
+    name: str | None = None
+    users: int
+
+
 class StatisticsOverview(BaseModel):
     generated_at: datetime
     users_total: int
@@ -84,6 +92,9 @@ class StatisticsOverview(BaseModel):
     avg_session_seconds: int
     launches_total: int
     launches_24h: int
+    # Additive: the ten countries with the most accounts, most players first.
+    # Empty for a database that has no resolved countries yet.
+    countries: list[StatisticsCountryItem] = Field(default_factory=list)
 
 
 class UserPlatform(BaseModel):
@@ -126,6 +137,18 @@ class StatisticsUserItem(BaseModel):
     # older admin clients that ignore the field keep working.
     platforms: list[UserPlatform] = Field(default_factory=list)
     last_platform: str | None = None
+    # Country of registration (additive). Resolved server-side from the IP the
+    # account was created with; NULL for accounts created before migration
+    # 0019, so the admin panel renders "—". ``country_flag`` is the emoji for
+    # ``country_code``, computed here so every admin client shows the same
+    # thing.
+    country_code: str | None = None
+    country_name: str | None = None
+    country_flag: str | None = None
+    # The public addresses the account was registered from and last signed in
+    # from. Shown in the admin tooltip only.
+    registration_ip: str | None = None
+    last_login_ip: str | None = None
 
 
 class StatisticsUserList(BaseModel):

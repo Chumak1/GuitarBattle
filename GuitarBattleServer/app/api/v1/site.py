@@ -27,6 +27,7 @@ from app.schemas.site import (
     LandingResponse,
     SiteContacts,
 )
+from app.services.client_ip import client_ip
 from app.services.contacts import contacts_update_from_content, public_contacts
 from app.services.game_builds import (
     DEFAULT_BUILD_ARTIFACT,
@@ -293,21 +294,6 @@ def download_game_update(
         media_type=build.content_type or "application/zip",
         filename=build.filename or target.name,
     )
-
-
-def client_ip(request: Request) -> str | None:
-    """Best-effort client address behind Caddy.
-
-    Caddy appends the real peer to ``X-Forwarded-For``; the first entry is the
-    original client. The header is only trusted because the API listens on the
-    loopback interface and is reachable exclusively through the proxy.
-    """
-    forwarded = request.headers.get("x-forwarded-for")
-    if forwarded:
-        first = forwarded.split(",", 1)[0].strip()
-        if first:
-            return first
-    return request.client.host if request.client is not None else None
 
 
 @router.get("/geo", response_model=GeoResponse, summary="Country and language by IP")

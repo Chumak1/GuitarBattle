@@ -19,6 +19,7 @@ from app.models.game_session import GameSession, Score
 from app.models.song import Song
 from app.models.user import User
 from app.schemas.statistics import (
+    StatisticsCountryItem,
     StatisticsGameItem,
     StatisticsGameList,
     StatisticsOverview,
@@ -26,6 +27,7 @@ from app.schemas.statistics import (
     StatisticsUserList,
     UserPlatform,
 )
+from app.services.geolocation import country_flag
 from app.services.platforms import normalize_platform
 
 router = APIRouter(prefix="/admin/statistics", tags=["admin: statistics"])
@@ -166,6 +168,22 @@ def statistics_overview(
         or 0
     )
 
+    # One grouped query for the whole top list: no per-country round trip.
+    # Grouping by the code alone keeps a provider rename from splitting one
+    # country into two rows.
+    country_count = func.count(User.id).label("users")
+    country_rows = db.execute(
+        select(
+            User.country_code,
+            func.max(User.country_name).label("country_name"),
+            country_count,
+        )
+        .where(User.country_code.is_not(None))
+        .group_by(User.country_code)
+        .order_by(country_count.desc(), User.country_code.asc())
+        .limit(10)
+    ).all()
+
     return StatisticsOverview(
         generated_at=now,
         users_total=int(users_total),
@@ -178,6 +196,14 @@ def statistics_overview(
         ),
         launches_total=int(launches_total),
         launches_24h=int(launches_24h),
+        countries=[
+            StatisticsCountryItem(
+                code=row.country_code,
+                name=row.country_name,
+                users=int(row.users or 0),
+            )
+            for row in country_rows
+        ],
     )
 
 
@@ -203,6 +229,13 @@ def statistics_users(
     ),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    country: str | None = Query(
+        default=None,
+        min_length=2,
+        max_length=2,
+        pattern=r"^[A-Za-z]{2}$",
+        description="ISO 3166-1 alpha-2 country code of the registration (RU)",
+    ),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> StatisticsUserList:
@@ -215,7 +248,8 @@ def statistics_users(
 
     ``platforms`` is filled by one grouped query for the users on the current
     page (see :func:`_platforms_by_user`), so it adds a single round trip no
-    matter how many rows are returned.
+    matter how many rows are returned. ``country`` filters on the country of
+    registration and is a plain equality on the indexed ``country_code``.
     """
     session_agg = (
         select(
@@ -288,6 +322,9 @@ def statistics_users(
     conditions = []
     if search:
         conditions.append(_search_filter(search.strip()))
+    if country:
+        # Stored upper-case; accept lower-case input from the admin URL.
+        conditions.append(User.country_code == country.strip().upper())
 
     stmt = (
         select(
@@ -297,6 +334,10 @@ def statistics_users(
             User.email,
             User.is_active,
             User.created_at,
+            User.country_code,
+            User.country_name,
+            User.registration_ip,
+            User.last_login_ip,
             User.level,
             User.xp_total,
             app_seconds.label("app_seconds_total"),
@@ -346,6 +387,11 @@ def statistics_users(
                 xp_total=int(row.xp_total or 0),
                 platforms=platforms,
                 last_platform=platforms[0].name if platforms else None,
+                country_code=row.country_code,
+                country_name=row.country_name,
+                country_flag=country_flag(row.country_code),
+                registration_ip=row.registration_ip,
+                last_login_ip=row.last_login_ip,
             )
         )
     return StatisticsUserList(items=items, total=int(total), limit=limit, offset=offset)

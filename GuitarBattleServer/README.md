@@ -290,15 +290,20 @@ Administrator-only aggregates (`Bearer` with `is_admin`):
 
 - `GET /admin/statistics/overview?days=30` — `users_total`, `users_active_24h`,
   `users_active_7d`, `sessions_total`, `app_seconds_total`, `avg_session_seconds`,
-  `launches_total`, `launches_24h`, `generated_at`. `days` (1–365) limits sessions
-  and launches; `users_total` always counts all accounts. Activity is a heartbeat
-  or a launch inside the window.
-- `GET /admin/statistics/users?search=&sort=last_seen&order=desc&limit=50&offset=0`
+  `launches_total`, `launches_24h`, `generated_at`, plus `countries` (top ten
+  countries of registration as `{code, name, users}`, most players first). `days`
+  (1–365) limits sessions and launches; `users_total` always counts all accounts.
+  Activity is a heartbeat or a launch inside the window.
+- `GET /admin/statistics/users?search=&country=&sort=last_seen&order=desc&limit=50&offset=0`
   — one row per account: `user_id`, `username`, `display_name`, `email`,
   `is_active`, `created_at`, `app_seconds_total`, `sessions_count`,
   `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`,
-  `scores_count`, `best_score`, plus `total`/`limit`/`offset`.
+  `scores_count`, `best_score`, `country_code`, `country_name`, `country_flag`,
+  `registration_ip`, `last_login_ip`, plus `total`/`limit`/`offset`.
   `search` is a case-insensitive substring of username, display name or email.
+  `country` is an ISO 3166-1 alpha-2 filter (any case) on the country of
+  registration. The five country/IP fields are additive and `null` for accounts
+  created before migration `0019`; the admin table renders “—”.
   `sort` is one of `last_seen`, `username`, `display_name`, `email`, `created_at`,
   `app_seconds`, `sessions_count`, `launches_count`, `scores_count`;
   `order` is `asc` or `desc` and defaults to `asc` for the text columns and
@@ -321,10 +326,26 @@ A session's duration is `coalesce(ended_at, last_seen_at) - started_at`, clamped
 at zero, so a crashed client still produces usable numbers. All aggregates are
 computed in SQL (grouped subqueries joined once per request), never per row.
 
+The country of registration is resolved server-side from the public IP of the
+sign-up (and, while it is still unknown, of the next sign-in) through the free
+`https://ipwho.is` service — no API key. `users.registration_ip` and
+`users.last_login_ip` store the public address (`INET`), while `country_code`,
+`country_name` and `country_checked_at` store the answer. The lookup runs as a
+FastAPI background task with its own database session: registration and sign-in
+never wait for it or fail because of it, and a failed lookup leaves the country
+columns `NULL`, so the next sign-in retries. Successful answers are cached
+in-process for 24 hours (at most 1024 entries); failures are not cached.
+`GEOIP_ENABLED=false` skips the network call while still storing IPs;
+`GEOIP_URL` and `GEOIP_TIMEOUT_SECONDS` override the provider and the
+two-second timeout. Private, loopback, link-local, multicast and malformed
+addresses are never stored, and full IP addresses are never written to logs.
+
 The admin UI for these numbers is the «Статистика» tab of `/admin/`
 (`app/static/admin/admin-statistics.js`), not a standalone page. Table headers
 sort server-side (click toggles asc/desc, ▲/▼ marks the active column), the
 Scores column shows the number of results with the personal best underneath,
+the «Страна» column shows the flag and country name (or “—” for old accounts,
+with both IPs in the tooltip), a country filter sits next to the search field,
 and each row has a delete button (confirmation shows the login and email; the
 signed-in administrator's own row is disabled).
 
@@ -493,6 +514,13 @@ repairs the 27.10 19:26–19:31 bad uploads: every file created at or after
 becomes the active version again, and `songs.version` is bumped for every song
 whose published asset set changed (the client caches downloads by that number).
 Downgrade drops the index and the column; archived versions are not restored.
+
+Migration `0019_user_country` adds the nullable `users.registration_ip` and
+`users.last_login_ip` (`INET`), `users.country_code` (`VARCHAR(2)`),
+`users.country_name` (`VARCHAR(64)`), `users.country_checked_at`
+(`TIMESTAMP WITH TIME ZONE`) and the `ix_users_country_code` index. There is no
+backfill: existing accounts keep `NULL` and the admin panel shows “—”. Downgrade
+drops the index and all five columns.
 
 
 ### Глобальный рейтинг игроков
