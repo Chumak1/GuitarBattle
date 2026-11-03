@@ -3,7 +3,7 @@
 ; Non-commercial use only.
 
 #define MyAppName "FretFight"
-#define MyAppVersion "1.1.11"
+#define MyAppVersion "1.1.12"
 #define MyAppPublisher "ChumakEvgeny"
 #define MyAppURL "https://fretfight.online/"
 #define MyAppExeName "GuitarBattle.exe"
