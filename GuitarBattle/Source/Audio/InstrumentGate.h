@@ -142,9 +142,10 @@ public:
                           * msPerBlock;
 
         // A loud previous note can mask the attack: the detector then locks
-        // onto its tail and the "attack" would look slow. Do not reject on a
-        // measurement that starts well above the noise.
-        if (envelope[static_cast<size_t> (onsetBlock)] >= postPeak * 0.45)
+        // onto its tail and the "attack" would look slow. When the detected
+        // onset is already a third of the attack peak, the measurement is not
+        // trustworthy, so do not reject on it.
+        if (envelope[static_cast<size_t> (onsetBlock)] >= postPeak * 0.32)
             result.attackMs = 0.0;
 
         // Level trend just before the detected onset. A voice has been
