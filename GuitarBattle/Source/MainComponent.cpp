@@ -190,6 +190,12 @@ MainComponent::MainComponent()
 
 void MainComponent::timerCallback()
 {
+    // The live guitar monitor is silent on the sign-in / registration screen:
+    // only the background music is heard there. The audio callback reads this
+    // atomic, so the state is mirrored here on the message thread.
+    if (guitarMonitoringAllowed.load(std::memory_order_relaxed) == showAuthScreen)
+        guitarMonitoringAllowed.store(! showAuthScreen, std::memory_order_relaxed);
+
     // A downloaded sound pack is applied only while the audio device is idle.
     if (pendingClientAssetsReload)
         applyPendingClientAssetsReload();

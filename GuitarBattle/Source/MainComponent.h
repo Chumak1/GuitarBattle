@@ -653,6 +653,10 @@ private:
     juce::Label liveGuitarVolumeLabel;
     std::atomic<bool> liveGuitarEnabled{ true };
     std::atomic<float> liveGuitarVolume{ 0.5f };
+    // The guitar input is monitored only after sign-in: the login/registration
+    // screen must play background music alone. Written on the message thread
+    // from showAuthScreen, read by the audio callback (realtime-safe).
+    std::atomic<bool> guitarMonitoringAllowed{ false };
 
     juce::TextButton midiBackingButton{ "SOLO GTR OFF" };
     juce::Slider midiBackingVolumeSlider;

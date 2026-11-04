@@ -1537,16 +1537,20 @@ void MainComponent::getNextAudioBlock(
     //
     // The fader sits after the VST insert so the plugin always receives the
     // same dry input, and after the distortion stage below so DRIVE keeps its
-    // character at any monitoring level. Outside a round the guitar stays
-    // audible (the mixer is visible while paused), so the gain is applied
-    // before the preview/background music is added and never scales it.
+    // character at any monitoring level. The monitor is muted while the
+    // sign-in/registration screen is up (background music only there); once
+    // the player is in the main menu it follows the mixer as before.
     //
-    // Realtime safety: two relaxed atomic loads and preallocated buffer
+    // Realtime safety: relaxed atomic loads and preallocated buffer
     // arithmetic; no allocation, locks or I/O.
 
     auto applyLiveGuitarGain = [this, &bufferToFill, outputChannelCount]()
     {
-        const float gain = liveGuitarEnabled.load(std::memory_order_relaxed)
+        const bool monitoring =
+            liveGuitarEnabled.load(std::memory_order_relaxed)
+            && guitarMonitoringAllowed.load(std::memory_order_relaxed);
+
+        const float gain = monitoring
             ? liveGuitarVolume.load(std::memory_order_relaxed)
             : 0.0f;
 
