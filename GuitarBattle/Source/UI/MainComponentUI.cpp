@@ -2786,6 +2786,8 @@ public:
     AudioSettingsPanel(juce::AudioDeviceManager& manager,
                        int initialInputChannel,
                        std::function<void(int)> onInputChannelChanged,
+                       bool initialGuitarInputOnly,
+                       std::function<void(bool)> onGuitarInputOnlyChanged,
                        float initialBackgroundVolume,
                        bool initialBackgroundEnabled,
                        std::function<void(float)> onBackgroundVolumeChanged,
@@ -2793,6 +2795,7 @@ public:
         : selector(manager, 0, 32, 0, 2, false, false, true, false),
           deviceManager(manager),
           inputChannelChanged(onInputChannelChanged),
+          guitarInputOnlyChanged(onGuitarInputOnlyChanged),
           backgroundVolumeChanged(onBackgroundVolumeChanged),
           backgroundEnabledChanged(onBackgroundEnabledChanged)
     {
@@ -2800,6 +2803,45 @@ public:
         addAndMakeVisible(selector);
         addAndMakeVisible(inputChannelLabel);
         addAndMakeVisible(inputChannelBox);
+
+        // Guitar-only input filter. A voice at the chart's pitch is detected
+        // exactly like a guitar note, so the client rejects non-plucked
+        // attacks. The switch lives here because an unusual tone may need the
+        // gate off.
+        inputFilterLabel.setText("INPUT FILTER", juce::dontSendNotification);
+        inputFilterLabel.setJustificationType(juce::Justification::centredLeft);
+        inputFilterLabel.setColour(juce::Label::textColourId, UiColors::text);
+        inputFilterLabel.setFont(juce::FontOptions().withHeight(12.0f).withStyle("Bold"));
+        addAndMakeVisible(inputFilterLabel);
+
+        inputFilterToggle.setClickingTogglesState(true);
+        inputFilterToggle.setToggleState(initialGuitarInputOnly,
+                                         juce::dontSendNotification);
+        inputFilterToggle.setButtonText(initialGuitarInputOnly ? "GUITAR ONLY"
+                                                               : "ANY INPUT");
+        inputFilterToggle.setTooltip(
+            "Ignore singing and other instruments. The detector expects a "
+            "plucked string. Turn this off if your guitar is not recognised.");
+        inputFilterToggle.setColour(juce::TextButton::buttonOnColourId,
+                                    UiColors::accentStrong);
+        inputFilterToggle.setColour(juce::TextButton::textColourOnId,
+                                    UiColors::onAccent);
+        inputFilterToggle.onClick = [this]
+        {
+            const bool only = inputFilterToggle.getToggleState();
+            inputFilterToggle.setButtonText(only ? "GUITAR ONLY" : "ANY INPUT");
+
+            if (guitarInputOnlyChanged)
+                guitarInputOnlyChanged(only);
+        };
+        addAndMakeVisible(inputFilterToggle);
+
+        inputFilterStatusLabel.setText("Rejects voice and other instruments.",
+                                       juce::dontSendNotification);
+        inputFilterStatusLabel.setJustificationType(juce::Justification::centredLeft);
+        inputFilterStatusLabel.setColour(juce::Label::textColourId, UiColors::muted);
+        inputFilterStatusLabel.setFont(juce::FontOptions().withHeight(11.0f));
+        addAndMakeVisible(inputFilterStatusLabel);
 
         // Background music controls: one global loop for the non-game screens.
         backgroundLabel.setText("BACKGROUND MUSIC", juce::dontSendNotification);
@@ -2948,7 +2990,7 @@ public:
 
         g.setColour(UiColors::muted);
         g.setFont(GameUi::font(13.0f));
-        g.drawText("Choose your guitar input, buffer size and menu music.",
+        g.drawText("Choose your guitar input, input filter, buffer size and menu music.",
                    48, 59, getWidth() - 80, 24, juce::Justification::centredLeft);
 
         GameUi::drawPill(g,
@@ -2980,6 +3022,10 @@ public:
 
         selector.setBounds(30, 164, getWidth() - 60,
                            juce::jmax(80, getHeight() - 324));
+        inputFilterLabel.setBounds(30, getHeight() - 150, 130, 24);
+        inputFilterToggle.setBounds(168, getHeight() - 152, 132, 28);
+        inputFilterStatusLabel.setBounds(310, getHeight() - 150,
+                                         getWidth() - 340, 24);
         bufferLabel.setBounds(30, getHeight() - 110, 130, 24);
         bufferBox.setBounds(168, getHeight() - 112, 200, 28);
         bufferStatusLabel.setBounds(380, getHeight() - 112, getWidth() - 410, 28);
@@ -3076,10 +3122,14 @@ private:
     juce::AudioDeviceSelectorComponent selector;
     juce::AudioDeviceManager& deviceManager;
     std::function<void(int)> inputChannelChanged;
+    std::function<void(bool)> guitarInputOnlyChanged;
     std::function<void(float)> backgroundVolumeChanged;
     std::function<void(bool)> backgroundEnabledChanged;
     juce::Label inputChannelLabel;
     juce::ComboBox inputChannelBox;
+    juce::Label inputFilterLabel;
+    juce::TextButton inputFilterToggle;
+    juce::Label inputFilterStatusLabel;
     juce::Label bufferLabel;
     juce::ComboBox bufferBox;
     juce::Label bufferStatusLabel;
@@ -6476,6 +6526,11 @@ void MainComponent::initialiseUi()
                     [this](int channel)
                     {
                         setPreferredInputChannel(channel);
+                    },
+                    guitarInputOnly.load(std::memory_order_relaxed),
+                    [this](bool only)
+                    {
+                        setGuitarInputOnly(only);
                     },
                     backgroundMusicVolume.load(std::memory_order_relaxed),
                     backgroundMusicEnabled.load(std::memory_order_relaxed),

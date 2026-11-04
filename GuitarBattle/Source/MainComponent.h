@@ -767,10 +767,15 @@ private:
     std::atomic<int> inputMeterHardwareChannel{ -1 };
     // Detector sensitivity, 0..1, 0.5 = original thresholds.
     std::atomic<float> inputSensitivity{ 0.5f };
+    // Reject singing and other non-guitar input. On by default; the audio
+    // settings dialog exposes it because an unusual tone may need to bypass
+    // the pluck gate. Read by the pitch-analysis thread only.
+    std::atomic<bool> guitarInputOnly{ true };
 
     std::unique_ptr<GuitarInputMonitor> inputMonitor;
 
     void setInputSensitivity(float normalised);
+    void setGuitarInputOnly(bool only);
     void updateInputMonitor();
 
     //==========================================================================

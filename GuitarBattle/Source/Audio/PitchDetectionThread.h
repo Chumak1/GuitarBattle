@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include "../MainComponent.h"
+#include "InstrumentGate.h"
 
 // Dedicated audio-analysis and gameplay worker, extracted from MainComponent.
 class PitchDetectionThread : public juce::Thread
@@ -209,19 +210,67 @@ public:
                         && risingAttack
                         && enoughTimeSincePreviousOnset;
 
+                    //==========================================================
+                    // Guitar-only input filter
+                    //
+                    // A voice at the chart's pitch is detected exactly like a
+                    // guitar note. The gate looks at the attack and at the
+                    // level trend of the analysis frame, which is where a
+                    // plucked string differs from a sung note. It runs on this
+                    // thread only; the audio callback never touches it.
+                    const bool guitarOnly =
+                        owner.guitarInputOnly.load(std::memory_order_relaxed);
+
+                    InstrumentGate::OnsetAnalysis onsetAnalysis;
+
+                    if (guitarOnly && onset)
+                        onsetAnalysis = instrumentGate.analyseOnset(
+                            blockSamples,
+                            numAnalysisSamples,
+                            sampleRate,
+                            onsetOffset,
+                            rms);
+
+                    // A voice-like attack must not score, move the tuner or
+                    // advance practice. Without an onset the filter is judged
+                    // by the sustained-note state instead (tuner path).
+                    const bool pluckAccepted =
+                        ! guitarOnly || ! onset || onsetAnalysis.pluck;
+
+                    const auto frameEndSample =
+                        analysisSample
+                        + static_cast<uint64_t>(numAnalysisSamples);
+
+                    instrumentGate.pushFrame(
+                        frameEndSample,
+                        rms,
+                        sampleRate,
+                        onset && pluckAccepted,
+                        detectedOnsetSample);
+
+                    const bool sustainAccepted =
+                        ! guitarOnly
+                        || instrumentGate.acceptsSustain(frameEndSample, rms);
+
+                    if (! owner.tunerActive.load(std::memory_order_relaxed))
+                        tunerRejectedShown = false;
+
                     if (onset)
                     {
                         owner.noteOn.store(
-                            true,
+                            pluckAccepted,
                             std::memory_order_relaxed);
 
                         owner.lastOnsetSample.store(
                             detectedOnsetSample,
                             std::memory_order_relaxed);
 
-                        owner.lastNoteOnSample.store(
-                            analysisSample,
-                            std::memory_order_relaxed);
+                        // Practice timing must only follow a real pluck: a
+                        // rejected vocal attack must not schedule the hold.
+                        if (pluckAccepted)
+                            owner.lastNoteOnSample.store(
+                                analysisSample,
+                                std::memory_order_relaxed);
                     }
 
 
@@ -233,7 +282,8 @@ public:
                     if (owner.practiceActive.load(std::memory_order_relaxed)
                         && pitch > MainComponent::minDetectedPitchHz
                         && pitch <= MainComponent::maxDetectedPitchHz
-                        && rms >= noteRmsGate)
+                        && rms >= noteRmsGate
+                        && sustainAccepted)
                     {
                         owner.practiceLastPitch.store(
                             pitch, std::memory_order_relaxed);
@@ -249,18 +299,53 @@ public:
 
 
 
-                    if (pitch > MainComponent::minDetectedPitchHz
+                    const bool tunerActive =
+                        owner.tunerActive.load(std::memory_order_relaxed);
+
+                    // An attack is judged by how it starts; a sustained frame
+                    // (the tuner) by the recent pluck and the level trend.
+                    const bool inputAccepted =
+                        onset ? pluckAccepted : sustainAccepted;
+
+                    const bool noteLevelValid =
+                        pitch > MainComponent::minDetectedPitchHz
                         && pitch <= MainComponent::maxDetectedPitchHz
-                        && rms >= noteRmsGate
-                        && (onset || owner.tunerActive.load(std::memory_order_relaxed)))
+                        && rms >= noteRmsGate;
+
+                    // Loud input that the gate rejects: in the tuner, say so
+                    // once instead of silently freezing the last reading.
+                    if (tunerActive && noteLevelValid && ! inputAccepted
+                        && ! tunerRejectedShown)
+                    {
+                        tunerRejectedShown = true;
+
+                        juce::MessageManager::callAsync([this]
+                        {
+                            owner.tunerDetectedString = -1;
+                            owner.tunerFrequency = 0.0;
+                            owner.tunerCents = 0.0;
+                            owner.tunerNoteLabel.setText("---", juce::dontSendNotification);
+                            owner.tunerFrequencyLabel.setText("--- Hz", juce::dontSendNotification);
+                            owner.tunerStringLabel.setText("---", juce::dontSendNotification);
+                            owner.tunerCentsLabel.setText("--- cents", juce::dontSendNotification);
+                            owner.tunerStatusLabel.setText("PLUCK A STRING", juce::dontSendNotification);
+                            owner.tunerStatusLabel.setColour(juce::Label::textColourId, UiColors::blue);
+                            owner.repaint();
+                            owner.overlayComponent.repaint();
+                        });
+                    }
+
+                    if (noteLevelValid
+                        && (onset || tunerActive)
+                        && inputAccepted)
                     {
                         owner.lastPitch = pitch;
+                        tunerRejectedShown = false;
 
                         //======================================================
                         // Tuner mode
 
-                        if (owner.tunerActive.load(
-                            std::memory_order_relaxed))
+                        if (tunerActive)
                         {
                             const int stringIndex =
                                 owner.tuner.detectString(
@@ -931,9 +1016,19 @@ public:
 
                     juce::ignoreUnused(onset);
 
+                    const bool displayAccepted =
+                        ! owner.guitarInputOnly.load(std::memory_order_relaxed)
+                        || instrumentGate.acceptsSustain(
+                               owner.pitchAnalysisStartSample2.load(
+                                   std::memory_order_relaxed)
+                                   + static_cast<uint64_t>(
+                                       owner.pitchAnalysisBuffer2.getNumSamples()),
+                               rms);
+
                     if (pitch > MainComponent::minDetectedPitchHz
                         && pitch <= MainComponent::maxDetectedPitchHz
-                        && rms >= displayNoteGate)
+                        && rms >= displayNoteGate
+                        && displayAccepted)
                     {
                         const auto detectedNote =
                             owner.pitchDetector.frequencyToNote(
@@ -968,4 +1063,8 @@ public:
 
 private:
     MainComponent& owner;
+    // Voice / non-guitar rejection for the note being analysed. Only touched
+    // from run(); the audio callback never sees it.
+    InstrumentGate instrumentGate;
+    bool tunerRejectedShown = false;
 };

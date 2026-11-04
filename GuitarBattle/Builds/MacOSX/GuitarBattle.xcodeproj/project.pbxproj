@@ -95,6 +95,7 @@
 		04B0905AFED24B920A928269 /* VstPanel.cpp */ /* VstPanel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = VstPanel.cpp; path = ../../Source/UI/VstPanel.cpp; sourceTree = SOURCE_ROOT; };
 		054E3717B85CE9AFA6794013 /* Metal.framework */ /* Metal.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Metal.framework; path = System/Library/Frameworks/Metal.framework; sourceTree = SDKROOT; };
 		09B63FAA06BBB79295D89CDA /* include_juce_graphics_libpng.c */ /* include_juce_graphics_libpng.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = include_juce_graphics_libpng.c; path = ../../JuceLibraryCode/include_juce_graphics_libpng.c; sourceTree = SOURCE_ROOT; };
+		09E321B0B4FD7B6E6A9B6748 /* InstrumentGate.h */ /* InstrumentGate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = InstrumentGate.h; path = ../../Source/Audio/InstrumentGate.h; sourceTree = SOURCE_ROOT; };
 		0A1405F76BFD702119DADF01 /* SelectComponent.h */ /* SelectComponent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = SelectComponent.h; path = ../../Source/UI/SelectComponent.h; sourceTree = SOURCE_ROOT; };
 		0DB3B75F0AA1255C401B209B /* AppIcon.icns */ /* AppIcon.icns */ = {isa = PBXFileReference; lastKnownFileType = file.icns; name = AppIcon.icns; path = AppIcon.icns; sourceTree = SOURCE_ROOT; };
 		102BDA657831C3D330C017B5 /* GameSession.h */ /* GameSession.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = GameSession.h; path = ../../Source/Gameplay/GameSession.h; sourceTree = SOURCE_ROOT; };
@@ -250,6 +251,7 @@
 				AACDBB26E77DB0971881DDD5,
 				F215F22142BCED170B202142,
 				9B5525D391674B1AF0CA8A60,
+				09E321B0B4FD7B6E6A9B6748,
 				CB50024A03CB264C49870EC4,
 				32F7EFA4364F93467BE3ADFB,
 				27E415AD290DF1FBF7D047CA,
@@ -732,8 +734,8 @@
 					"JUCE_STANDALONE_APPLICATION=1",
 					"JUCE_USE_MP3AUDIOFORMAT=1",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
-					"JUCE_APP_VERSION=1.1.13",
-					"JUCE_APP_VERSION_HEX=0x1010d",
+					"JUCE_APP_VERSION=1.1.14",
+					"JUCE_APP_VERSION_HEX=0x1010e",
 					"JucePlugin_Build_VST=0",
 					"JucePlugin_Build_VST3=0",
 					"JucePlugin_Build_AU=0",
@@ -808,8 +810,8 @@
 					"JUCE_STANDALONE_APPLICATION=1",
 					"JUCE_USE_MP3AUDIOFORMAT=1",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
-					"JUCE_APP_VERSION=1.1.13",
-					"JUCE_APP_VERSION_HEX=0x1010d",
+					"JUCE_APP_VERSION=1.1.14",
+					"JUCE_APP_VERSION_HEX=0x1010e",
 					"JucePlugin_Build_VST=0",
 					"JucePlugin_Build_VST3=0",
 					"JucePlugin_Build_AU=0",

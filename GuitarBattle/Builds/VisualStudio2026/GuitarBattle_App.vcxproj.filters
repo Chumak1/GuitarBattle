@@ -4263,6 +4263,9 @@
     <ClInclude Include="..\..\Source\Audio\PitchDetector.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\Audio\InstrumentGate.h">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\Audio\MusicTrackPlayer.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>

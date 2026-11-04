@@ -57,6 +57,17 @@ void MainComponent::setInputSensitivity(float normalised)
         inputMonitor->setSensitivityNormalised(normalised);
 }
 
+void MainComponent::setGuitarInputOnly(bool only)
+{
+    guitarInputOnly.store(only, std::memory_order_relaxed);
+
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        settings->setValue("GuitarInputOnly", only);
+        settings->saveIfNeeded();
+    }
+}
+
 void MainComponent::updateInputMonitor()
 {
     if (inputMonitor == nullptr)
