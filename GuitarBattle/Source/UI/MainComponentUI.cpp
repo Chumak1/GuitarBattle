@@ -2672,8 +2672,12 @@ void MainComponent::resized()
         const int targetX = width - 24 - targetW;
         const int statsX = pitchX + pitchW + hudGap;
         const int statsW = juce::jmax(180, targetX - hudGap - statsX);
-        juce::ignoreUnused(statsW);
-        juce::ignoreUnused(statsW);
+
+        // The judgement counters are painted by paintOverlay(), not by a Label.
+        // Remember their area so the timer can invalidate exactly that strip
+        // when a note is judged instead of repainting the whole window (which
+        // also redraws the tablature and makes dense songs stutter).
+        hudStatsBounds = juce::Rectangle<int>(statsX, hudY, statsW, hudH);
 
         comboLabel.setBounds(comboX + 8, hudY + 32, comboW - 16, 46);
         pitchLabel.setBounds(pitchX + 10, hudY + 32, pitchW - 20, 46);
@@ -2718,6 +2722,12 @@ void MainComponent::resized()
         hitLabel.setBounds(24 + 24, bottomY + 34, judgementW - 48, bottomH - 44);
         gameSessionLabel.setBounds(scoreX + 16, bottomY + 24,
                                    width - 24 - scoreX - 32, bottomH - 30);
+
+        // Same geometry paintOverlay() uses for the ACCURACY value and the
+        // "hits / total NOTES" line, with a small margin for antialiasing.
+        const int accuracyX = 24 + judgementW;
+        hudAccuracyBounds = juce::Rectangle<int>(accuracyX + 16, bottomY + 26,
+                                                200, juce::jmax(0, bottomH - 38));
     }
 }
 

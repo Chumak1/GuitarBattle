@@ -193,6 +193,39 @@ void MainComponent::timerCallback()
     // smoothing / peak hold. Message thread only.
     updateInputMonitor();
 
+    // A build found by the launch check is offered only on the main screen:
+    // never over the sign-in card, a song, or another modal dialog.
+    if (updatePromptPending
+        && gameState == GameState::SongSelect
+        && ! showAuthScreen
+        && juce::ModalComponentManager::getInstance()->getNumModalComponents() == 0)
+    {
+        showUpdatePrompt();
+    }
+
+    // The live accuracy and the judgement strip are drawn by paintOverlay().
+    // Repainting a Label only invalidates its own small area, so the overlay
+    // has to be invalidated explicitly whenever a counter changes. Only the
+    // two painted stat areas are invalidated: a full overlay repaint would
+    // also redraw the tablature on every hit.
+    if (gameState == GameState::Playing)
+    {
+        const int hits = gameplayStats.getHitCount();
+        const int misses = gameplayStats.getMissCount();
+
+        if (hits != hudShownHits || misses != hudShownMisses)
+        {
+            hudShownHits = hits;
+            hudShownMisses = misses;
+
+            if (! hudStatsBounds.isEmpty())
+                overlayComponent.repaint(hudStatsBounds.expanded(2));
+
+            if (! hudAccuracyBounds.isEmpty())
+                overlayComponent.repaint(hudAccuracyBounds.expanded(2));
+        }
+    }
+
     // Single place that decides whether preview or background music may play.
     // Idempotent, so screen changes never restart the track.
     updateMusicState();

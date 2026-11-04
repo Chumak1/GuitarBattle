@@ -2219,6 +2219,7 @@ void MainComponent::checkForUpdatesOnLaunch()
             juce::String effectiveUrl = downloadUrl;
             juce::String effectiveName = download.getProperty ("filename", {}).toString();
             auto effectiveSize = static_cast<juce::int64> (download.getProperty ("size_bytes", 0));
+            auto releaseNotes = download.getProperty ("release_notes", {}).toString();
             bool installerMode = false;
 
            #if JUCE_WINDOWS
@@ -2250,18 +2251,90 @@ void MainComponent::checkForUpdatesOnLaunch()
                         effectiveName = installer.getProperty ("filename", {}).toString();
                         effectiveSize = static_cast<juce::int64> (
                             installer.getProperty ("size_bytes", 0));
+                        releaseNotes = installer.getProperty ("release_notes", {}).toString();
                         installerMode = true;
                     }
                 }
             }
            #endif
 
-            self->startAutomaticUpdate (remoteVersion,
-                                        effectiveUrl,
-                                        effectiveName,
-                                        effectiveSize,
-                                        installerMode);
+            // Never install behind the player's back: the prompt shows the
+            // version and the admin-written release notes, and only the
+            // "Update now" button starts the download.
+            self->updatePromptVersion = remoteVersion;
+            self->updatePromptUrl = effectiveUrl;
+            self->updatePromptFilename = effectiveName;
+            self->updatePromptSize = effectiveSize;
+            self->updatePromptNotes = releaseNotes;
+            self->updatePromptInstallerMode = installerMode;
+            self->updatePromptPending = true;
         });
+}
+
+void MainComponent::showUpdatePrompt()
+{
+    if (! updatePromptPending || updateDownloadInProgress)
+        return;
+
+    // Clear the flag first: the dialog callback runs later, and a second
+    // timer tick must not open another prompt.
+    updatePromptPending = false;
+
+    const auto version = updatePromptVersion;
+    const auto url = updatePromptUrl;
+    const auto filename = updatePromptFilename;
+    const auto size = updatePromptSize;
+    const auto installerMode = updatePromptInstallerMode;
+
+    auto notes = updatePromptNotes.trim();
+
+    if (notes.isEmpty())
+        notes = "Bug fixes and stability improvements.";
+
+    // The admin field allows 8000 characters; an alert window cannot show a
+    // whole changelog, so keep the beginning and cut on a line boundary.
+    constexpr int maxNotesLength = 1200;
+
+    if (notes.length() > maxNotesLength)
+    {
+        auto shortened = notes.substring (0, maxNotesLength);
+        const int lastLine = shortened.lastIndexOfChar ('\n');
+
+        if (lastLine > maxNotesLength / 2)
+            shortened = shortened.substring (0, lastLine);
+
+        notes = shortened.trimEnd() + "\n...";
+    }
+
+    juce::String message;
+    message << "FretFight " << version << " is ready to install.\n\n"
+            << "What's new:\n"
+            << notes << "\n\n"
+            << (installerMode
+                    ? "The game will close, run the installer and start again. "
+                      "Your settings and scores are kept."
+                    : "The game will download the update, restart and keep your settings and scores.");
+
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+
+    auto options = juce::MessageBoxOptions()
+                       .withIconType (juce::MessageBoxIconType::InfoIcon)
+                       .withTitle ("Update available")
+                       .withMessage (message)
+                       .withButton ("Update now")
+                       .withButton ("Later")
+                       .withAssociatedComponent (this);
+
+    // With two buttons the first one returns 1 and the second one (or a
+    // dismissed window) returns 0.
+    juce::AlertWindow::showAsync (options, [safeThis, version, url, filename, size, installerMode] (int result)
+    {
+        if (result != 1)
+            return; // "Later": the next launch offers the update again
+
+        if (auto* self = safeThis.getComponent())
+            self->startAutomaticUpdate (version, url, filename, size, installerMode);
+    });
 }
 
 void MainComponent::startAutomaticUpdate (const juce::String& version,

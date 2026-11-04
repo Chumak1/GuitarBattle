@@ -384,8 +384,29 @@ private:
                               bool installerMode = false);
     void applyDownloadedUpdate(const juce::File& downloadedFile);
     void runDownloadedInstaller(const juce::File& installerFile);
+    // A newer build found at launch is announced, never installed silently:
+    // the player sees the version, the release notes and two buttons. The
+    // prompt waits for the main screen so it cannot cover the sign-in card.
+    void showUpdatePrompt();
     bool updateCheckStarted = false;
     bool updateDownloadInProgress = false;
+    bool updatePromptPending = false;
+    juce::String updatePromptVersion;
+    juce::String updatePromptUrl;
+    juce::String updatePromptFilename;
+    juce::String updatePromptNotes;
+    juce::int64 updatePromptSize = 0;
+    bool updatePromptInstallerMode = false;
+    // Last hit/miss counts the overlay painted. The live accuracy and the
+    // judgement strip live in paintOverlay(), which a label repaint does not
+    // invalidate, so the timer compares these and repaints on a change.
+    int hudShownHits = -1;
+    int hudShownMisses = -1;
+    // Areas of the gameplay HUD whose painted values change during a run.
+    // resized() fills them; the timer repaints only these, so a hit never
+    // forces a full-window (and tablature) repaint.
+    juce::Rectangle<int> hudStatsBounds;
+    juce::Rectangle<int> hudAccuracyBounds;
     // All server communication is asynchronous: requests run on this client's
     // worker threads and their results arrive on the message thread.
     ApiClient apiClient;
