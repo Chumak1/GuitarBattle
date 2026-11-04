@@ -77,6 +77,25 @@ namespace SessionStore
         constexpr const char* keychainService = "FretFight/Session";
         constexpr const char* keychainAccount = "refresh_token";
 
+        // Status codes only, never the token itself. A locked login keychain or
+        // a denied access prompt is otherwise invisible: the client simply
+        // asks for the password again and looks like broken auto-login.
+        void logStatus(const char* operation, OSStatus status)
+        {
+            auto directory = juce::File::getSpecialLocation(
+                                 juce::File::userApplicationDataDirectory)
+                                 .getChildFile("Application Support")
+                                 .getChildFile("GuitarBattle");
+
+            directory.createDirectory();
+
+            directory.getChildFile("session.log")
+                     .appendText(juce::String(operation)
+                                 + " status="
+                                 + juce::String(static_cast<int>(status))
+                                 + "\n");
+        }
+
         CFMutableDictionaryRef makeKeychainQuery()
         {
             CFMutableDictionaryRef query = CFDictionaryCreateMutable(
@@ -102,13 +121,49 @@ namespace SessionStore
 
             return query;
         }
+
+        // The login keychain is the file-based one. kSecAttrAccessible (and
+        // kSecAttrAccessControl) belong to the iOS-style data protection
+        // keychain; passing them to SecItemAdd here makes macOS reject the
+        // item with errSecParam, so the item is created without them.
+        OSStatus addItem(CFDataRef data)
+        {
+            CFMutableDictionaryRef query = makeKeychainQuery();
+            CFDictionarySetValue(query, kSecValueData, data);
+
+            const OSStatus status = SecItemAdd(query, nullptr);
+            CFRelease(query);
+
+            return status;
+        }
+
+        OSStatus updateItem(CFDataRef data)
+        {
+            CFMutableDictionaryRef query = makeKeychainQuery();
+            CFMutableDictionaryRef attributes = CFDictionaryCreateMutable(
+                kCFAllocatorDefault, 0,
+                &kCFTypeDictionaryKeyCallBacks,
+                &kCFTypeDictionaryValueCallBacks);
+
+            CFDictionarySetValue(attributes, kSecValueData, data);
+
+            const OSStatus status = SecItemUpdate(query, attributes);
+
+            CFRelease(attributes);
+            CFRelease(query);
+
+            return status;
+        }
     }
 
     void clearRefreshToken()
     {
         CFMutableDictionaryRef query = makeKeychainQuery();
-        SecItemDelete(query);
+        const OSStatus status = SecItemDelete(query);
         CFRelease(query);
+
+        if (status != errSecSuccess && status != errSecItemNotFound)
+            logStatus("clear", status);
     }
 
     bool saveRefreshToken(const juce::String& token)
@@ -116,32 +171,24 @@ namespace SessionStore
         if (token.isEmpty())
             return false;
 
-        // Replacing is a delete + add: SecItemUpdate needs the same dictionary
-        // shape and the delete keeps a stale entry from surviving.
-        clearRefreshToken();
-
-        CFMutableDictionaryRef query = makeKeychainQuery();
-
         CFDataRef data = CFDataCreate(
             kCFAllocatorDefault,
             reinterpret_cast<const UInt8*>(token.toRawUTF8()),
             static_cast<CFIndex>(token.getNumBytesAsUTF8()));
 
         if (data == nullptr)
-        {
-            CFRelease(query);
             return false;
-        }
 
-        CFDictionarySetValue(query, kSecValueData, data);
-        CFDictionarySetValue(query, kSecAttrAccessible,
-                             kSecAttrAccessibleAfterFirstUnlock);
+        OSStatus status = addItem(data);
 
-        const OSStatus status = SecItemAdd(query, nullptr);
+        // An item written by an earlier build keeps the same service/account.
+        // Replace its data instead of failing with errSecDuplicateItem.
+        if (status == errSecDuplicateItem)
+            status = updateItem(data);
 
         CFRelease(data);
-        CFRelease(query);
 
+        logStatus("save", status);
         return status == errSecSuccess;
     }
 
@@ -154,6 +201,8 @@ namespace SessionStore
         CFTypeRef result = nullptr;
         const OSStatus status = SecItemCopyMatching(query, &result);
         CFRelease(query);
+
+        logStatus("load", status);
 
         if (status != errSecSuccess || result == nullptr)
             return {};
