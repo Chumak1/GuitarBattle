@@ -358,37 +358,180 @@ public:
                     const bool inputAccepted =
                         onset ? pluckAccepted : sustainAccepted;
 
+                    // The tuner is a live instrument: once a pluck has been
+                    // accepted, follow the ringing string and update the
+                    // reading on every frame. Only a clearly vocal attack
+                    // stops it, so turning the peg changes the value instead
+                    // of freezing the last one.
+                    const bool tunerHoldAccepted =
+                        ! guitarOnly || ! instrumentGate.isLatched();
+
                     const bool noteLevelValid =
                         pitch > MainComponent::minDetectedPitchHz
                         && pitch <= MainComponent::maxDetectedPitchHz
                         && rms >= noteRmsGate;
 
-                    // Loud input that the gate rejects: in the tuner, say so
-                    // once instead of silently freezing the last reading.
-                    if (tunerActive && noteLevelValid && ! inputAccepted
-                        && ! tunerRejectedShown)
-                    {
-                        tunerRejectedShown = true;
+                    // Which open string the pitch belongs to. Far from every
+                    // string the tuner has nothing to show, so the reading is
+                    // treated as stale instead of freezing the old value.
+                    const int tunerStringIndex =
+                        tunerActive ? owner.tuner.detectString(pitch) : -1;
 
-                        juce::MessageManager::callAsync([this]
+                    //==========================================================
+                    // Note stability
+                    //
+                    // A plucked string holds its pitch; speech jumps between
+                    // notes every syllable. A reading counts only once the same
+                    // note has been seen on minStableFrames frames in a row.
+
+                    if (! noteLevelValid)
+                    {
+                        stableFrames = 0;
+                    }
+                    else
+                    {
+                        const bool sameNote = stableFrames > 0
+                            && std::abs(1200.0 * std::log2(
+                                   static_cast<double>(pitch) / stablePitch)) < 60.0;
+
+                        stableFrames = sameNote ? stableFrames + 1 : 1;
+                        stablePitch = pitch;
+                    }
+
+                    const bool noteStable = stableFrames >= minStableFrames;
+
+                    //==========================================================
+                    // Attack confirmation
+                    //
+                    // A plucked string keeps its pitch after the attack; a
+                    // spoken syllable jumps to the next note right away. The
+                    // rest of the same analysis buffer is checked as soon as
+                    // the attack is found, so a real note is scored on its own
+                    // frame with its original timing instead of waiting for the
+                    // next one. Only an attack too close to the buffer end is
+                    // confirmed on the next frame.
+
+                    const auto sameDetectedNote = [this](double first,
+                                                         double second)
+                    {
+                        if (first <= 0.0 || second <= 0.0)
+                            return false;
+
+                        const double cents = std::abs(1200.0 * std::log2(
+                            first / second));
+
+                        if (cents < 150.0)
+                            return true;
+
+                        // An octave slip in the detector must not cancel a real
+                        // note: the game compares exact MIDI notes anyway.
+                        const int firstMidi =
+                            owner.pitchDetector.frequencyToMidi(first);
+                        const int secondMidi =
+                            owner.pitchDetector.frequencyToMidi(second);
+
+                        return firstMidi >= 0 && secondMidi >= 0
+                            && std::abs(firstMidi - secondMidi) % 12 == 0;
+                    };
+
+                    const int confirmDelaySamples =
+                        (int) std::lround(sampleRate * 0.010);
+                    const int confirmWindowSamples =
+                        (int) std::lround(sampleRate * 0.060);
+                    const int confirmMinSamples =
+                        (int) std::lround(sampleRate * 0.045);
+
+                    bool scoreReady = false;
+                    double scorePitch = pitch;
+                    std::uint64_t scoreOnset = detectedOnsetSample;
+
+                    // Finish a pending note first, so a fast next attack does
+                    // not cancel it.
+                    if (pendingScore)
+                    {
+                        if (sameDetectedNote(pitch, pendingScorePitch))
                         {
-                            owner.tunerDetectedString = -1;
-                            owner.tunerFrequency = 0.0;
-                            owner.tunerCents = 0.0;
-                            owner.tunerNoteLabel.setText("---", juce::dontSendNotification);
-                            owner.tunerFrequencyLabel.setText("--- Hz", juce::dontSendNotification);
-                            owner.tunerStringLabel.setText("---", juce::dontSendNotification);
-                            owner.tunerCentsLabel.setText("--- cents", juce::dontSendNotification);
-                            owner.tunerStatusLabel.setText("PLUCK A STRING", juce::dontSendNotification);
-                            owner.tunerStatusLabel.setColour(juce::Label::textColourId, UiColors::blue);
-                            owner.repaint();
-                            owner.overlayComponent.repaint();
-                        });
+                            scoreReady = true;
+                            scorePitch = pendingScorePitch;
+                            scoreOnset = pendingScoreOnset;
+                        }
+
+                        pendingScore = false;
+                    }
+
+                    if (onset && pluckAccepted && noteLevelValid && ! tunerActive)
+                    {
+                        const int confirmStart =
+                            onsetOffset + confirmDelaySamples;
+                        const int confirmAvailable =
+                            numAnalysisSamples - confirmStart;
+
+                        if (confirmAvailable >= confirmMinSamples)
+                        {
+                            const int confirmLength = juce::jmin(
+                                confirmWindowSamples, confirmAvailable);
+
+                            const double confirmPitch =
+                                owner.pitchDetector.detectPitch(
+                                    blockSamples + confirmStart,
+                                    confirmLength,
+                                    sampleRate,
+                                    pitchRange.getStart(),
+                                    pitchRange.getEnd());
+
+                            scoreReady = sameDetectedNote(pitch, confirmPitch);
+                        }
+                        else
+                        {
+                            pendingScore = true;
+                            pendingScoreOnset = detectedOnsetSample;
+                            pendingScorePitch = pitch;
+                        }
+                    }
+
+                    const bool tunerUsable =
+                        tunerActive && noteLevelValid && tunerStringIndex >= 0
+                        && tunerHoldAccepted && noteStable;
+
+                    const bool displayAccepted =
+                        inputAccepted || tunerUsable || scoreReady;
+
+                    // A tuner without a usable reading must not keep the last
+                    // value on screen: after ~190 ms clear it and ask for a
+                    // pluck. This covers a decayed string, a missing pitch and
+                    // a rejected attack alike.
+                    if (tunerActive)
+                    {
+                        pendingScore = false;
+
+                        if (tunerUsable)
+                        {
+                            tunerStaleFrames = 0;
+                        }
+                        else if (++tunerStaleFrames >= 2 && ! tunerRejectedShown)
+                        {
+                            tunerRejectedShown = true;
+
+                            juce::MessageManager::callAsync([this]
+                            {
+                                owner.tunerDetectedString = -1;
+                                owner.tunerFrequency = 0.0;
+                                owner.tunerCents = 0.0;
+                                owner.tunerNoteLabel.setText("---", juce::dontSendNotification);
+                                owner.tunerFrequencyLabel.setText("--- Hz", juce::dontSendNotification);
+                                owner.tunerStringLabel.setText("---", juce::dontSendNotification);
+                                owner.tunerCentsLabel.setText("--- cents", juce::dontSendNotification);
+                                owner.tunerStatusLabel.setText("PLUCK A STRING", juce::dontSendNotification);
+                                owner.tunerStatusLabel.setColour(juce::Label::textColourId, UiColors::blue);
+                                owner.repaint();
+                                owner.overlayComponent.repaint();
+                            });
+                        }
                     }
 
                     if (noteLevelValid
-                        && (onset || tunerActive)
-                        && inputAccepted)
+                        && (onset || tunerUsable || scoreReady)
+                        && displayAccepted)
                     {
                         owner.lastPitch = pitch;
                         tunerRejectedShown = false;
@@ -398,9 +541,7 @@ public:
 
                         if (tunerActive)
                         {
-                            const int stringIndex =
-                                owner.tuner.detectString(
-                                    pitch);
+                            const int stringIndex = tunerStringIndex;
 
                             if (stringIndex >= 0)
                             {
@@ -573,15 +714,19 @@ public:
                                 continue;
                             }
 
+                            // Only a note that proved it lasts is scored.
+                            if (! scoreReady)
+                                continue;
+
                             const auto detectedNote =
                                 owner.pitchDetector.frequencyToNote(
-                                    pitch);
+                                    scorePitch);
 
                             const auto text =
                                 detectedNote
                                 + "  |  "
                                 + juce::String(
-                                    pitch,
+                                    scorePitch,
                                     2)
                                 + " Hz";
 
@@ -617,7 +762,7 @@ public:
                                 const auto targetSample = owner.getTargetSample(
                                     currentTargetIndex, sampleRate);
 
-                                if (detectedOnsetSample <= targetSample + lateWindowSamples)
+                                if (scoreOnset <= targetSample + lateWindowSamples)
                                     break;
 
 
@@ -659,8 +804,8 @@ public:
                                         sampleRate * 0.150 * timingWindowScale);
 
                                 const bool staleOnset =
-                                    detectedOnsetSample < targetSampleForGuard
-                                    && targetSampleForGuard - detectedOnsetSample
+                                    scoreOnset < targetSampleForGuard
+                                    && targetSampleForGuard - scoreOnset
                                     > earlyWindowSamples;
 
                                 if (staleOnset)
@@ -691,7 +836,7 @@ public:
 
                                         const auto chordTargetSample = owner.getTargetSample(currentTargetIndex, sampleRate);
                                         const double chordTimingErrorMs =
-                                            (static_cast<double>(detectedOnsetSample) - static_cast<double>(chordTargetSample))
+                                            (static_cast<double>(scoreOnset) - static_cast<double>(chordTargetSample))
                                             * 1000.0 / sampleRate;
                                         const bool chordInsideTimingWindow =
                                             std::abs(chordTimingErrorMs) < 150.0 * timingWindowScale;
@@ -715,7 +860,7 @@ public:
                                                 const int newScore = owner.gameplayStats.recordHit(
                                                     evaluation.scoringResult.score, evaluation.scoringResult.note.quality);
                                                 owner.gameplayStats.recordTiming(chordTimingErrorMs);
-                                                owner.gameSession.setLastHitSample(detectedOnsetSample);
+                                                owner.gameSession.setLastHitSample(scoreOnset);
                                                 juce::MessageManager::callAsync([this, newScore]
                                                 {
                                                     owner.gameSessionLabel.setText(juce::String(newScore), juce::dontSendNotification);
@@ -748,7 +893,7 @@ public:
 
                                     const int detectedMidi =
                                         owner.pitchDetector.frequencyToMidi(
-                                            pitch);
+                                            scorePitch);
 
                                     // IMPORTANT:
                                     // Target timing is based on the original
@@ -761,7 +906,7 @@ public:
                                     // IMPORTANT:
                                     // Use the estimated actual onset.
                                     const auto hitSample =
-                                        detectedOnsetSample;
+                                        scoreOnset;
 
                                     const auto timingErrorSamples =
                                         static_cast<long long>(
@@ -780,7 +925,7 @@ public:
                                         GameplayEngine::evaluateNote(
                                             targetMidi,
                                             detectedMidi,
-                                            pitch,
+                                            scorePitch,
                                             timingErrorMs,
                                             owner.difficulty,
                                             owner.speedPercent,
@@ -1142,4 +1287,21 @@ private:
     InstrumentGate instrumentGate;
     bool tunerRejectedShown = false;
     bool displayRejectedShown = false;
+    // Frames without a usable tuner reading. After two (about 190 ms) the
+    // tuner is cleared instead of keeping the last value on screen.
+    int tunerStaleFrames = 0;
+
+    // Pitch stability: how many consecutive analysis frames carried the same
+    // note (within 60 cents). Speech jumps between notes every syllable; a
+    // plucked string holds its pitch. Two frames is about 190 ms.
+    static constexpr int minStableFrames = 2;
+    double stablePitch = 0.0;
+    int stableFrames = 0;
+
+    // An accepted attack is scored only after the note has been stable for
+    // minStableFrames frames. The onset sample is kept, so the timing of a
+    // real pluck is unchanged.
+    bool pendingScore = false;
+    std::uint64_t pendingScoreOnset = 0;
+    double pendingScorePitch = 0.0;
 };

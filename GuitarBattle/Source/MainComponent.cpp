@@ -378,9 +378,17 @@ void MainComponent::timerCallback()
                     currentTarget,
                     sampleRate);
 
+            // The auto miss must not fire before the (level- and speed-scaled)
+            // late hit window closes.
+            const double timingWindowScale =
+                ScoringSystem::getTimingWindowScale(
+                    songLevel.load(std::memory_order_relaxed),
+                    speedPercent.load(std::memory_order_relaxed));
+
             const auto missTimeoutSamples =
                 static_cast<uint64_t>(
-                    sampleRate * 0.300);
+                    sampleRate
+                    * juce::jmax(0.300, 0.150 * timingWindowScale + 0.100));
 
             if (currentSample >= targetSample + missTimeoutSamples)
             {

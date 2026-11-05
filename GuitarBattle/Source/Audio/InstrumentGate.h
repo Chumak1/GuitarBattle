@@ -553,6 +553,10 @@ public:
         return rms <= pluckPeakRms * maxSustainGain;
     }
 
+    // True while the last rejected attack was clearly vocal. The tuner uses
+    // this to stop showing a pitch that is not a guitar.
+    bool isLatched() const noexcept { return latched; }
+
     void reset() noexcept
     {
         hasPluck = false;

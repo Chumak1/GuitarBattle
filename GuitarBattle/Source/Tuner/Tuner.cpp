@@ -115,7 +115,9 @@ int GuitarTuner::detectString(double frequency) const
     }
 
     // Струна определяется только в пределах ±100 cents.
-    if (bestCents > 100.0)
+    // +-3.5 semitones: far enough to tune a badly detuned string, close
+    // enough not to attach a note to a neighbouring string.
+    if (bestCents > 350.0)
         return -1;
 
     return bestIndex;

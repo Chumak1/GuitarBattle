@@ -97,13 +97,14 @@ double ScoringSystem::getPitchMultiplier(double pitchErrorCents)
 double ScoringSystem::getTimingWindowScale(int songLevel, double bpmPercent)
 {
     // Levels 5-10 keep the reference +/-150 ms window; every level below adds
-    // 12.5%, so a level-1 chart is 1.5x as forgiving. Slower playback adds the
-    // square-root part of the slowdown (50% -> +41%): the window follows the
-    // musical grid without turning half speed into a 300 ms window on its own.
+    // 20%, so a level-1 chart is 1.8x as forgiving (270 ms). Slower playback
+    // adds the square-root part of the slowdown (50% -> +41%): the window
+    // follows the musical grid without turning half speed into a 300 ms window
+    // on its own. The cap keeps the easiest chart at half speed at +/-300 ms.
     const int level = juce::jlimit(1, 10, songLevel);
 
     const double levelBonus = level < 5
-        ? static_cast<double>(5 - level) * 0.125
+        ? static_cast<double>(5 - level) * 0.20
         : 0.0;
 
     const double speed = juce::jlimit(50.0, 120.0, bpmPercent);
@@ -112,8 +113,19 @@ double ScoringSystem::getTimingWindowScale(int songLevel, double bpmPercent)
         ? std::sqrt(100.0 / speed) - 1.0
         : 0.0;
 
-    // The cap keeps the easiest chart at half speed just below +/-300 ms.
     return juce::jlimit(1.0, 2.0, 1.0 + levelBonus + speedBonus);
+}
+
+double ScoringSystem::getPitchWindowCents(int songLevel)
+{
+    // Levels 5-10 keep the reference 50 cents; every level below adds 8, so
+    // the easiest chart accepts up to 82 cents. That covers a slightly
+    // detuned acoustic string without ever reaching a whole semitone.
+    const int level = juce::jlimit(1, 10, songLevel);
+
+    return level < 5
+        ? 50.0 + static_cast<double>(5 - level) * 8.0
+        : 50.0;
 }
 
 double ScoringSystem::getTimingMultiplier(double timingErrorMs, double windowScale)
@@ -228,11 +240,23 @@ FinalNoteResult ScoringSystem::calculateFinalNoteScore( double pitchErrorCents, 
 {
     FinalNoteResult result;
 
+    // Easy levels tolerate a detuned note: the pitch error is measured against
+    // the widened window, so the score curve and the hit quality match the hit
+    // decision in GameplayEngine::evaluateNote.
+    const double pitchWindow = getPitchWindowCents(songLevel);
+    const double scaledPitchError =
+        pitchWindow > 0.0 ? pitchErrorCents * (50.0 / pitchWindow)
+                          : pitchErrorCents;
+
     result.note =
         calculateNoteScore(
-            pitchErrorCents,
+            scaledPitchError,
             timingErrorMs,
             getTimingWindowScale(songLevel, bpmPercent));
+
+    // Keep the real error for the stats and the UI; only the evaluation used
+    // the widened window.
+    result.note.pitchErrorCents = pitchErrorCents;
 
     const auto difficultySettings =
         getDifficultySettings(

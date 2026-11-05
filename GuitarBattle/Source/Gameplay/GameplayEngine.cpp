@@ -29,6 +29,16 @@ GameplayEngine::NoteEvaluation GameplayEngine::evaluateNote(
             1200.0 * std::log2(detectedFrequency / targetFrequency);
     }
 
+    // Easy charts also accept a slightly detuned note: a MIDI rounding
+    // boundary must not turn a string that is a few dozen cents off into a
+    // miss.
+    if (! result.correctPitch)
+    {
+        result.correctPitch =
+            std::abs(result.pitchErrorCents)
+            <= ScoringSystem::getPitchWindowCents(songLevel);
+    }
+
     result.scoringResult = ScoringSystem::calculateFinalNoteScore(
         result.pitchErrorCents, timingErrorMs, difficulty, speedPercent, songLevel);
 

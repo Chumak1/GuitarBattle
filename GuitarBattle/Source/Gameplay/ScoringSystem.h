@@ -141,6 +141,11 @@ public:
     // millisecond error on a level-1 chart at 70% speed.
     static double getTimingWindowScale(int songLevel, double bpmPercent);
 
+    // Pitch window in cents for the hit decision and the score curve. The
+    // reference is 50 cents; easier charts accept a slightly detuned note
+    // instead of turning it into a miss.
+    static double getPitchWindowCents(int songLevel);
+
     static double getTimingMultiplier(double timingErrorMs, double windowScale = 1.0);
 
     static HitQuality getHitQuality(double pitchErrorCents, double timingErrorMs, double windowScale = 1.0);
