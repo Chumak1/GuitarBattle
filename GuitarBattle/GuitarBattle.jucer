@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" version="1.1.16" useAppConfig="0"
+<JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" version="1.1.17" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" defines="JUCE_USE_MP3AUDIOFORMAT=1">
   <MAINGROUP id="YwvWlz" name="GuitarBattle">
     <GROUP id="{FD100ED6-F86C-F2E1-2AEB-B88EA6EF2BB0}" name="Source">

@@ -165,6 +165,18 @@ public:
                             sampleRate * 0.060
                             * juce::jlimit(0.5, 2.0, thresholdScale));
 
+                    // Feed the guitar-only gate with every frame, not only
+                    // with onsets: the attack may start in the previous
+                    // frame, and a sustained vowel must be recognised as a
+                    // continuous sound. Runs on this thread only.
+                    instrumentGate.processFrame(
+                        blockSamples,
+                        numAnalysisSamples,
+                        sampleRate,
+                        analysisSample,
+                        rms,
+                        silenceThreshold);
+
                     // Сравниваем громкость с предыдущим анализируемым блоком.
                     const double previousRms = owner.previousRmsValue;
                     owner.previousRmsValue = rms;
@@ -214,28 +226,29 @@ public:
                     // Guitar-only input filter
                     //
                     // A voice at the chart's pitch is detected exactly like a
-                    // guitar note. The gate looks at the attack and at the
-                    // level trend of the analysis frame, which is where a
-                    // plucked string differs from a sung note. It runs on this
-                    // thread only; the audio callback never touches it.
+                    // guitar note. The gate measures the attack across the
+                    // whole envelope history (the attack may start in the
+                    // previous frame) and latches on a voice-like attack. It
+                    // runs on this thread only; the audio callback never
+                    // touches it.
                     const bool guitarOnly =
                         owner.guitarInputOnly.load(std::memory_order_relaxed);
 
                     InstrumentGate::OnsetAnalysis onsetAnalysis;
 
                     if (guitarOnly && onset)
-                        onsetAnalysis = instrumentGate.analyseOnset(
-                            blockSamples,
-                            numAnalysisSamples,
-                            sampleRate,
-                            onsetOffset,
-                            rms);
+                        onsetAnalysis =
+                            instrumentGate.analyseOnset(detectedOnsetSample,
+                                                        pitch);
 
                     // A voice-like attack must not score, move the tuner or
-                    // advance practice. Without an onset the filter is judged
-                    // by the sustained-note state instead (tuner path).
+                    // advance practice. An attack that sits at the very end of
+                    // the frame is undecided: the next frame re-detects it
+                    // with the full envelope and must not be blocked by the
+                    // refractory window, so it is not accepted now.
                     const bool pluckAccepted =
-                        ! guitarOnly || ! onset || onsetAnalysis.pluck;
+                        ! guitarOnly || ! onset
+                        || (onsetAnalysis.decided && onsetAnalysis.pluck);
 
                     const auto frameEndSample =
                         analysisSample
@@ -246,6 +259,7 @@ public:
                         rms,
                         sampleRate,
                         onset && pluckAccepted,
+                        onset && onsetAnalysis.latched,
                         detectedOnsetSample);
 
                     const bool sustainAccepted =
@@ -261,16 +275,23 @@ public:
                             pluckAccepted,
                             std::memory_order_relaxed);
 
-                        owner.lastOnsetSample.store(
-                            detectedOnsetSample,
-                            std::memory_order_relaxed);
-
-                        // Practice timing must only follow a real pluck: a
-                        // rejected vocal attack must not schedule the hold.
+                        // Only an accepted pluck starts the refractory
+                        // window. A deferred attack must be re-detected on the
+                        // next frame; a rejected voice is blocked by the gate
+                        // latch instead of the 60 ms onset spacing.
                         if (pluckAccepted)
+                        {
+                            owner.lastOnsetSample.store(
+                                detectedOnsetSample,
+                                std::memory_order_relaxed);
+
+                            // Practice timing must only follow a real pluck:
+                            // a rejected vocal attack must not schedule the
+                            // hold.
                             owner.lastNoteOnSample.store(
                                 analysisSample,
                                 std::memory_order_relaxed);
+                        }
                     }
 
 
@@ -1025,6 +1046,29 @@ public:
                                        owner.pitchAnalysisBuffer2.getNumSamples()),
                                rms);
 
+                    // Loud input that the gate rejects must not leave the
+                    // last accepted note on screen (a voice would otherwise
+                    // look like a held guitar note).
+                    if (rms >= displayNoteGate && ! displayAccepted)
+                    {
+                        if (! displayRejectedShown)
+                        {
+                            displayRejectedShown = true;
+
+                            juce::MessageManager::callAsync(
+                                [this]
+                                {
+                                    owner.pitchLabel.setText(
+                                        "---",
+                                        juce::dontSendNotification);
+                                });
+                        }
+                    }
+                    else if (displayAccepted)
+                    {
+                        displayRejectedShown = false;
+                    }
+
                     if (pitch > MainComponent::minDetectedPitchHz
                         && pitch <= MainComponent::maxDetectedPitchHz
                         && rms >= displayNoteGate
@@ -1067,4 +1111,5 @@ private:
     // from run(); the audio callback never sees it.
     InstrumentGate instrumentGate;
     bool tunerRejectedShown = false;
+    bool displayRejectedShown = false;
 };
