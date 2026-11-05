@@ -24,14 +24,19 @@
 // frame), and measures:
 //
 //   1. the 10-90% rise time of the attack;
-//   2. how far the attack rises above the quietest level just before it;
-//   3. whether the level was already climbing before the attack;
+//   2. how much of the attack happens inside its steepest 20 ms (a pluck does
+//      almost all of it, a vowel only a fraction — this also works when a
+//      previous chord or note is still ringing under the new pluck);
+//   3. how far the attack rises above the quietest level just before it;
 //   4. whether the sound decays in the first half-second (sustain check).
 //
 // A voice fails at least one of these. A plucked string (including a bass and
-// a chord) passes them. A rejected attack latches the gate: no note is
-// accepted until the input has been silent for a moment, so a sustained vowel
-// cannot sneak in through a later level fluctuation.
+// a chord) passes them.
+//
+// A rejected attack latches the gate only for the sustain display: it does not
+// block later onsets, because a single borderline rejection (a soft pluck, a
+// quiet room, a slow strum) must never silence a whole playing session. The
+// latch is cleared by the next accepted pluck, or by a short silence.
 //
 // The gate runs on the pitch-analysis thread (never in the audio callback).
 // It is deliberately conservative about real playing: when the analysis frame
@@ -52,11 +57,14 @@ public:
         // frame re-detects the same attack with the full envelope available.
         bool decided = false;
 
-        // The input is considered non-guitar until it has been silent for
-        // unlatchSilenceMs.
+        // The rejected sound still counts as non-guitar for the sustain
+        // display: do not keep showing it as a plucked note. A later pluck is
+        // judged on its own attack and clears the latch.
         bool latched = false;
 
         double attackMs = 0.0;
+        // Share of the whole attack completed inside its steepest 20 ms.
+        double climbFraction = 0.0;
         double riseDb = 0.0;
         // Level trend during the 20 ms before the attack, in dB. Large
         // positive values mean the note was already growing (voice).
@@ -202,13 +210,6 @@ public:
     {
         OnsetAnalysis result;
 
-        if (latched)
-        {
-            result.decided = true;
-            result.latched = true;
-            return result;
-        }
-
         if (! hasLatestBlock || blockSamples <= 0 || sampleRate <= 0.0)
         {
             result.decided = false;
@@ -350,65 +351,116 @@ public:
 
         const bool quietBefore = result.preRiseDb <= maxPreRiseDb;
 
-        // A steady sound has no attack at all: the level at the detected
-        // onset is already close to the peak. This is exactly what a vowel
-        // fluctuation looks like. A pluck, even over a decaying tail, always
-        // rises well above the level just before it.
-        //
-        // A fluctuation on a decaying string has the same shape, so it is
-        // rejected without latching: otherwise a real note played after it
-        // would be blocked until silence. Latch only when the level was
-        // already growing, which a voice does and a decaying string does not.
-        if (baseline > peak * 0.5f)
+        // Rise time anchored at the steepest 20 ms climb. The 20 ms
+        // difference cancels the period ripple of a low string and of a
+        // ringing chord, so this still measures the attack when the new pluck
+        // lands on top of a loud tail. A pluck finishes the climb within a
+        // few milliseconds; a vowel needs tens.
         {
-            result.decided = true;
-            result.pluck = false;
-            result.latched = ! quietBefore;
-            return result;
-        }
+            const std::uint64_t oldestAvailable = oldestBlock();
+            const std::uint64_t windowStart =
+                onsetBlock > 20 ? onsetBlock - 20 : oldestAvailable;
+            const std::uint64_t slopeBlocks = 20;
+            float bestSlope = -1.0e9f;
+            std::uint64_t fastBlock = onsetBlock;
 
-        // 10-90% rise time of the attack, measured across the frame boundary.
-        const float low = baseline + (peak - baseline) * 0.1f;
-        const float high = baseline + (peak - baseline) * 0.9f;
-        std::uint64_t block10 = peakBlock;
-        std::uint64_t block90 = peakBlock;
-
-        for (std::uint64_t block = baselineBlock; block <= peakBlock; ++block)
-        {
-            float value = 0.0f;
-
-            if (! getBlock (block, value))
-                continue;
-
-            if (block10 == peakBlock && value >= low)
-                block10 = block;
-
-            if (value >= high)
+            for (std::uint64_t block = windowStart + slopeBlocks;
+                 block <= peakEnd;
+                 ++block)
             {
-                block90 = block;
-                break;
+                float before = 0.0f;
+                float after = 0.0f;
+
+                if (! getBlock (block - slopeBlocks, before)
+                    || ! getBlock (block, after))
+                    continue;
+
+                if (after - before > bestSlope)
+                {
+                    bestSlope = after - before;
+                    fastBlock = block;
+                }
+            }
+
+            // How much of the whole attack happens inside its steepest 20 ms.
+            // A pluck does all of it there, a vowel only a fraction. The
+            // 20 ms window also averages out the period ripple, so a loud
+            // ringing tail under the new note does not fake a fast climb.
+            float before = 0.0f;
+            float after = 0.0f;
+
+            if (fastBlock >= slopeBlocks
+                && getBlock (fastBlock - slopeBlocks, before)
+                && getBlock (fastBlock, after)
+                && peak - baseline > 1.0e-9f)
+            {
+                result.climbFraction =
+                    static_cast<double> (after - before)
+                    / static_cast<double> (peak - baseline);
             }
         }
 
-        result.attackMs = static_cast<double> (block90 - block10)
-                          * static_cast<double> (blockSamples)
-                          * 1000.0 / sampleRate;
+        const bool highBaseline = baseline > peak * 0.5f;
 
+        // 10-90% rise time of the attack, measured across the frame
+        // boundary. The measurement is anchored at the quietest level just
+        // before the onset, so it works the same whether the string started
+        // from silence or over a ringing tail.
+        {
+            const float low = baseline + (peak - baseline) * 0.1f;
+            const float high = baseline + (peak - baseline) * 0.9f;
+            std::uint64_t block10 = peakBlock;
+            std::uint64_t block90 = peakBlock;
+
+            for (std::uint64_t block = baselineBlock; block <= peakBlock; ++block)
+            {
+                float value = 0.0f;
+
+                if (! getBlock (block, value))
+                    continue;
+
+                if (block10 == peakBlock && value >= low)
+                    block10 = block;
+
+                if (value >= high)
+                {
+                    block90 = block;
+                    break;
+                }
+            }
+
+            result.attackMs = static_cast<double> (block90 - block10)
+                              * static_cast<double> (blockSamples)
+                              * 1000.0 / sampleRate;
+        }
+
+        // A pluck reaches most of its attack peak within a few milliseconds;
+        // a sung note ramps up over tens of milliseconds. The climb test
+        // additionally accepts a pluck that lands on a loud ringing tail,
+        // where the 10-90% rise spans the whole chord and looks slow.
+        const bool bassNote = pitchHz > 0.0 && pitchHz < 80.0;
         const bool sharp = result.attackMs
-            <= ((pitchHz > 0.0 && pitchHz < 80.0) ? lowNoteAttackMs
-                                                  : sharpAttackMs);
-        const bool rising = result.riseDb >= minRiseDb;
+                               <= (bassNote ? lowNoteAttackMs : sharpAttackMs)
+                           || result.climbFraction >= minClimbFraction;
 
-        result.pluck = sharp && rising && quietBefore;
+        // Over a ringing chord the new pluck may be only a few dB louder than
+        // the tail. Requiring the full rise there would reject real playing.
+        const bool rising = result.riseDb
+            >= (highBaseline ? minRiseDbOverTail : minRiseDb);
+
+        result.pluck = sharp && rising;
         result.decided = true;
 
         if (! result.pluck)
         {
-            // A slow attack with a real rise is a voice; a small level
-            // fluctuation on a decaying string is not. Latch only the voice
-            // (and a level that was already climbing), so a quiet re-pluck
-            // after a fluctuation is still judged by its own attack.
-            result.latched = ! sharp || ! quietBefore;
+            // Latch only a clearly voice-like attack: slow ramp that also
+            // lacks a fast climb. A borderline rejection (a soft pluck, a
+            // slow strum, a level fluctuation on a ringing string) must not
+            // block the next real note.
+            const bool clearlySlow = result.attackMs > latchAttackMs
+                && result.climbFraction < minClimbFraction * 0.7;
+
+            result.latched = ! quietBefore || clearlySlow;
         }
 
         return result;
@@ -572,8 +624,11 @@ private:
     // second, enough for the attack lookback and the sustain checks.
     static constexpr int maxHistoryBlocks = 512;
 
-    // How far after the onset the attack peak is searched for.
-    static constexpr int peakWindowBlocks = 40;
+    // How far after the onset the attack peak is searched for. A new pluck
+    // can sit up to one analysis frame after the detected onset when a
+    // previous chord keeps the level above the frame threshold, so the window
+    // covers a whole frame.
+    static constexpr int peakWindowBlocks = 100;
 
     // How far before the detected onset the true start of the attack may
     // lie. The detector fires at 20% of the frame peak, which on a slow
@@ -584,32 +639,49 @@ private:
     // be measured in this frame, so the decision is deferred.
     static constexpr int minForwardBlocks = 6;
 
-    // A plucked string reaches 90% of its attack peak within a few
-    // milliseconds. A vowel needs tens of milliseconds. The threshold is
-    // deliberately above a bass attack and below a sung one.
-    static constexpr double sharpAttackMs = 15.0;
+    // A pluck reaches most of its attack peak within a few milliseconds; a
+    // sung note ramps up over tens of milliseconds. The threshold sits well
+    // above a pluck, even one recorded through a microphone, and well below a
+    // normal vowel.
+    static constexpr double sharpAttackMs = 28.0;
 
     // A bass string's first period is 24 ms at 41 Hz, so the measured rise
     // of its attack is longer even though the pluck itself is sharp.
-    static constexpr double lowNoteAttackMs = 25.0;
+    static constexpr double lowNoteAttackMs = 45.0;
 
-    // A real attack rises at least 6 dB above the quietest level just before
-    // it. A vowel fluctuation stays within a few dB of the sustain level.
-    static constexpr double minRiseDb = 6.0;
+    // Share of the attack that must happen inside its steepest 20 ms for the
+    // attack to count as a pluck. A pluck does almost all of it there; a
+    // vowel only a fraction, even when it rides on a ringing chord.
+    static constexpr double minClimbFraction = 0.80;
+
+    // A real attack rises at least this far above the quietest level just
+    // before it. A vowel fluctuation stays within a few dB of the sustain
+    // level.
+    static constexpr double minRiseDb = 4.0;
+
+    // Over a ringing chord a real pluck may be only a couple of dB louder
+    // than the tail; the step test carries the decision there.
+    static constexpr double minRiseDbOverTail = 2.0;
 
     // A voice has already been growing for 10+ ms before the attack; a
-    // string either starts from silence or is decaying there.
-    static constexpr double maxPreRiseDb = 2.0;
+    // string either starts from silence or is decaying there. Acoustic
+    // playing is not perfectly clean, so a small upward trend is allowed.
+    static constexpr double maxPreRiseDb = 3.0;
     static constexpr double preFloor = 0.05;
+
+    // An attack slower than this is clearly a voice and latches the gate.
+    // Anything faster is a borderline rejection (soft pluck, slow strum) and
+    // must not block the next real note.
+    static constexpr double latchAttackMs = 40.0;
 
     // How long the input must stay below the silence threshold before a
     // rejected voice is forgotten.
-    static constexpr double unlatchSilenceMs = 150.0;
+    static constexpr double unlatchSilenceMs = 120.0;
 
     // A rejected voice is also forgotten when the level drops this far below
     // the rejected attack: a noisy room never reaches the absolute silence
     // threshold, but it is far below a voice.
-    static constexpr double unlatchDropRatio = 0.10;
+    static constexpr double unlatchDropRatio = 0.20;
 
     // How long one pluck keeps the tuner alive. A ringing string is replaced
     // by a new pluck long before this on a real guitar.
@@ -621,9 +693,10 @@ private:
 
     // A plucked string has decayed noticeably by this age; a voice holds its
     // level. Only the sustained-note path is affected, a new pluck is still
-    // judged by its own attack.
-    static constexpr double decayCheckMs = 400.0;
-    static constexpr double maxFlatRatio = 0.90;
+    // judged by its own attack. The window is long enough for an acoustic
+    // guitar, whose body keeps the note ringing well past half a second.
+    static constexpr double decayCheckMs = 500.0;
+    static constexpr double maxFlatRatio = 0.97;
 
     std::array<float, maxHistoryBlocks> blockEnv {};
 
