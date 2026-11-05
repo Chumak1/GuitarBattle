@@ -62,6 +62,11 @@ public:
         // judged on its own attack and clears the latch.
         bool latched = false;
 
+        // A rejection that is clearly vocal (slow ramp, no fast climb). An
+        // ambiguous rejection — a level fluctuation on a ringing string —
+        // must not replace the note that is still sounding.
+        bool voiceLike = false;
+
         double attackMs = 0.0;
         // Share of the whole attack completed inside its steepest 20 ms.
         double climbFraction = 0.0;
@@ -349,8 +354,6 @@ public:
             }
         }
 
-        const bool quietBefore = result.preRiseDb <= maxPreRiseDb;
-
         // Rise time anchored at the steepest 20 ms climb. The 20 ms
         // difference cancels the period ripple of a low string and of a
         // ringing chord, so this still measures the attack when the new pluck
@@ -460,22 +463,24 @@ public:
             const bool clearlySlow = result.attackMs > latchAttackMs
                 && result.climbFraction < minClimbFraction * 0.7;
 
-            result.latched = ! quietBefore || clearlySlow;
+            result.voiceLike = clearlySlow;
+            result.latched = clearlySlow;
         }
 
         return result;
     }
 
     // Called once per analysis frame, after analyseOnset(). `acceptedPluck`
-    // is true on the frame that owns a verified pluck attack; `rejectedOnset`
-    // is true when the gate decided to latch on a voice-like attack. A level
-    // fluctuation that was rejected without latching (see analyseOnset) must
-    // not block the next real note.
+    // is true on the frame that owns a verified pluck attack; `voiceOnset`
+    // is true when the rejected attack was clearly vocal. An ambiguous
+    // rejection (a level fluctuation on a ringing string, a soft pluck that
+    // did not clear the bar) must neither replace the note that is still
+    // sounding nor block the next real note.
     void pushFrame (std::uint64_t frameSample,
                     double rms,
                     double rate,
                     bool acceptedPluck,
-                    bool rejectedOnset,
+                    bool voiceOnset,
                     std::uint64_t onsetSample) noexcept
     {
         if (rate > 0.0)
@@ -494,7 +499,7 @@ public:
             return;
         }
 
-        if (rejectedOnset)
+        if (voiceOnset)
         {
             hasPluck = false;
             sustainRejected = false;
@@ -508,15 +513,22 @@ public:
 
         const double ageMs = sampleAgeMs (frameSample);
 
-        // The frame that owns the onset does not always contain the peak
-        // (the attack can sit at its end), so follow the level for a moment.
-        if (ageMs >= -20.0 && ageMs <= 500.0)
+        // The frame that owns the onset does not always contain the peak:
+        // the attack can sit at the frame end, and an acoustic guitar's body
+        // resonance keeps building the level for a few tens of milliseconds.
+        // Follow the level for 200 ms and use that maximum as the reference.
+        if (ageMs >= -20.0 && ageMs <= attackPeakWindowMs)
+        {
             pluckPeakRms = std::max (pluckPeakRms, rms);
+            pluckPeakEnvelope = std::max (pluckPeakEnvelope, frameMaxBlockEnv);
+            return;
+        }
 
-        // A sound that gets louder than its attack is not the plucked string
-        // any more: a voice keeps growing, a string does not. Latch until
-        // silence instead of accepting the next fluctuation.
-        if (ageMs >= -20.0 && ageMs <= 1000.0
+        // After the attack window a sound that gets louder than its peak is
+        // not the plucked string any more: a voice keeps growing, a string
+        // does not. Clear the note (the next real pluck is still judged on
+        // its own attack).
+        if (ageMs <= 1500.0
             && frameMaxBlockEnv > pluckPeakEnvelope * maxSustainGain)
         {
             hasPluck = false;
@@ -639,6 +651,11 @@ private:
     // be measured in this frame, so the decision is deferred.
     static constexpr int minForwardBlocks = 6;
 
+    // The level is followed for this long after the onset, so the reference
+    // peak includes an attack that sits at a frame boundary and an acoustic
+    // body resonance that builds up after the pluck.
+    static constexpr double attackPeakWindowMs = 200.0;
+
     // A pluck reaches most of its attack peak within a few milliseconds; a
     // sung note ramps up over tens of milliseconds. The threshold sits well
     // above a pluck, even one recorded through a microphone, and well below a
@@ -664,9 +681,8 @@ private:
     static constexpr double minRiseDbOverTail = 2.0;
 
     // A voice has already been growing for 10+ ms before the attack; a
-    // string either starts from silence or is decaying there. Acoustic
-    // playing is not perfectly clean, so a small upward trend is allowed.
-    static constexpr double maxPreRiseDb = 3.0;
+    // string either starts from silence or is decaying there. Reported for
+    // diagnostics only.
     static constexpr double preFloor = 0.05;
 
     // An attack slower than this is clearly a voice and latches the gate.

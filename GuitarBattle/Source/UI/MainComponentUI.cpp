@@ -2780,7 +2780,8 @@ static void populateInputChannelCombo(juce::ComboBox& box,
 // Keeps JUCE's native device selector and its existing deviceManager bindings,
 // while placing it inside the app's dark navy/gold visual system.
 class AudioSettingsPanel final : public juce::Component,
-                                 private juce::ChangeListener
+                                 private juce::ChangeListener,
+                                  private juce::Timer
 {
 public:
     AudioSettingsPanel(juce::AudioDeviceManager& manager,
@@ -2791,15 +2792,22 @@ public:
                        float initialBackgroundVolume,
                        bool initialBackgroundEnabled,
                        std::function<void(float)> onBackgroundVolumeChanged,
-                       std::function<void(bool)> onBackgroundEnabledChanged)
+                       std::function<void(bool)> onBackgroundEnabledChanged,
+                       std::function<juce::String()> inputDiagnosticsProvider)
         : selector(manager, 0, 32, 0, 2, false, false, true, false),
           deviceManager(manager),
           inputChannelChanged(onInputChannelChanged),
           guitarInputOnlyChanged(onGuitarInputOnlyChanged),
           backgroundVolumeChanged(onBackgroundVolumeChanged),
-          backgroundEnabledChanged(onBackgroundEnabledChanged)
+          backgroundEnabledChanged(onBackgroundEnabledChanged),
+          diagnosticsProvider(std::move(inputDiagnosticsProvider))
     {
         setSize(760, 680);
+
+        // Live diagnostics for the guitar-only gate. The player can read
+        // here which test rejected the last attack instead of guessing.
+        if (diagnosticsProvider != nullptr)
+            startTimerHz(4);
         addAndMakeVisible(selector);
         addAndMakeVisible(inputChannelLabel);
         addAndMakeVisible(inputChannelBox);
@@ -2970,6 +2978,7 @@ public:
 
     ~AudioSettingsPanel() override
     {
+        stopTimer();
         deviceManager.removeChangeListener(this);
     }
 
@@ -2992,6 +3001,12 @@ public:
         g.setFont(GameUi::font(13.0f));
         g.drawText("Choose your guitar input, input filter, buffer size and menu music.",
                    48, 59, getWidth() - 80, 24, juce::Justification::centredLeft);
+
+        g.setColour(UiColors::muted);
+        g.setFont(GameUi::eyebrow(9.0f));
+        g.drawText("v" + juce::String(ProjectInfo::versionString),
+                   getWidth() - 180, 59, 142, 20,
+                   juce::Justification::centredRight);
 
         GameUi::drawPill(g,
                          juce::Rectangle<float>(getWidth() - 134.0f, 31.0f, 96.0f, 22.0f),
@@ -3034,6 +3049,33 @@ public:
     }
 
 private:
+    void timerCallback() override
+    {
+        if (diagnosticsProvider == nullptr)
+            return;
+
+        const auto text = diagnosticsProvider();
+
+        if (text == lastDiagnostics)
+            return;
+
+        lastDiagnostics = text;
+        inputFilterStatusLabel.setText(
+            text.isNotEmpty() ? text
+                              : juce::String("Rejects voice and other instruments."),
+            juce::dontSendNotification);
+
+        if (text.containsIgnoreCase("PLUCK"))
+            inputFilterStatusLabel.setColour(juce::Label::textColourId,
+                                              UiColors::green);
+        else if (text.containsIgnoreCase("REJECTED"))
+            inputFilterStatusLabel.setColour(juce::Label::textColourId,
+                                              UiColors::orange);
+        else
+            inputFilterStatusLabel.setColour(juce::Label::textColourId,
+                                              UiColors::muted);
+    }
+
     void changeListenerCallback(juce::ChangeBroadcaster*) override
     {
         rebuildInputChannelChoices(-1);
@@ -3125,6 +3167,8 @@ private:
     std::function<void(bool)> guitarInputOnlyChanged;
     std::function<void(float)> backgroundVolumeChanged;
     std::function<void(bool)> backgroundEnabledChanged;
+    std::function<juce::String()> diagnosticsProvider;
+    juce::String lastDiagnostics;
     juce::Label inputChannelLabel;
     juce::ComboBox inputChannelBox;
     juce::Label inputFilterLabel;
@@ -6541,6 +6585,42 @@ void MainComponent::initialiseUi()
                     [this](bool enabled)
                     {
                         setBackgroundMusicEnabled(enabled);
+                    },
+                    [this]() -> juce::String
+                    {
+                        const float rms =
+                            inputMeterRms.load(std::memory_order_relaxed);
+                        const auto level = juce::String(
+                            juce::Decibels::gainToDecibels(rms, -90.0f), 1)
+                            + " dBFS";
+
+                        if (! guitarInputOnly.load(std::memory_order_relaxed))
+                            return "Filter off - input " + level;
+
+                        const int decision =
+                            gateDecision.load(std::memory_order_relaxed);
+
+                        if (decision == 0)
+                            return "Input " + level + " - no attack yet";
+
+                        const auto attack = juce::String(
+                            gateAttackMs.load(std::memory_order_relaxed), 1);
+                        const auto climb = juce::String(
+                            gateClimbFraction.load(std::memory_order_relaxed), 2);
+                        const auto rise = juce::String(
+                            gateRiseDb.load(std::memory_order_relaxed), 1);
+
+                        if (decision == 1)
+                            return "Input " + level + " - PLUCK attack "
+                                   + attack + " ms, climb " + climb;
+
+                        if (decision == 2)
+                            return "Input " + level + " - REJECTED attack "
+                                   + attack + " ms, climb " + climb + ", rise "
+                                   + rise + " dB";
+
+                        return "Input " + level
+                               + " - WAIT attack at the frame edge";
                     }));
 
             options.dialogTitle =

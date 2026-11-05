@@ -237,9 +237,28 @@ public:
                     InstrumentGate::OnsetAnalysis onsetAnalysis;
 
                     if (guitarOnly && onset)
+                    {
                         onsetAnalysis =
                             instrumentGate.analyseOnset(detectedOnsetSample,
                                                         pitch);
+
+                        // Publish the decision for the input monitor so a
+                        // player can report which test failed.
+                        owner.gateDecision.store(
+                            onsetAnalysis.decided
+                                ? (onsetAnalysis.pluck ? 1 : 2)
+                                : 3,
+                            std::memory_order_relaxed);
+                        owner.gateAttackMs.store(
+                            static_cast<float>(onsetAnalysis.attackMs),
+                            std::memory_order_relaxed);
+                        owner.gateClimbFraction.store(
+                            static_cast<float>(onsetAnalysis.climbFraction),
+                            std::memory_order_relaxed);
+                        owner.gateRiseDb.store(
+                            static_cast<float>(onsetAnalysis.riseDb),
+                            std::memory_order_relaxed);
+                    }
 
                     // A voice-like attack must not score, move the tuner or
                     // advance practice. An attack that sits at the very end of
@@ -259,7 +278,7 @@ public:
                         rms,
                         sampleRate,
                         onset && pluckAccepted,
-                        onset && onsetAnalysis.latched,
+                        onset && onsetAnalysis.voiceLike,
                         detectedOnsetSample);
 
                     const bool sustainAccepted =

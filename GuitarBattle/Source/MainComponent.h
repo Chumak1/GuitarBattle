@@ -776,6 +776,14 @@ private:
     // the pluck gate. Read by the pitch-analysis thread only.
     std::atomic<bool> guitarInputOnly{ true };
 
+    // Latest guitar-only gate decision, published by the pitch-analysis
+    // thread for the input monitor. 0 = none yet, 1 = pluck accepted,
+    // 2 = rejected, 3 = not enough data to decide.
+    std::atomic<int> gateDecision{ 0 };
+    std::atomic<float> gateAttackMs{ 0.0f };
+    std::atomic<float> gateClimbFraction{ 0.0f };
+    std::atomic<float> gateRiseDb{ 0.0f };
+
     std::unique_ptr<GuitarInputMonitor> inputMonitor;
 
     void setInputSensitivity(float normalised);
