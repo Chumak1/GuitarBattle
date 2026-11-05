@@ -58,6 +58,38 @@ pwsh -File GuitarBattleServer/scripts/deploy-prod.ps1
 
 The script packs the server directory (never `.env`), uploads it over SSH, keeps a timestamped `GuitarBattleServer.backup-*` copy of the previous release, syncs the files, rebuilds the `api` image, restarts the stack and waits for `https://fretfight.online/health/ready`. Use `-NoBuild` to sync files without restarting containers. The production `.env` stays on the server untouched; add new variables there manually before deploying code that needs them.
 
+### HTTPS, certificates and security headers
+
+Caddy on the VM terminates TLS and reverse-proxies `fretfight.online` to
+`127.0.0.1:8000`; the versioned config is
+[`deploy/Caddyfile`](deploy/Caddyfile), applied with
+`pwsh -File scripts/deploy-prod.ps1 -Caddy`. The full runbook — issuance,
+renewal, what may never be deleted, and how to inspect the certificate — is
+[`docs/HTTPS_TLS.md`](docs/HTTPS_TLS.md). Summary:
+
+- **Issuance/renewal is automatic.** Caddy requests a Let's Encrypt certificate
+  over HTTP-01 and renews it in-process about 30 days before expiry. No cron job
+  and no manual step; port 80/tcp must stay open for the challenge.
+- **Certificates live on the VM disk** in `/var/lib/caddy/.local/share/caddy`,
+  outside Docker and outside Compose volumes. Never delete that directory:
+  losing it re-issues both certificates and can hit the Let's Encrypt duplicate
+  limit. `docker compose down -v` / rebuilds cannot touch it, but a VM
+  replacement needs the directory copied over.
+- **TLS 1.2 minimum, TLS 1.3 enabled**, HTTP/2 over TCP and HTTP/3 over UDP 443
+  (both Caddy defaults, advertised via `Alt-Svc: h3`).
+- **Security headers** — `Strict-Transport-Security: max-age=86400` (HTTPS only,
+  no `includeSubDomains`/`preload` yet),
+  `X-Content-Type-Options: nosniff` and
+  `Referrer-Policy: strict-origin-when-cross-origin` — are sent by the
+  application (`security_headers` middleware in `app/main.py`,
+  `tests/test_security_headers.py`). No `X-Frame-Options` and no CSP on the
+  marketing pages: the admin console embeds sandboxed same-origin iframes and
+  the public pages run inline Yandex.Metrika snippets; the strict CSP stays
+  limited to `/admin*`, `/support` and `/donate`.
+- **Verify:** `curl.exe -sI https://fretfight.online/` shows the headers,
+  `curl.exe -sv https://fretfight.online/` prints subject/issuer/expiry, and
+  `http://fretfight.online/` answers `308` to `https://`.
+
 
 ## API overview
 

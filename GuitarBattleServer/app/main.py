@@ -145,10 +145,43 @@ CONTENT_SECURITY_POLICY = (
 )
 
 
+# Baseline headers for every response. HSTS is deliberately short (one day) and
+# carries neither includeSubDomains nor preload: the certificates cover only
+# ``fretfight.online`` and ``www.fretfight.online``, and preload is irreversible.
+# The application is the single source for these headers in production too: Caddy
+# only adds them on the ``www`` redirect host, because setting them at the edge as
+# well duplicated ``X-Content-Type-Options`` on proxied responses
+# (``deploy/Caddyfile``, ``docs/HTTPS_TLS.md``).
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+}
+HSTS_HEADER_VALUE = "max-age=86400"
+
+
+def _request_is_https(request: Request) -> bool:
+    """True when the browser reached us over TLS.
+
+    Behind Caddy/uvicorn ``--proxy-headers`` the scheme already comes from
+    ``X-Forwarded-Proto``; the header is checked as well so a proxy that does not
+    rewrite the scope cannot silently drop HSTS.
+    """
+    forwarded = request.headers.get("x-forwarded-proto", "")
+    if forwarded:
+        return forwarded.split(",", 1)[0].strip().lower() == "https"
+    return request.url.scheme == "https"
+
+
 @app.middleware("http")
-async def csp_headers(request: Request, call_next):
-    """Send a strict CSP to the support page and the admin console."""
+async def security_headers(request: Request, call_next):
+    """Baseline security headers, plus a strict CSP on the internal pages."""
     response = await call_next(request)
+    for name, value in SECURITY_HEADERS.items():
+        response.headers.setdefault(name, value)
+    # Browsers must ignore HSTS delivered over plain HTTP, so it is only sent on
+    # HTTPS responses; local development keeps working without TLS.
+    if _request_is_https(request):
+        response.headers.setdefault("Strict-Transport-Security", HSTS_HEADER_VALUE)
     path = request.url.path
     if (
         path == "/support"
@@ -157,7 +190,6 @@ async def csp_headers(request: Request, call_next):
         or path.startswith("/admin/")
     ):
         response.headers["Content-Security-Policy"] = CONTENT_SECURITY_POLICY
-        response.headers["X-Content-Type-Options"] = "nosniff"
     return response
 
 

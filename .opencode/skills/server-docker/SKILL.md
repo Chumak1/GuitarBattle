@@ -23,8 +23,14 @@ curl.exe -s http://localhost:8000/health/ready
 ## Production (fretfight.online)
 
 - DNS: публичная зона `fretfight-online` в Yandex Cloud; NS `ns1.yandexcloud.net`, `ns2.yandexcloud.net`.
-- Edge: Caddy на хосте, `/etc/caddy/Caddyfile`; TLS Let's Encrypt; reverse proxy на `127.0.0.1:8000`.
-- API-контейнер слушает только `127.0.0.1:8000` (`API_BIND_HOST=127.0.0.1`). В security group открыты только 22 (админский IP), 80 и 443.
+- Edge: Caddy на хосте (не в Docker), `/etc/caddy/Caddyfile`; TLS Let's Encrypt; reverse proxy на `127.0.0.1:8000`.
+- Конфиг Caddy версионируется: `GuitarBattleServer/deploy/Caddyfile`, применяется
+  `pwsh -File scripts/deploy-prod.ps1 -Caddy`. Сертификаты и ACME-аккаунт лежат
+  в `/var/lib/caddy/.local/share/caddy` — **не удалять** (иначе перевыпуск и
+  риск rate limit Let's Encrypt). Подробности: `GuitarBattleServer/docs/HTTPS_TLS.md`.
+- Заголовки `Strict-Transport-Security`, `X-Content-Type-Options`,
+  `Referrer-Policy` ставит приложение (`security_headers` в `app/main.py`), не Caddy.
+- API-контейнер слушает только `127.0.0.1:8000` (`API_BIND_HOST=127.0.0.1`). В security group открыты только 22 (админский IP), 80 и 443 TCP; UDP/443 для HTTP/3 пока не открыт.
 - Проверка: `curl.exe -s https://fretfight.online/health/ready`, `https://fretfight.online/admin/`.
 - Caddy: `sudo systemctl status caddy`; после правки конфига — `sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && sudo systemctl reload caddy`.
 

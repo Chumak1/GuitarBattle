@@ -1,0 +1,51 @@
+# GuitarBattle production edge — TLS termination + reverse proxy to FastAPI.
+#
+# This file is the source of truth for /etc/caddy/Caddyfile on the production VM
+# (guitarbattle-prod, 84.201.151.183). Apply it with:
+#
+#   sudo install -o root -g root -m 0644 deploy/Caddyfile /etc/caddy/Caddyfile
+#   sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+#   sudo systemctl reload caddy
+#
+# or `pwsh -File scripts/deploy-prod.ps1 -Caddy`, which does exactly that.
+# Background, renewal rules and checks: docs/HTTPS_TLS.md.
+{
+	# Certificates and the Let's Encrypt ACME account live on the host disk, not
+	# inside Docker. Never delete this directory and never point storage at an
+	# ephemeral path: losing it forces a fresh issuance for both names and can
+	# exhaust the Let's Encrypt limit (5 duplicate certificates per week).
+	storage file_system /var/lib/caddy/.local/share/caddy
+}
+
+fretfight.online {
+	# Automatic HTTPS: Caddy obtains the Let's Encrypt certificate over HTTP-01
+	# (port 80) and renews it in the background once less than a third of the
+	# lifetime is left, i.e. about 30 days before expiry.
+	encode zstd gzip
+
+	tls {
+		# TLS 1.3 is negotiated whenever the client supports it; TLS 1.0/1.1
+		# stay disabled. HTTP/2 (TCP) and HTTP/3 (QUIC/UDP 443) are on by
+		# default and advertised with `Alt-Svc: h3`.
+		protocols tls1.2 tls1.3
+	}
+
+	# Strict-Transport-Security, X-Content-Type-Options and Referrer-Policy are
+	# added by the application (app/main.py, `security_headers` middleware).
+	# Setting them here as well duplicated `X-Content-Type-Options` on proxied
+	# responses, because Caddy appends to the header map the upstream filled in.
+	# The application is the single source: it also serves non-Caddy setups and
+	# only sends HSTS when the request actually arrived over TLS.
+	reverse_proxy 127.0.0.1:8000
+}
+
+www.fretfight.online {
+	# Nothing is proxied here, so the redirect responses need the headers from
+	# Caddy itself.
+	header {
+		Strict-Transport-Security "max-age=86400"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+	redir https://fretfight.online{uri} permanent
+}

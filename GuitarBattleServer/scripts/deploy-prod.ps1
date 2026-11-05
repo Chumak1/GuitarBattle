@@ -11,7 +11,8 @@
     is never uploaded and never printed.
 
 .PARAMETER KeyPath
-    SSH private key. Defaults to ~/.ssh/guitarbattle_prod.
+    SSH private key. Defaults to ~/.ssh/guitarbattle_prod, then falls back to
+    ~/.ssh/guitarbattle_deploy.
 
 .PARAMETER Target
     SSH destination. Defaults to ubuntu@84.201.151.183.
@@ -19,14 +20,22 @@
 .PARAMETER NoBuild
     Sync files only, do not restart containers (useful for a dry run).
 
+.PARAMETER Caddy
+    Also install deploy/Caddyfile as /etc/caddy/Caddyfile, validate it and
+    reload Caddy. Off by default so a normal release never touches the edge
+    config. See docs/HTTPS_TLS.md.
+
 .EXAMPLE
     pwsh -File GuitarBattleServer/scripts/deploy-prod.ps1
+.EXAMPLE
+    pwsh -File GuitarBattleServer/scripts/deploy-prod.ps1 -Caddy
 #>
 [CmdletBinding()]
 param(
     [string]$KeyPath = (Join-Path $env:USERPROFILE ".ssh\guitarbattle_prod"),
     [string]$Target = "ubuntu@84.201.151.183",
-    [switch]$NoBuild
+    [switch]$NoBuild,
+    [switch]$Caddy
 )
 
 $ErrorActionPreference = "Stop"
@@ -35,6 +44,10 @@ $serverDir = Split-Path -Parent $PSScriptRoot
 $localTar = Join-Path $env:TEMP "gb-deploy.tar.gz"
 $remoteDir = "/opt/guitarbattle/GuitarBattleServer"
 
+if (-not (Test-Path $KeyPath)) {
+    $fallback = Join-Path $env:USERPROFILE ".ssh\guitarbattle_deploy"
+    if (Test-Path $fallback) { $KeyPath = $fallback }
+}
 if (-not (Test-Path $KeyPath)) { throw "SSH key not found: $KeyPath" }
 
 Write-Host "== 1/5 packing $serverDir"
@@ -56,6 +69,20 @@ if ($LASTEXITCODE -ne 0) { throw "scp failed" }
 
 $build = if ($NoBuild) { "echo 'skipping rebuild'" } else { "sudo docker compose up -d --build" }
 
+# Edge config is applied only on request (-Caddy): a stale Caddyfile on the VM
+# must not be overwritten by an unrelated release. docs/HTTPS_TLS.md.
+$caddyStep = if ($Caddy) {
+@'
+echo '== caddy config'
+TS=$(date +%Y%m%d-%H%M%S)
+sudo cp -a /etc/caddy/Caddyfile "/etc/caddy/Caddyfile.bak-$TS"
+sudo install -o root -g root -m 0644 "$TGT/deploy/Caddyfile" /etc/caddy/Caddyfile
+sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+sudo systemctl reload caddy
+systemctl is-active caddy
+'@
+} else { "" }
+
 $remote = @"
 set -eu
 TGT=$remoteDir
@@ -74,6 +101,7 @@ cd "`$TGT"
 echo '== 5/5 build'
 $build
 sudo docker compose ps
+$caddyStep
 echo '== email config (no secrets) =='
 sudo docker compose exec -T api python -c "from app.config import settings as s; print('app_env=', s.app_env, 'smtp_configured=', bool(s.smtp_host), 'smtp_port=', s.smtp_port, 'smtp_security=', s.smtp_security, 'from=', s.smtp_from_email, 'username_set=', bool(s.smtp_username), 'password_set=', bool(s.smtp_password))" || true
 echo '== smtp check (no message sent) =='
