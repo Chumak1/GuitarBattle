@@ -166,7 +166,7 @@ public:
                         std::pow(2.0, (0.5 - sensitivity) * 2.0);
 
                     const double silenceThreshold = 0.0020 * thresholdScale;
-                    const double onsetThreshold = 0.0045 * thresholdScale;
+                    const double onsetThreshold = 0.0030 * thresholdScale;
                     const double noteRmsGate = 0.0030 * std::sqrt(thresholdScale);
 
                     const uint64_t minimumOnsetSamples =
@@ -212,10 +212,12 @@ public:
 
                     // Новая атака: громкость заметно выросла относительно
                     // предыдущего блока. Не ждём полного затухания струны.
+                    // Абсолютный прирост мал, чтобы тихий микрофон тоже
+                    // работал; ложные срабатывания отсекает гитарный фильтр.
                     const bool risingAttack =
                         rms >= onsetThreshold
                         && rms > previousRms * 1.20
-                        && rms - previousRms > 0.0015;
+                        && rms - previousRms > 0.0008;
 
                     const auto previousOnsetSample =
                         owner.lastOnsetSample.load(
