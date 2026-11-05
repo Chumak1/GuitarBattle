@@ -1295,7 +1295,7 @@ void MainComponent::getNextAudioBlock(
 
                 // Match the pitch detector's silence threshold: a channel
                 // below this level cannot produce a usable note.
-                constexpr float silenceThreshold = 0.0035f;
+                constexpr float silenceThreshold = 0.0020f;
 
                 const bool previousIsSilent =
                     previousRms < silenceThreshold;

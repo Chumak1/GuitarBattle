@@ -71,6 +71,15 @@ public:
                         owner.pitchAnalysisStartSample.load(
                             std::memory_order_relaxed);
 
+                    // Expose what the detector sees, for the diagnostics
+                    // readout in the audio settings.
+                    owner.analysisRms.store(
+                        static_cast<float>(rms),
+                        std::memory_order_relaxed);
+                    owner.analysisPitch.store(
+                        static_cast<float>(pitch),
+                        std::memory_order_relaxed);
+
                     const auto* blockSamples =
                         owner.pitchAnalysisBuffer
                         .getReadPointer(0);
@@ -156,9 +165,9 @@ public:
                     const double thresholdScale =
                         std::pow(2.0, (0.5 - sensitivity) * 2.0);
 
-                    const double silenceThreshold = 0.0035 * thresholdScale;
-                    const double onsetThreshold = 0.0080 * thresholdScale;
-                    const double noteRmsGate = 0.005 * std::sqrt(thresholdScale);
+                    const double silenceThreshold = 0.0020 * thresholdScale;
+                    const double onsetThreshold = 0.0045 * thresholdScale;
+                    const double noteRmsGate = 0.0030 * std::sqrt(thresholdScale);
 
                     const uint64_t minimumOnsetSamples =
                         static_cast<uint64_t>(
@@ -1029,7 +1038,7 @@ public:
                     owner.previousRmsValue2 = rms;
 
                     const double displayNoteGate =
-                        0.005 * std::sqrt(std::pow(
+                        0.0030 * std::sqrt(std::pow(
                             2.0,
                             (0.5 - juce::jlimit(
                                  0.0,

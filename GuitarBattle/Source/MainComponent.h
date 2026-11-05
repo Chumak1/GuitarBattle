@@ -784,6 +784,11 @@ private:
     std::atomic<float> gateClimbFraction{ 0.0f };
     std::atomic<float> gateRiseDb{ 0.0f };
 
+    // Per-frame analysis values for the diagnostics readout: the RMS the
+    // detector actually sees (4096-sample window) and the raw detected pitch.
+    std::atomic<float> analysisRms{ 0.0f };
+    std::atomic<float> analysisPitch{ 0.0f };
+
     std::unique_ptr<GuitarInputMonitor> inputMonitor;
 
     void setInputSensitivity(float normalised);

@@ -95,7 +95,7 @@ double PitchDetector::detectPitch(
             rmsSum
             / static_cast<double>(windowLength));
 
-    if (rms < 0.005)
+    if (rms < 0.0015)
         return 0.0;
 
     //==============================================================

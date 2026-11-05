@@ -6589,19 +6589,25 @@ void MainComponent::initialiseUi()
                     [this]() -> juce::String
                     {
                         const float rms =
-                            inputMeterRms.load(std::memory_order_relaxed);
-                        const auto level = juce::String(
-                            juce::Decibels::gainToDecibels(rms, -90.0f), 1)
+                            analysisRms.load(std::memory_order_relaxed);
+                        const float pitch =
+                            analysisPitch.load(std::memory_order_relaxed);
+                        const auto level = juce::String("A ")
+                            + juce::String(
+                                  juce::Decibels::gainToDecibels(rms, -90.0f), 1)
                             + " dBFS";
+                        const auto pitchText = pitch > 20.0f
+                            ? juce::String(pitch, 1) + " Hz"
+                            : juce::String("no pitch");
 
                         if (! guitarInputOnly.load(std::memory_order_relaxed))
-                            return "Filter off - input " + level;
+                            return "Filter off - " + level + ", " + pitchText;
 
                         const int decision =
                             gateDecision.load(std::memory_order_relaxed);
 
                         if (decision == 0)
-                            return "Input " + level + " - no attack yet";
+                            return level + ", " + pitchText + " - no attack";
 
                         const auto attack = juce::String(
                             gateAttackMs.load(std::memory_order_relaxed), 1);
@@ -6611,16 +6617,15 @@ void MainComponent::initialiseUi()
                             gateRiseDb.load(std::memory_order_relaxed), 1);
 
                         if (decision == 1)
-                            return "Input " + level + " - PLUCK attack "
-                                   + attack + " ms, climb " + climb;
+                            return level + " - PLUCK attack " + attack
+                                   + " ms, climb " + climb;
 
                         if (decision == 2)
-                            return "Input " + level + " - REJECTED attack "
-                                   + attack + " ms, climb " + climb + ", rise "
-                                   + rise + " dB";
+                            return level + " - REJECTED attack " + attack
+                                   + " ms, climb " + climb + ", rise " + rise
+                                   + " dB";
 
-                        return "Input " + level
-                               + " - WAIT attack at the frame edge";
+                        return level + " - WAIT attack at the frame edge";
                     }));
 
             options.dialogTitle =
