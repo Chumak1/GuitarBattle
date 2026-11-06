@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 #include "Gameplay/GameplayStats.h"
 #include <array>
+#include <deque>
 #include <map>
 #include <memory>
 #include <vector>
@@ -20,6 +21,7 @@
 #include "Gameplay/GameSession.h"
 #include "Generation/MidiMelodyGenerator.h"
 #include "Network/ApiClient.h"
+#include "Network/DuelClient.h"
 #include "Network/ClientAssets.h"
 #include "UI/GameStyle.h"
 #include "UI/GuitarInputMonitor.h"
@@ -411,6 +413,9 @@ private:
     // All server communication is asynchronous: requests run on this client's
     // worker threads and their results arrive on the message thread.
     ApiClient apiClient;
+    // REST client for /api/v1/duels. It shares ApiClient's worker pool, so no
+    // HTTP call can ever touch the message thread.
+    DuelClient duelClient{ apiClient };
     // Guards against stale responses from an older request overwriting newer UI.
     int authRequestId = 0;
     int leaderboardRequestId = 0;
@@ -1022,13 +1027,95 @@ private:
     bool duelPending = false;
     DuelBotLevel duelPendingLevel = DuelBotLevel::Easy;
 
+    //==========================================================================
+    // Online duels (server-authoritative)
+    //
+    // The server freezes the chart and owns HP, damage, counters, XP and Elo.
+    // The client only reports (note_index, quality) batches and copies the
+    // authoritative snapshot into the same HUD the bot match uses. JUCE 9.0.2
+    // has no juce::WebSocket, so a match is polled with GET /duels/{id} about
+    // once a second; the REST callbacks arrive on the message thread.
+    enum class DuelOnlinePhase
+    {
+        None,
+        Searching,   // POST /duels in flight
+        Waiting,     // in the queue / waiting for the opponent to become ready
+        Playing,
+        Finishing,   // chart ended locally, waiting for the server result
+        Finished
+    };
+
+    DuelOnlinePhase duelOnlinePhase = DuelOnlinePhase::None;
+    DuelMatchSnapshot duelOnlineMatch;
+    juce::String duelOnlineMatchId;
+    juce::String duelOnlineSongId;
+    juce::String duelOnlineSongSlug;
+    juce::String duelOnlineOpponentName;
+    int duelOnlineExpectedNotes = 0;
+    int duelOnlineGeneration = 0;
+    int duelOnlinePollFailures = 0;
+    int duelOnlineFinishAttempts = 0;
+
+    bool duelOnlinePlaybackPending = false;
+    bool duelOnlineChartReady = false;
+    bool duelOnlineStartAborted = false;
+    bool duelOnlinePollInFlight = false;
+    bool duelOnlineReadyInFlight = false;
+    bool duelOnlineEventInFlight = false;
+    bool duelOnlineFinishRequested = false;
+    bool duelOnlineFinishSent = false;
+    bool duelOnlineFinishInFlight = false;
+    bool duelOnlineResultInFlight = false;
+    bool duelOnlineEventSendingStopped = false;
+
+    double duelOnlineNextPollMs = 0.0;
+    double duelOnlineNextEventMs = 0.0;
+    double duelOnlineNextReadyMs = 0.0;
+    double duelOnlineSnapshotAtMs = 0.0;
+
+    // Read by the pitch-analysis thread (note resolved) and the message thread
+    // (auto miss + timer drain). The event queue itself is guarded by duelLock.
+    std::atomic<bool> duelOnlineActive{ false };
+    std::atomic<int> duelOnlineNoteCount{ 0 };
+    int duelOnlineLastQueuedIndex = -1;
+    std::deque<DuelEventOut> duelOnlinePendingEvents;
+    std::vector<DuelEventOut> duelOnlineInFlightEvents;
+
+    // Modal "SEARCHING FOR OPPONENT..." window with a CANCEL button.
+    juce::Component::SafePointer<juce::AlertWindow> duelOnlineDialog;
+
     void requestDuelWithBot(int botLevel);
     void showDuelModeMenu();
     void paintDuelOverlay(juce::Graphics& g);
+    void paintOnlineDuelOverlay(juce::Graphics& g);
     void beginPendingDuelIfNeeded();
     void onDuelNoteResolved(int noteIndex, int hitQuality);
     void finishDuel();
     void resetDuelState();
+
+    // Online duel flow.
+    void updateOnlineDuel();
+    void startOnlineDuel();
+    void cancelOnlineDuel(bool sendLeave);
+    void clearOnlineDuelState();
+    void showOnlineDuelDialog(const juce::String& message);
+    void closeOnlineDuelDialog();
+    void pollOnlineDuel();
+    void sendOnlineDuelReady();
+    void applyOnlineDuelState(const DuelMatchSnapshot& state);
+    void applyOnlineDuelExchangeFeedback(const DuelEventsReply& reply);
+    void handleOnlineDuelReplyError(const DuelReply& reply, const juce::String& stage);
+    void offerBotAfterNoOpponent();
+    void abortOnlineDuelForChartMismatch(int localNotes);
+    void queueOnlineDuelNote(int noteIndex, int hitQuality);
+    void flushOnlineDuelEvents();
+    void sendOnlineDuelFinish();
+    void requestOnlineDuelResult();
+    void finishOnlineDuelFromServer();
+    void beginOnlineDuelPlayback();
+    void startOnlineDuelTimeline();
+    void stopOnlineDuelTransport();
+    void updateOnlineDuelHud();
 
     int feedbackType = 0; // 1 PERFECT, 2 GREAT, 3 GOOD, 4 MISS, 5 combo milestone
     uint32_t feedbackStartMs = 0;

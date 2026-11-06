@@ -173,6 +173,7 @@
     <ClCompile Include="..\..\Source\Network\SessionStore.cpp"/>
     <ClCompile Include="..\..\Source\Network\MainComponentNetwork.cpp"/>
     <ClCompile Include="..\..\Source\Network\MainComponentAssets.cpp"/>
+    <ClCompile Include="..\..\Source\Network\DuelClient.cpp"/>
     <ClCompile Include="..\..\Source\Main.cpp"/>
     <ClCompile Include="..\..\Source\MainComponent.cpp"/>
     <ClCompile Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_audio_basics\audio_play_head\juce_AudioPlayHead.cpp">
@@ -3250,6 +3251,7 @@
     <ClInclude Include="..\..\Source\Audio\Vst3ScanWorker.h"/>
     <ClInclude Include="..\..\Source\Network\SessionStore.h"/>
     <ClInclude Include="..\..\Source\Network\ApiClient.h"/>
+    <ClInclude Include="..\..\Source\Network\DuelClient.h"/>
     <ClInclude Include="..\..\Source\Network\ClientAssets.h"/>
     <ClInclude Include="..\..\Source\MainComponent.h"/>
     <ClInclude Include="..\..\..\..\juce-9.0.2-windows\JUCE\modules\juce_audio_basics\audio_play_head\juce_AudioPlayHead.h"/>

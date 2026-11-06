@@ -693,3 +693,42 @@ timeout)` — анонимные перегрузки; вариант с `bearer
 - `GET /app/background-music` всегда 200; отсутствие трека — `url=null`,
   `size_bytes=0`, это не 404. Сам MP3 — `GET /app/background-music/file`;
   URL стабилен при замене, поэтому не кэшируйте его содержимое без revalidate.
+
+## Дуэли (`/duels`)
+
+Полный контракт — `GuitarBattleServer/docs/DUELS_API.md`; схемы —
+`app/schemas/duels.py`. Клиент: `Source/Network/DuelClient.{h,cpp}`,
+флоу и HUD — `Source/Gameplay/MainComponentDuel.cpp`.
+
+| Метод | Путь | Тело / параметры | Ответ |
+|---|---|---|---|
+| POST | `/duels` | `song_id` (UUID), `mode=bot|online`, `bot_level` только для `bot` | 201 `DuelMatchState` |
+| POST | `/duels/{id}/join` | — | `DuelMatchState`; идемпотентно для участника |
+| POST | `/duels/{id}/ready` | — | `DuelMatchState`; `409 no_opponent` после 30 с |
+| GET | `/duels/{id}` | Bearer | `DuelMatchState` (REST всегда содержит `your_side`) |
+| POST | `/duels/{id}/events` | `{"events":[{"note_index":int,"quality":"perfect|great|good|miss","client_time_ms?":int}]}`, 1–100 | `match`, `accepted[]`, `duplicates[]`, `rejected[]`, `exchanges[]`, `finished` |
+| POST | `/duels/{id}/finish` | — | `match`, `already_finished`, `waiting_for_opponent` |
+| POST | `/duels/{id}/leave` | — | `match`; идемпотентно |
+| GET | `/duels/{id}/result` | Bearer | `DuelMatchState`; `409 match_not_finished` |
+| GET | `/duels/history` | `limit`, `offset`, `mode?`, `result?` | `items[]`, `total`, `limit`, `offset` |
+| GET | `/duels/leaderboard` | `period=week|month|all`, `limit`, `offset` | `items[]`, `total` |
+| GET | `/duels/me` | Bearer | профиль + `active_match` |
+| GET | `/duels/players/{user_id}` | Bearer | публичный профиль |
+| WS | `/duels/{id}/ws?token=` | — | `connected/join/ready/countdown/start/note/block/hp/state/finish/cancelled/ping` |
+
+- Сервер **не принимает** HP, урон, счёт и победителя. Клиент отправляет только
+  `(note_index, quality)`; HP/счётчики/XP/рейтинг читаются из `DuelMatchState`.
+- `quality` — строка `perfect`/`great`/`good`/`miss` (не enum и не числа).
+- `note_index` — индекс в **замороженном** чарте матча (`note_count` из создания).
+  Клиент сверяет `note_count` с `gameSession.getMidiNotes().size()` и при
+  расхождении отменяет онлайн-матч и предлагает бота.
+- Повтор `(match, user, note_index)` не применяется второй раз и попадает в
+  `duplicates`; обмены разрешаются строго по возрастанию `note_index`.
+- Онлайн-матч играется на 100% скорости: времена нот заморожены в исходном темпе.
+- `battle rating` (Elo) меняется только в `mode=online` человек-человек;
+  бот-матч и ничья не дают рейтинга, XP начисляется.
+- `finish`/`leave` без единого отправленного события — техническое поражение и 0 XP.
+- 401 — access token истёк: клиент просит войти заново (WS закрывается кодом 4401).
+- `juce::WebSocket` в JUCE 9.0.2 отсутствует, поэтому клиент опрашивает
+  `GET /duels/{id}` примерно раз в 900 мс; при обрыве polling продолжается
+  (сервер не форсирует поражение для REST-клиентов, в отличие от WS-таймаута 30 с).

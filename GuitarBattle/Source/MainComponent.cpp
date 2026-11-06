@@ -269,6 +269,11 @@ void MainComponent::timerCallback()
             sendActivityHeartbeat(false);
     }
 
+    // Online duel: poll the authoritative match state and drain resolved
+    // notes. Both run through ApiClient's worker pool, so this tick only
+    // schedules work and applies results on the message thread.
+    updateOnlineDuel();
+
     // Smoothly animate the level bar toward the server-side progress. Runs in
     // every state so the bar is already settled when the player returns to the
     // main screen.
@@ -461,6 +466,14 @@ MainComponent::~MainComponent()
     // alive. The request is queued on the worker pool; the client's destructor
     // waits for the running job, and nothing here touches the UI thread.
     sendActivityHeartbeat(true);
+
+    // An online duel that is still waiting or playing is resigned on the
+    // server. Fire-and-forget: the API client outlives this destructor body.
+    if (duelOnlineMatchId.isNotEmpty()
+        && onlineAccessToken.isNotEmpty()
+        && duelOnlinePhase != DuelOnlinePhase::None
+        && duelOnlinePhase != DuelOnlinePhase::Finished)
+        duelClient.leave (duelOnlineMatchId, onlineAccessToken, nullptr);
 
     if (pitchThread != nullptr)
         pitchThread->stopThread(

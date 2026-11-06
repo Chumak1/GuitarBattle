@@ -72,6 +72,7 @@
 		C76143E0F74DA372245246BA /* TablatureComponent.cpp */ = {isa = PBXBuildFile; fileRef = 3D352EF594B84CAE7511D567; };
 		C9A2B5A1F105311EAD8525E8 /* include_juce_audio_utils.mm */ = {isa = PBXBuildFile; fileRef = 89BF36945FD8D3DA6EAD5AA8; };
 		CAF77406A96E248C0DEA442D /* include_juce_gui_basics_4.cpp */ = {isa = PBXBuildFile; fileRef = 177AFD770AF5AC13E9195ABF; };
+		CDB8BA03394ACA5BFE054192 /* DuelClient.cpp */ = {isa = PBXBuildFile; fileRef = F07E32ABD989B9E84A6407B8; };
 		D2CDA0169F2DA2EB81DA19C4 /* include_juce_audio_processors.mm */ = {isa = PBXBuildFile; fileRef = 33341AC1BDCC7DEB0955283F; };
 		D4D02035CF5383F792E4C650 /* CoreMIDI.framework */ = {isa = PBXBuildFile; fileRef = 1C1C888F752D5949FADE2875; };
 		D91C63F974A6339B43F5C7B6 /* Security.framework */ = {isa = PBXBuildFile; fileRef = 33E42B01A3733EACEAFFEFED; };
@@ -105,6 +106,7 @@
 		138696637F09E70337EC525E /* QuartzCore.framework */ /* QuartzCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = QuartzCore.framework; path = System/Library/Frameworks/QuartzCore.framework; sourceTree = SDKROOT; };
 		15055A837389297913DFD76A /* AppIcon.png */ /* AppIcon.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; name = AppIcon.png; path = ../../Source/UI/Assets/AppIcon.png; sourceTree = SOURCE_ROOT; };
 		177AFD770AF5AC13E9195ABF /* include_juce_gui_basics_4.cpp */ /* include_juce_gui_basics_4.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = include_juce_gui_basics_4.cpp; path = ../../JuceLibraryCode/include_juce_gui_basics_4.cpp; sourceTree = SOURCE_ROOT; };
+		1A2E0F813C23ECF452906A08 /* DuelClient.h */ /* DuelClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuelClient.h; path = ../../Source/Network/DuelClient.h; sourceTree = SOURCE_ROOT; };
 		1C1C888F752D5949FADE2875 /* CoreMIDI.framework */ /* CoreMIDI.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreMIDI.framework; path = System/Library/Frameworks/CoreMIDI.framework; sourceTree = SDKROOT; };
 		23B48A8C4BC451029747DB58 /* Foundation.framework */ /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = System/Library/Frameworks/Foundation.framework; sourceTree = SDKROOT; };
 		2436DB1D0FD828A68D4AF935 /* CoreAudioKit.framework */ /* CoreAudioKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreAudioKit.framework; path = System/Library/Frameworks/CoreAudioKit.framework; sourceTree = SDKROOT; };
@@ -204,6 +206,7 @@
 		EBC383B3CE1CE3E42B084C12 /* include_juce_core_zlib.c */ /* include_juce_core_zlib.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = include_juce_core_zlib.c; path = ../../JuceLibraryCode/include_juce_core_zlib.c; sourceTree = SOURCE_ROOT; };
 		EE6F37900FE197F773EBF9CA /* include_juce_audio_basics.mm */ /* include_juce_audio_basics.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_audio_basics.mm; path = ../../JuceLibraryCode/include_juce_audio_basics.mm; sourceTree = SOURCE_ROOT; };
 		EF10A7422CD9FF6A732E9451 /* WebKit.framework */ /* WebKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WebKit.framework; path = System/Library/Frameworks/WebKit.framework; sourceTree = SDKROOT; };
+		F07E32ABD989B9E84A6407B8 /* DuelClient.cpp */ /* DuelClient.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DuelClient.cpp; path = ../../Source/Network/DuelClient.cpp; sourceTree = SOURCE_ROOT; };
 		F215F22142BCED170B202142 /* PitchDetector.cpp */ /* PitchDetector.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = PitchDetector.cpp; path = ../../Source/Audio/PitchDetector.cpp; sourceTree = SOURCE_ROOT; };
 		F3321A841517CD8222EB5748 /* include_juce_gui_basics_2.cpp */ /* include_juce_gui_basics_2.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = include_juce_gui_basics_2.cpp; path = ../../JuceLibraryCode/include_juce_gui_basics_2.cpp; sourceTree = SOURCE_ROOT; };
 		F5CE7F431976765B37535579 /* DiscRecording.framework */ /* DiscRecording.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = DiscRecording.framework; path = System/Library/Frameworks/DiscRecording.framework; sourceTree = SDKROOT; };
@@ -428,6 +431,8 @@
 				D32B014A7969F2B1AA7EFB2E,
 				291E37827332BEC65370D017,
 				C63E7D82D03B8CA56C2452E0,
+				1A2E0F813C23ECF452906A08,
+				F07E32ABD989B9E84A6407B8,
 				972C2905520ED4178A69EAF1,
 			);
 			name = Network;
@@ -612,6 +617,7 @@
 				367A9A7BCF7ADE1A285620EF,
 				BBE1160AFF35B8BCC1BCC7E1,
 				11F8B9B0C0B76BFE3E5428DF,
+				CDB8BA03394ACA5BFE054192,
 				C3F1C52FF07C999BAF619359,
 				55ABC666B64217D112AF3C07,
 				C5A4B8A100245F855B66B260,

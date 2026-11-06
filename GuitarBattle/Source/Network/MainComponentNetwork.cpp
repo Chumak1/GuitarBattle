@@ -825,6 +825,12 @@ void MainComponent::startOnlineGameSession()
 
 void MainComponent::submitOnlineGameResult()
 {
+    // An online duel is scored by the /duels endpoints; submitting the same
+    // run as a regular game session would award progression twice.
+    if (duelOnlinePhase != DuelOnlinePhase::None
+        && duelOnlinePhase != DuelOnlinePhase::Finished)
+        return;
+
     if (onlineGameSessionUuid.isEmpty() || onlineAccessToken.isEmpty())
         return;
 

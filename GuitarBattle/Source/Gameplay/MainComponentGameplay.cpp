@@ -280,6 +280,13 @@ void MainComponent::beginGameplayCountIn()
     if (gameState != GameState::Ready)
         return;
 
+    // A replay after an online duel reuses the loaded chart. Drop the finished
+    // online snapshot so its result card cannot leak into the new run; the
+    // online path itself sets duelOnlineActive before calling this.
+    if (! duelOnlineActive.load (std::memory_order_relaxed)
+        && duelOnlinePhase == DuelOnlinePhase::Finished)
+        clearOnlineDuelState();
+
     // A new run invalidates the progression summary of the previous one.
     lastProgressionValid = false;
     lastAchievementsText.clear();
@@ -302,8 +309,9 @@ void MainComponent::beginGameplayCountIn()
     }
 
     // The launch is counted and the server session is opened only now: the
-    // Ready screen itself is not gameplay. A training run never opens one.
-    if (! practiceMode)
+    // Ready screen itself is not gameplay. A training run never opens one, and
+    // an online duel is scored by /duels (no regular game session).
+    if (! practiceMode && ! duelOnlineActive.load (std::memory_order_relaxed))
         startOnlineGameSession();
 
     const auto currentSample =
@@ -658,8 +666,9 @@ void MainComponent::startSelectedSong()
     backgroundPlayer.stop();
 
     // A regular start leaves any previous duel behind. A duel request sets
-    // duelPending before calling this, so its state is kept.
-    if (! duelPending)
+    // duelPending before calling this, and an online match sets
+    // duelOnlinePlaybackPending, so their state is kept.
+    if (! duelPending && ! duelOnlinePlaybackPending)
         resetDuelState();
 
     // A catalog pick is always a normal session, never an official daily one.
@@ -1118,6 +1127,21 @@ void MainComponent::beginTuningForSelectedSong()
     // A duel started from the song screen attaches to the loaded chart here:
     // the note data is ready, so the bot plays exactly this song.
     beginPendingDuelIfNeeded();
+
+    // Online duel: the chart was validated against the server's frozen
+    // note_count. Skip the tuner and Ready screens (the server countdown is
+    // already running) and start the aligned transport.
+    if (duelOnlineStartAborted)
+    {
+        duelOnlineStartAborted = false;
+        return;
+    }
+
+    if (duelOnlineChartReady)
+    {
+        startOnlineDuelTimeline();
+        return;
+    }
 
     tunerActive.store(true, std::memory_order_relaxed);
     previousRmsValue = 0.0;

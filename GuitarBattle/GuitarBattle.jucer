@@ -116,6 +116,10 @@
               file="Source/Network/MainComponentAssets.cpp"/>
         <FILE id="McApiH1" name="ApiClient.h" compile="0" resource="0"
               file="Source/Network/ApiClient.h"/>
+        <FILE id="DuelClH1" name="DuelClient.h" compile="0" resource="0"
+              file="Source/Network/DuelClient.h"/>
+        <FILE id="DuelClC1" name="DuelClient.cpp" compile="1" resource="0"
+              file="Source/Network/DuelClient.cpp"/>
         <FILE id="McAstH1" name="ClientAssets.h" compile="0" resource="0"
               file="Source/Network/ClientAssets.h"/>
       </GROUP>

@@ -952,6 +952,9 @@
     <ClCompile Include="..\..\Source\Network\MainComponentAssets.cpp">
       <Filter>GuitarBattle\Source\Network</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\Network\DuelClient.cpp">
+      <Filter>GuitarBattle\Source\Network</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\Main.cpp">
       <Filter>GuitarBattle\Source</Filter>
     </ClCompile>
@@ -4288,6 +4291,9 @@
       <Filter>GuitarBattle\Source\Network</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Network\ApiClient.h">
+      <Filter>GuitarBattle\Source\Network</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Network\DuelClient.h">
       <Filter>GuitarBattle\Source\Network</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Network\ClientAssets.h">
