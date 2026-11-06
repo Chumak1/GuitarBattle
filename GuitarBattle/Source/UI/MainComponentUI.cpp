@@ -1933,6 +1933,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                                       120.0f, 16.0f),
                juce::Justification::centredRight, false);
 
+    paintDuelOverlay(g);
 }
 
 void MainModalOverlayComponent::paint(juce::Graphics& g)
@@ -2181,6 +2182,7 @@ void MainComponent::resized()
     songTitleLabel.setVisible(false);
     previewButton.setVisible(false);
     practiceModeButton.setVisible(false);
+    duelModeButton.setVisible(false);
     vstButton.setVisible(false);
     retryConnectionButton.setVisible(sessionOfflineRetryAvailable && authScreen);
     loginScreenTitleLabel.setVisible(authScreen);
@@ -2443,6 +2445,9 @@ void MainComponent::resized()
         // Mode switch above START SONG: the player always sees what starts.
         practiceModeButton.setVisible(songSelect);
         practiceModeButton.setBounds(48 + leftW - 24 - 170, contentY + 96, 170, 34);
+
+        duelModeButton.setVisible(songSelect);
+        duelModeButton.setBounds(48 + leftW - 24 - 170, contentY + 136, 170, 34);
     }
 
     //==========================================================================
@@ -5446,6 +5451,15 @@ void MainComponent::initialiseUi()
     practiceModeButton.setTooltip("Practice the song note by note. No score, no rating, no XP.");
     practiceModeButton.onClick = [this] { setPracticeMode(! practiceMode); };
     addAndMakeVisible(practiceModeButton);
+
+    // Guitar Duels: the entry point on the song screen. The menu picks one of
+    // the three bots; online matchmaking plugs into the same flow once the
+    // server rooms are available.
+    duelModeButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
+    duelModeButton.setColour(juce::TextButton::textColourOffId, UiColors::accent);
+    duelModeButton.setTooltip("Duel another player or one of the three bots on the selected song.");
+    duelModeButton.onClick = [this] { showDuelModeMenu(); };
+    addAndMakeVisible(duelModeButton);
     setPracticeMode(false);
 
     // VST monitor plugin: sits in the header next to SETTINGS / AUDIO

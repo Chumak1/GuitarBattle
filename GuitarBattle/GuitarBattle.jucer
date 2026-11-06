@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" version="1.1.21" useAppConfig="0"
+<JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" version="1.2.0" useAppConfig="0"
               addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" defines="JUCE_USE_MP3AUDIOFORMAT=1">
   <MAINGROUP id="YwvWlz" name="GuitarBattle">
     <GROUP id="{FD100ED6-F86C-F2E1-2AEB-B88EA6EF2BB0}" name="Source">
@@ -24,6 +24,12 @@
               file="Source/Gameplay/GameplayEngine.cpp"/>
         <FILE id="APfuqV" name="GameplayEngine.h" compile="0" resource="0"
               file="Source/Gameplay/GameplayEngine.h"/>
+        <FILE id="DuelEn1" name="DuelEngine.h" compile="0" resource="0"
+              file="Source/Gameplay/DuelEngine.h"/>
+        <FILE id="DuelMa1" name="DuelMatch.h" compile="0" resource="0"
+              file="Source/Gameplay/DuelMatch.h"/>
+        <FILE id="DuelCpp" name="MainComponentDuel.cpp" compile="1" resource="0"
+              file="Source/Gameplay/MainComponentDuel.cpp"/>
         <FILE id="McGame1" name="MainComponentGameplay.cpp" compile="1" resource="0"
               file="Source/Gameplay/MainComponentGameplay.cpp"/>
         <FILE id="Prac01" name="MainComponentPractice.cpp" compile="1" resource="0"

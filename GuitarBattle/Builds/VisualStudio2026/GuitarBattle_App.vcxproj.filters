@@ -889,6 +889,9 @@
     <ClCompile Include="..\..\Source\Gameplay\GameplayEngine.cpp">
       <Filter>GuitarBattle\Source\Gameplay</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\Gameplay\MainComponentDuel.cpp">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\Gameplay\MainComponentGameplay.cpp">
       <Filter>GuitarBattle\Source\Gameplay</Filter>
     </ClCompile>
@@ -4225,6 +4228,12 @@
       <Filter>GuitarBattle\Source\Gameplay</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Gameplay\GameplayEngine.h">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Gameplay\DuelEngine.h">
+      <Filter>GuitarBattle\Source\Gameplay</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Gameplay\DuelMatch.h">
       <Filter>GuitarBattle\Source\Gameplay</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\GameStyle.h">

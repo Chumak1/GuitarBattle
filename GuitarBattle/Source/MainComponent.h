@@ -9,6 +9,7 @@
 
 #include "Gameplay/ScoringSystem.h"
 #include "Gameplay/GameplayEngine.h"
+#include "Gameplay/DuelMatch.h"
 #include "Midi/MidiParser.h"
 #include "Midi/TablatureComponent.h"
 #include "Audio/PitchDetector.h"
@@ -999,6 +1000,36 @@ private:
     GameSession gameSession;
     GameplayStats gameplayStats;
 
+    //==========================================================================
+    // Guitar Duels
+    //
+    // The client runs the same rules as the server (DuelEngine). Bot matches
+    // are simulated locally: the bot's quality for every chart note is derived
+    // from the note index and a match seed, so it always plays the selected
+    // song and can be replayed. Online matches will feed the server's
+    // authoritative results through the same DuelMatch state.
+
+    std::unique_ptr<DuelMatch> duelMatch;
+    juce::SpinLock duelLock;
+    std::atomic<bool> duelActive{ false };
+    std::atomic<int> duelPlayerHealthMilli{ 100000 };
+    std::atomic<int> duelOpponentHealthMilli{ 100000 };
+    std::atomic<int> duelLastExchange{ 0 };
+    std::atomic<int> duelLastDamageMilli{ 0 };
+    std::atomic<double> duelFlashUntilMs{ 0.0 };
+    std::atomic<int> duelBotLevelValue{ 0 };
+
+    bool duelPending = false;
+    DuelBotLevel duelPendingLevel = DuelBotLevel::Easy;
+
+    void requestDuelWithBot(int botLevel);
+    void showDuelModeMenu();
+    void paintDuelOverlay(juce::Graphics& g);
+    void beginPendingDuelIfNeeded();
+    void onDuelNoteResolved(int noteIndex, int hitQuality);
+    void finishDuel();
+    void resetDuelState();
+
     int feedbackType = 0; // 1 PERFECT, 2 GREAT, 3 GOOD, 4 MISS, 5 combo milestone
     uint32_t feedbackStartMs = 0;
     float feedbackBaseFontSize = 24.0f;
@@ -1083,6 +1114,9 @@ private:
     bool practiceCompleted = false;
 
     juce::TextButton practiceModeButton{ "PRACTICE MODE" };
+
+    // Guitar Duels entry on the song screen.
+    juce::TextButton duelModeButton{ "DUEL" };
 
     void setPracticeMode(bool enabled);
     void beginPracticeRun();

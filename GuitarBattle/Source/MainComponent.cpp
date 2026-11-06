@@ -401,6 +401,9 @@ void MainComponent::timerCallback()
 
                 if (gameSession.resolveTarget(currentTarget))
                 {
+                    onDuelNoteResolved(currentTarget,
+                                       static_cast<int>(HitQuality::Miss));
+
                     gameplayStats.recordMiss();
                     gameSession.setTargetHit(true);
 

@@ -562,6 +562,9 @@ void MainComponent::returnToSongSelect()
     practiceHoldUiApplied = false;
     practiceCompleted = false;
 
+    // A duel ends with the song: its state must not leak into the next game.
+    resetDuelState();
+
     countInActive.store(false, std::memory_order_release);
     countInRemaining.store(0, std::memory_order_relaxed);
     tablatureComponent.setPlayheadRunning(false);
@@ -653,6 +656,11 @@ void MainComponent::startSelectedSong()
     // stopped before any game audio is scheduled.
     stopPreviewPlayback();
     backgroundPlayer.stop();
+
+    // A regular start leaves any previous duel behind. A duel request sets
+    // duelPending before calling this, so its state is kept.
+    if (! duelPending)
+        resetDuelState();
 
     // A catalog pick is always a normal session, never an official daily one.
     currentSessionIsDaily = false;
@@ -1106,6 +1114,11 @@ void MainComponent::beginTuningForSelectedSong()
 {
     tuner.resetTunedStrings();
     syncTuningUi();
+
+    // A duel started from the song screen attaches to the loaded chart here:
+    // the note data is ready, so the bot plays exactly this song.
+    beginPendingDuelIfNeeded();
+
     tunerActive.store(true, std::memory_order_relaxed);
     previousRmsValue = 0.0;
     previousRmsValue2 = 0.0;
@@ -1383,6 +1396,10 @@ void MainComponent::advanceTarget()
 
         gameState =
             GameState::Finished;
+
+        // The chart ended: the duel is decided by the remaining health.
+        if (duelActive.load(std::memory_order_relaxed))
+            finishDuel();
 
         juce::MessageManager::callAsync(
             [this]

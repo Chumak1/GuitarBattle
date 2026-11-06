@@ -41,6 +41,7 @@
 		5E2D725670255D4CA5042DD1 /* MetalKit.framework */ = {isa = PBXBuildFile; fileRef = 84F432485AA7FBD7212D7AE9; settings = { ATTRIBUTES = (Weak, ); }; };
 		62F2C05E7F8A01D407E2BE3D /* MusicTrackPlayer.cpp */ = {isa = PBXBuildFile; fileRef = 27E415AD290DF1FBF7D047CA; };
 		654200391B965C7674CB64A7 /* CoreAudioKit.framework */ = {isa = PBXBuildFile; fileRef = 2436DB1D0FD828A68D4AF935; };
+		6678481DFBDB4F2B4F258796 /* MainComponentDuel.cpp */ = {isa = PBXBuildFile; fileRef = B06E3B6490562754368E7A8D; };
 		682140FB369AD12CDBAE9A13 /* MainComponentPractice.cpp */ = {isa = PBXBuildFile; fileRef = 7F09BCE0362D8652AC727225; };
 		692BB1FB78A4C220AC9F9949 /* QuartzCore.framework */ = {isa = PBXBuildFile; fileRef = 138696637F09E70337EC525E; };
 		6A0A1892652F014C32C68C67 /* GuitarInputMonitor.cpp */ = {isa = PBXBuildFile; fileRef = D9C1CEC16C675CEFF7B66686; };
@@ -125,6 +126,7 @@
 		3D352EF594B84CAE7511D567 /* TablatureComponent.cpp */ /* TablatureComponent.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = TablatureComponent.cpp; path = ../../Source/Midi/TablatureComponent.cpp; sourceTree = SOURCE_ROOT; };
 		3D373C704CC7DC05EB3F4E26 /* GameController.h */ /* GameController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = GameController.h; path = ../../Source/Gameplay/GameController.h; sourceTree = SOURCE_ROOT; };
 		3DEB4F68E3F09409FA2BDA63 /* LogoDark.svg */ /* LogoDark.svg */ = {isa = PBXFileReference; lastKnownFileType = file.svg; name = LogoDark.svg; path = ../../Source/UI/Assets/LogoDark.svg; sourceTree = SOURCE_ROOT; };
+		44158F422F2513C5DD4A53B7 /* DuelMatch.h */ /* DuelMatch.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuelMatch.h; path = ../../Source/Gameplay/DuelMatch.h; sourceTree = SOURCE_ROOT; };
 		455BDE709FE9AC8D45379627 /* AudioEngine.cpp */ /* AudioEngine.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AudioEngine.cpp; path = ../../Source/Audio/AudioEngine.cpp; sourceTree = SOURCE_ROOT; };
 		46B8F315CF5444201F4C929C /* GameSession.cpp */ /* GameSession.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = GameSession.cpp; path = ../../Source/Gameplay/GameSession.cpp; sourceTree = SOURCE_ROOT; };
 		488C4DFA0986BD703B29F0B6 /* MidiParser.cpp */ /* MidiParser.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MidiParser.cpp; path = ../../Source/Midi/MidiParser.cpp; sourceTree = SOURCE_ROOT; };
@@ -142,6 +144,7 @@
 		5C136CB26F35C0DCDC8BA151 /* juce_dsp */ /* juce_dsp */ = {isa = PBXFileReference; lastKnownFileType = folder; name = juce_dsp; path = "~/JUCE/modules/juce_dsp"; sourceTree = "<absolute>"; };
 		5C3C3964FB73F6596A364EA2 /* MainComponent.h */ /* MainComponent.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MainComponent.h; path = ../../Source/MainComponent.h; sourceTree = SOURCE_ROOT; };
 		5D5BA5158EC4AB0C4539C2BE /* Vst3ScanWorker.h */ /* Vst3ScanWorker.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = Vst3ScanWorker.h; path = ../../Source/Audio/Vst3ScanWorker.h; sourceTree = SOURCE_ROOT; };
+		5E26ECE3EB9ED87ADE7F38E2 /* DuelEngine.h */ /* DuelEngine.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuelEngine.h; path = ../../Source/Gameplay/DuelEngine.h; sourceTree = SOURCE_ROOT; };
 		648053CFCA15453CADAA3500 /* include_juce_gui_basics_5.cpp */ /* include_juce_gui_basics_5.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = include_juce_gui_basics_5.cpp; path = ../../JuceLibraryCode/include_juce_gui_basics_5.cpp; sourceTree = SOURCE_ROOT; };
 		6509A6491998F588C2C91088 /* GameplayEngine.h */ /* GameplayEngine.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = GameplayEngine.h; path = ../../Source/Gameplay/GameplayEngine.h; sourceTree = SOURCE_ROOT; };
 		6528DDE78163FD0AF00061BB /* juce_audio_processors */ /* juce_audio_processors */ = {isa = PBXFileReference; lastKnownFileType = folder; name = juce_audio_processors; path = "~/JUCE/modules/juce_audio_processors"; sourceTree = "<absolute>"; };
@@ -173,6 +176,7 @@
 		AB2B894B78EF7F75FDA136A0 /* include_juce_graphics_libjpg_3.c */ /* include_juce_graphics_libjpg_3.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; name = include_juce_graphics_libjpg_3.c; path = ../../JuceLibraryCode/include_juce_graphics_libjpg_3.c; sourceTree = SOURCE_ROOT; };
 		AD016F9AC2F68931294C6F6D /* include_juce_audio_formats.mm */ /* include_juce_audio_formats.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_audio_formats.mm; path = ../../JuceLibraryCode/include_juce_audio_formats.mm; sourceTree = SOURCE_ROOT; };
 		AFDDC70377EA88507966D549 /* MidiParser.h */ /* MidiParser.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = MidiParser.h; path = ../../Source/Midi/MidiParser.h; sourceTree = SOURCE_ROOT; };
+		B06E3B6490562754368E7A8D /* MainComponentDuel.cpp */ /* MainComponentDuel.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MainComponentDuel.cpp; path = ../../Source/Gameplay/MainComponentDuel.cpp; sourceTree = SOURCE_ROOT; };
 		B5D45251774B277011C8E41C /* include_juce_graphics.mm */ /* include_juce_graphics.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_graphics.mm; path = ../../JuceLibraryCode/include_juce_graphics.mm; sourceTree = SOURCE_ROOT; };
 		C0796CE403F979ED3087A79E /* include_juce_dsp.mm */ /* include_juce_dsp.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_dsp.mm; path = ../../JuceLibraryCode/include_juce_dsp.mm; sourceTree = SOURCE_ROOT; };
 		C63E7D82D03B8CA56C2452E0 /* ApiClient.h */ /* ApiClient.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = ApiClient.h; path = ../../Source/Network/ApiClient.h; sourceTree = SOURCE_ROOT; };
@@ -399,6 +403,9 @@
 				F87D7DCAB20412BC23DCF8DC,
 				D3A938AB11303338CC78FAAE,
 				6509A6491998F588C2C91088,
+				5E26ECE3EB9ED87ADE7F38E2,
+				44158F422F2513C5DD4A53B7,
+				B06E3B6490562754368E7A8D,
 				27995B379F3ED21F08C0BE8E,
 				7F09BCE0362D8652AC727225,
 			);
@@ -584,6 +591,7 @@
 				9721A9DC12A0C4A23965B572,
 				77BA95602F122EEDB34ED7CF,
 				00F70E13760AD196A95501BE,
+				6678481DFBDB4F2B4F258796,
 				2F99298E3CC3890BE8FF585F,
 				682140FB369AD12CDBAE9A13,
 				27BE660E47133C0BFB2BC7C9,
@@ -734,8 +742,8 @@
 					"JUCE_STANDALONE_APPLICATION=1",
 					"JUCE_USE_MP3AUDIOFORMAT=1",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
-					"JUCE_APP_VERSION=1.1.21",
-					"JUCE_APP_VERSION_HEX=0x10115",
+					"JUCE_APP_VERSION=1.2.0",
+					"JUCE_APP_VERSION_HEX=0x10200",
 					"JucePlugin_Build_VST=0",
 					"JucePlugin_Build_VST3=0",
 					"JucePlugin_Build_AU=0",
@@ -810,8 +818,8 @@
 					"JUCE_STANDALONE_APPLICATION=1",
 					"JUCE_USE_MP3AUDIOFORMAT=1",
 					"JUCER_XCODE_MAC_F6D2F4CF=1",
-					"JUCE_APP_VERSION=1.1.21",
-					"JUCE_APP_VERSION_HEX=0x10115",
+					"JUCE_APP_VERSION=1.2.0",
+					"JUCE_APP_VERSION_HEX=0x10200",
 					"JucePlugin_Build_VST=0",
 					"JucePlugin_Build_VST3=0",
 					"JucePlugin_Build_AU=0",

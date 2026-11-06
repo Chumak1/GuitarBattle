@@ -770,6 +770,10 @@ public:
                                 if (!owner.gameSession.resolveTarget(currentTargetIndex))
                                     break;
 
+                                owner.onDuelNoteResolved(
+                                    currentTargetIndex,
+                                    static_cast<int>(HitQuality::Miss));
+
                                 owner.gameplayStats.recordMiss();
                                 owner.gameSession.setTargetHit(true);
                                 juce::MessageManager::callAsync(
@@ -857,6 +861,12 @@ public:
                                                     targetMidi, targetMidi, targetFrequency, chordTimingErrorMs,
                                                     owner.difficulty, owner.speedPercent,
                                                     owner.songLevel.load(std::memory_order_relaxed));
+
+                                                owner.onDuelNoteResolved(
+                                                    targetIndex,
+                                                    static_cast<int>(
+                                                        evaluation.scoringResult.note.quality));
+
                                                 const int newScore = owner.gameplayStats.recordHit(
                                                     evaluation.scoringResult.score, evaluation.scoringResult.note.quality);
                                                 owner.gameplayStats.recordTiming(chordTimingErrorMs);
@@ -870,6 +880,10 @@ public:
                                             }
                                             else
                                             {
+                                                owner.onDuelNoteResolved(
+                                                    targetIndex,
+                                                    static_cast<int>(HitQuality::Miss));
+
                                                 owner.gameplayStats.recordMiss();
                                                 juce::MessageManager::callAsync([this]
                                                 {
@@ -971,6 +985,10 @@ public:
                                         if (owner.gameSession.resolveTarget(
                                             currentTargetIndex))
                                         {
+                                            owner.onDuelNoteResolved(
+                                                currentTargetIndex,
+                                                static_cast<int>(HitQuality::Miss));
+
                                             owner.gameplayStats.recordMiss();
                                             owner.gameSession.setTargetHit(
                                                 true);
@@ -997,6 +1015,11 @@ public:
 
                                             const auto& scoringResult =
                                                 noteEvaluation.scoringResult;
+
+                                            owner.onDuelNoteResolved(
+                                                currentTargetIndex,
+                                                static_cast<int>(
+                                                    scoringResult.note.quality));
 
                                             const int scoreToAdd =
                                                 scoringResult.score;
