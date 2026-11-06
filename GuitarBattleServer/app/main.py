@@ -1,4 +1,5 @@
 import logging
+import re
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -23,6 +24,44 @@ from app.services.geo import country_for_ip, language_for_country
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 log_email_configuration()
 logger = logging.getLogger(__name__)
+
+
+class _RedactAccessTokens(logging.Filter):
+    """Keep JWTs out of uvicorn access logs.
+
+    The WebSocket handshake carries the access token in ``?token=`` because a
+    browser cannot set an ``Authorization`` header on a WebSocket. Uvicorn
+    logs the full path with the query string, so the access logger gets a
+    filter that masks the value. The token is never written by the application
+    itself either.
+    """
+
+    _TOKEN_RE = re.compile(
+        r"([?&](?:token|access_token)=)[^&\s\"']+", re.IGNORECASE
+    )
+
+    @classmethod
+    def redact(cls, value: str) -> str:
+        return cls._TOKEN_RE.sub(r"\1***", value)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                self.redact(arg) if isinstance(arg, str) else arg
+                for arg in record.args
+            )
+        elif isinstance(record.args, dict):
+            record.args = {
+                key: self.redact(value) if isinstance(value, str) else value
+                for key, value in record.args.items()
+            }
+        if isinstance(record.msg, str):
+            record.msg = self.redact(record.msg)
+        return True
+
+
+for _logger_name in ("uvicorn.access", "uvicorn.error"):
+    logging.getLogger(_logger_name).addFilter(_RedactAccessTokens())
 
 
 def _sync_reference_data() -> None:

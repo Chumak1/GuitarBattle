@@ -14,6 +14,7 @@ from app.api.v1.admin_statistics import router as admin_statistics_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.admin_daily import router as admin_daily_router
 from app.api.v1.progression import router as progression_router
+from app.api.v1.duels import router as duels_router
 
 router = APIRouter()
 router.include_router(auth_router)
@@ -23,6 +24,7 @@ router.include_router(app_audio_router)
 router.include_router(admin_app_audio_router)
 router.include_router(games_router)
 router.include_router(progression_router)
+router.include_router(duels_router)
 router.include_router(client_assets_router)
 router.include_router(site_router)
 router.include_router(admin_site_router)

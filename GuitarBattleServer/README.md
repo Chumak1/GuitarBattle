@@ -192,6 +192,25 @@ at 600 per attempt, achievements are derived from server-side state), but a modi
 client can still report accuracy it did not play. Competitive/public deployment should
 add replay or signed gameplay records.
 
+### Guitar Duels
+
+Online duels and bot duels are server-authoritative: the client submits only
+`(note_index, quality)`, and the server computes HP, damage, the winner, XP and Elo.
+Full contract, WebSocket messages and anti-cheat rules: [`docs/DUELS_API.md`](docs/DUELS_API.md).
+
+- `POST /duels` — create a bot match (`mode: "bot"`, `bot_level`) or join the online
+  queue for a song (`mode: "online"`).
+- `POST /duels/{id}/join`, `POST /duels/{id}/ready`, `POST /duels/{id}/events`,
+  `POST /duels/{id}/finish`, `POST /duels/{id}/leave`.
+- `GET /duels/{id}`, `GET /duels/{id}/result`, `GET /duels/history`,
+  `GET /duels/leaderboard?period=week|month|all`, `GET /duels/players/{user_id}`,
+  `GET /duels/me`.
+- `WS /duels/{id}/ws?token=...` — join/ready/start/countdown/note/hp/block/finish.
+- Rules: quality points 100/85/70/0; damage `clamp(|diff| * 0.03, 0.5, 5.0)`; HP 100;
+  XP `20 + perfect*5 + great*3 + good*2 + (win ? 40 : 0)`; Elo K=32 from 1000 for
+  online human-vs-human only. Bots never change the rating.
+- Migration: `0021_duels` (`duel_matches`, `duel_participants`, `duel_events`).
+
 ### Progression, achievements and daily challenge
 
 Migration `0008_progression` adds the whole progression model: `users.xp_total` /

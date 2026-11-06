@@ -23,6 +23,7 @@ from app.models.progression import (
     UserAchievement,
     XpAward,
 )
+from app.models.duel import DuelEvent, DuelMatch, DuelParticipant
 
 __all__ = [
     "User", "EmailAuthCode", "RefreshSession", "Song", "SongFile", "GameSession", "Score",
@@ -33,4 +34,5 @@ __all__ = [
     "AppSession", "GameLaunch",
     "Achievement", "DailyChallenge", "DailyResult", "DailySlot", "SongBestScore",
     "UserAchievement", "XpAward",
+    "DuelMatch", "DuelParticipant", "DuelEvent",
 ]
