@@ -218,8 +218,13 @@ void MainComponent::paintDuelOverlay (juce::Graphics& g)
     int notes = 0;
     double accuracy = 0.0;
     double damageDealt = 0.0;
-    double damageTaken = 0.0;
     int xp = 0;
+    int opPerfect = 0;
+    int opGreat = 0;
+    int opGood = 0;
+    int opMiss = 0;
+    double opAccuracy = 0.0;
+    double opDamage = 0.0;
     const auto level = static_cast<DuelBotLevel> (
         duelBotLevelValue.load (std::memory_order_relaxed));
 
@@ -241,8 +246,15 @@ void MainComponent::paintDuelOverlay (juce::Graphics& g)
             notes = stats.notes;
             accuracy = stats.accuracy();
             damageDealt = stats.damageDealt;
-            damageTaken = stats.damageTaken;
             xp = duelMatch->getRewards().xp;
+
+            const auto& opponent = duelMatch->getOpponentStats();
+            opPerfect = opponent.perfect;
+            opGreat = opponent.great;
+            opGood = opponent.good;
+            opMiss = opponent.miss;
+            opAccuracy = opponent.accuracy();
+            opDamage = opponent.damageDealt;
         }
     }
 
@@ -322,7 +334,7 @@ void MainComponent::paintDuelOverlay (juce::Graphics& g)
 
         drawColumn (rightX, top, profile.name, UiColors::orange,
                     juce::roundToInt (duelOpponentHealthMilli.load() / 1000.0),
-                    0, 0, 0, 0, 0.0, damageTaken);
+                    opPerfect, opGreat, opGood, opMiss, opAccuracy, opDamage);
 
         // Note count and rewards footer.
         g.setColour (UiColors::muted);
