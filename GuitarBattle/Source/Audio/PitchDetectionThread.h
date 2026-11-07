@@ -80,6 +80,25 @@ public:
                         static_cast<float>(pitch),
                         std::memory_order_relaxed);
 
+                    // Tuner diagnostics: what the detector actually sees. Bass
+                    // problems (range, level, pitch) show up here.
+                    if (owner.tunerActive.load (std::memory_order_relaxed))
+                    {
+                        if (++tunerDiagFrames >= 20)
+                        {
+                            tunerDiagFrames = 0;
+                            owner.appendAudioDebugLog (
+                                "TUNER range=" + juce::String (pitchRange.getStart(), 1)
+                                + ".." + juce::String (pitchRange.getEnd(), 1)
+                                + " pitch=" + juce::String (pitch, 2)
+                                + " rms=" + juce::String (rms, 5));
+                        }
+                    }
+                    else
+                    {
+                        tunerDiagFrames = 0;
+                    }
+
                     const auto* blockSamples =
                         owner.pitchAnalysisBuffer
                         .getReadPointer(0);
@@ -1310,9 +1329,13 @@ private:
     InstrumentGate instrumentGate;
     bool tunerRejectedShown = false;
     bool displayRejectedShown = false;
+
     // Frames without a usable tuner reading. After two (about 190 ms) the
     // tuner is cleared instead of keeping the last value on screen.
     int tunerStaleFrames = 0;
+
+    // Throttle for the tuner diagnostics written to audio-debug.log.
+    int tunerDiagFrames = 0;
 
     // Pitch stability: how many consecutive analysis frames carried the same
     // note (within 60 cents). Speech jumps between notes every syllable; a

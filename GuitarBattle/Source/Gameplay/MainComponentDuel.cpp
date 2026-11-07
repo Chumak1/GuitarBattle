@@ -1082,6 +1082,9 @@ void MainComponent::pollOnlineDuel()
             {
                 ++self->duelOnlinePollFailures;
 
+                duelDebugLog ("poll transport error failures="
+                              + juce::String (self->duelOnlinePollFailures));
+
                 // The match itself survives a network hiccup: keep polling and
                 // the next successful GET restores HP and next_note_index.
                 if (self->duelOnlinePollFailures >= 6
@@ -1101,12 +1104,19 @@ void MainComponent::pollOnlineDuel()
                 || reply.statusCode == 403
                 || reply.statusCode == 404)
             {
+                duelDebugLog ("poll error status=" + juce::String (reply.statusCode)
+                              + " code=" + reply.errorCode);
                 self->handleOnlineDuelReplyError (reply, "state");
                 return;
             }
 
             if (! reply.ok || ! match.valid)
+            {
+                duelDebugLog ("poll rejected status=" + juce::String (reply.statusCode)
+                              + " code=" + reply.errorCode
+                              + " msg=" + reply.errorMessage);
                 return;
+            }
 
             self->duelOnlinePollFailures = 0;
             self->applyOnlineDuelState (match);
@@ -1144,6 +1154,13 @@ void MainComponent::applyOnlineDuelState (const DuelMatchSnapshot& incoming)
     duelOnlineSnapshotAtMs = duelNowMs();
     duelOnlineExpectedNotes = snapshot.noteCount;
     updateOnlineDuelHud();
+
+    duelDebugLog ("online state status=" + snapshot.status
+                  + " phase=" + juce::String (static_cast<int> (duelOnlinePhase))
+                  + " hp=" + juce::String (snapshot.findYou() != nullptr
+                                               ? snapshot.findYou()->hp : -1.0, 1)
+                  + " next=" + juce::String (snapshot.nextNoteIndex)
+                  + " notes=" + juce::String (snapshot.noteCount));
 
     if (snapshot.status == "waiting")
     {
@@ -1467,6 +1484,10 @@ void MainComponent::flushOnlineDuelEvents()
 
             if (! reply.ok)
             {
+                duelDebugLog ("events error status=" + juce::String (reply.statusCode)
+                              + " code=" + reply.errorCode
+                              + " msg=" + reply.errorMessage);
+
                 if (reply.statusCode == 401)
                 {
                     self->handleOnlineDuelReplyError (reply, "events");
@@ -1505,6 +1526,13 @@ void MainComponent::flushOnlineDuelEvents()
 
             self->applyOnlineDuelExchangeFeedback (events);
             self->applyOnlineDuelState (events.match);
+
+            duelDebugLog ("events ok accepted=" + juce::String (static_cast<int> (events.accepted.size()))
+                          + " dup=" + juce::String (static_cast<int> (events.duplicates.size()))
+                          + " rejected=" + juce::String (static_cast<int> (events.rejected.size()))
+                          + (events.rejected.empty() ? juce::String()
+                                                     : " first=" + juce::String (events.rejected.front().noteIndex)
+                                                           + ":" + events.rejected.front().code));
 
             if (events.finished)
                 self->finishOnlineDuelFromServer();
@@ -1590,6 +1618,10 @@ void MainComponent::requestOnlineDuelResult()
                 return;
 
             self->duelOnlineResultInFlight = false;
+
+            duelDebugLog ("result ok=" + juce::String (reply.ok ? 1 : 0)
+                          + " status=" + juce::String (reply.statusCode)
+                          + " code=" + reply.errorCode);
 
             if (! reply.ok)
             {
