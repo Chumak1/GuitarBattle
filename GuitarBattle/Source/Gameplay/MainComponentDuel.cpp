@@ -244,7 +244,7 @@ void MainComponent::finishDuel()
         duelOnlineActive.store (false, std::memory_order_relaxed);
         duelActive.store (false, std::memory_order_relaxed);
 
-        practiceHoldActive.store (false, std::memory_order_acquire);
+        practiceHoldActive.store (false, std::memory_order_release);
 
         if (gameState.load (std::memory_order_relaxed) == GameState::Playing)
             gameState.store (GameState::Finished, std::memory_order_relaxed);
@@ -276,7 +276,7 @@ void MainComponent::finishDuel()
 
     // Knockout or the end of the chart: the transport stops and the results
     // panel (painted from the same DuelMatch state) takes over.
-    practiceHoldActive.store (false, std::memory_order_acquire);
+    practiceHoldActive.store (false, std::memory_order_release);
 
     if (gameState.load (std::memory_order_relaxed) == GameState::Playing)
         gameState.store (GameState::Finished, std::memory_order_relaxed);
@@ -1579,7 +1579,7 @@ void MainComponent::startOnlineDuelTimeline()
 
 void MainComponent::stopOnlineDuelTransport()
 {
-    practiceHoldActive.store (false, std::memory_order_acquire);
+    practiceHoldActive.store (false, std::memory_order_release);
     countInActive.store (false, std::memory_order_release);
     countInRemaining.store (0, std::memory_order_relaxed);
 

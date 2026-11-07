@@ -12,6 +12,77 @@
 #include "UI/BrandAssets.h"
 #include "UI/GameStyle.h"
 
+#if JUCE_WINDOWS
+ #include <crtdbg.h>
+ #include <windows.h>
+#endif
+
+//==============================================================================
+// Diagnostic log for debug-build assertions.
+//
+// A Debug build breaks on a failed debug assertion (for example the MSVC STL
+// "Invalid memory order" check). Without a debugger the only trace is the
+// Windows crash report, which has no stack. This hook writes the assertion
+// text and the return addresses to %APPDATA%\GuitarBattle\assert.log before
+// the break, so the caller can be resolved with the PDB. Release builds are
+// not affected (the CRT hook is compiled in but no assertion fires there).
+namespace CrashDiagnostics
+{
+#if JUCE_WINDOWS
+    static juce::File assertionLogFile()
+    {
+        auto directory = juce::File::getSpecialLocation (
+                             juce::File::userApplicationDataDirectory)
+                             .getChildFile ("GuitarBattle");
+
+        directory.createDirectory();
+
+        return directory.getChildFile ("assert.log");
+    }
+
+    static int __cdecl assertionReportHook (int reportType, char* message,
+                                            int* returnValue)
+    {
+        juce::String text;
+        text << "=== report " << reportType << " ===\n";
+        text << (message != nullptr ? message : "(no message)") << "\n";
+
+        void* frames[48];
+        const USHORT count = RtlCaptureStackBackTrace (2, 48, frames, nullptr);
+
+        text << "moduleBase=0x"
+             << juce::String::toHexString (
+                    static_cast<juce::int64> (
+                        reinterpret_cast<juce::pointer_sized_int> (
+                            GetModuleHandleW (nullptr))))
+             << "\n";
+
+        for (USHORT i = 0; i < count; ++i)
+            text << "frame" << static_cast<int> (i) << "=0x"
+                 << juce::String::toHexString (
+                        static_cast<juce::int64> (
+                            reinterpret_cast<juce::pointer_sized_int> (frames[i])))
+                 << "\n";
+
+        assertionLogFile().appendText (text);
+
+        if (returnValue != nullptr)
+            *returnValue = 0;
+
+        // Handled: skip the modal assertion dialog. The assertion itself still
+        // stops the debug build, but the log is already written.
+        return TRUE;
+    }
+#endif
+
+    static void install()
+    {
+#if JUCE_WINDOWS
+        _CrtSetReportHook2 (_CRT_RPTHOOK_INSTALL, assertionReportHook);
+#endif
+    }
+}
+
 //==============================================================================
 class GuitarBattleApplication  : public juce::JUCEApplication
 {
@@ -27,6 +98,8 @@ public:
     void initialise (const juce::String& commandLine) override
     {
         juce::ignoreUnused(commandLine);
+
+        CrashDiagnostics::install();
 
         // VST3 scan helper: the VST host launches this executable with a single
         // plugin file to inspect. It must not open a window, start audio or
