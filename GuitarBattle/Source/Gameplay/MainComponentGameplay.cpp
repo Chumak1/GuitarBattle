@@ -1343,7 +1343,10 @@ void MainComponent::setTargetFromMidiIndex(
 
 juce::Range<double> MainComponent::getPitchAnalysisRange() const
 {
-    double minFrequency = 60.0;
+    // 30 Hz covers a five-string bass low B (30.9 Hz) and the standard bass
+    // E1 (41.2 Hz); a guitar's low E is 82 Hz, so the extra range costs
+    // nothing but makes bass input detectable at all.
+    double minFrequency = 30.0;
     double maxFrequency = 700.0;
 
     if (gameState.load(std::memory_order_relaxed) == GameState::Playing)
@@ -1363,7 +1366,7 @@ juce::Range<double> MainComponent::getPitchAnalysisRange() const
             // avoiding octave errors on the low strings.
             if (targetFrequency > 600.0)
             {
-                minFrequency = juce::jmax(60.0, targetFrequency * 0.75);
+                minFrequency = juce::jmax(30.0, targetFrequency * 0.75);
                 maxFrequency = juce::jmin(1500.0, targetFrequency * 1.35);
             }
         }

@@ -48,11 +48,15 @@ double PitchDetector::detectPitch(
 
     constexpr int maxAnalysisWindow = 2048;
 
+    // The analysis window must contain at least a few periods of the lowest
+    // note in the requested range: a 41 Hz bass string has a 24 ms period, and
+    // the old fixed 2048-sample window left less than one full period of
+    // overlap for the correlation, so the fundamental was never found.
     const int lowestNoteLag =
-        static_cast<int>(sampleRate / 60.0);
+        static_cast<int>(sampleRate / juce::jmax(20.0, minFrequency));
 
     const int analysisWindow =
-        juce::jmax(maxAnalysisWindow, lowestNoteLag + 256);
+        juce::jmax(maxAnalysisWindow, lowestNoteLag * 3 + 128);
 
     const int windowLength =
         juce::jmin(numSamples, analysisWindow);

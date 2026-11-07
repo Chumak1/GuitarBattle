@@ -5884,6 +5884,25 @@ void MainComponent::initialiseUi()
     gameStartButton.onClick =
         [this]
         {
+            // PLAY AGAIN on the results screen restarts the same duel (a new
+            // bot match or a new online search). Without this the finished
+            // duel state stayed on screen over the next run.
+            if (gameState == GameState::Finished)
+            {
+                if (duelOnlinePhase != DuelOnlinePhase::None)
+                {
+                    clearOnlineDuelState();
+                    startOnlineDuel();
+                    return;
+                }
+
+                if (duelMatch != nullptr)
+                {
+                    requestDuelWithBot (static_cast<int> (duelPendingLevel));
+                    return;
+                }
+            }
+
             // START always begins a fresh session from MIDI note zero.
             // Reuse the same reset path as the tuner-complete start button
             // so scoring, onset detection, timeline and metronome are reset

@@ -275,9 +275,13 @@ void MainComponent::timerCallback()
     updateOnlineDuel();
 
     // The duel strip changes on every exchange and its damage label fades, so
-    // it needs a repaint while a bot match is running. Only the strip region
-    // is invalidated: a full overlay repaint would also repaint the tablature.
-    if (duelActive.load (std::memory_order_relaxed))
+    // it needs a repaint while a duel is running. Only the strip region is
+    // invalidated: a full overlay repaint would also repaint the tablature.
+    if (duelActive.load (std::memory_order_relaxed)
+        || duelOnlineActive.load (std::memory_order_relaxed)
+        || duelOnlinePhase == DuelOnlinePhase::Playing
+        || duelOnlinePhase == DuelOnlinePhase::Finishing
+        || duelOnlinePhase == DuelOnlinePhase::Finished)
         repaintDuelHud();
 
     // Smoothly animate the level bar toward the server-side progress. Runs in
