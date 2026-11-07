@@ -274,6 +274,12 @@ void MainComponent::timerCallback()
     // schedules work and applies results on the message thread.
     updateOnlineDuel();
 
+    // The duel strip changes on every exchange and its damage label fades, so
+    // it needs a repaint while a bot match is running. Only the strip region
+    // is invalidated: a full overlay repaint would also repaint the tablature.
+    if (duelActive.load (std::memory_order_relaxed))
+        repaintDuelHud();
+
     // Smoothly animate the level bar toward the server-side progress. Runs in
     // every state so the bar is already settled when the player returns to the
     // main screen.
@@ -378,11 +384,6 @@ void MainComponent::timerCallback()
                 audioSampleCounter.load(
                     std::memory_order_relaxed);
 
-            const auto targetSample =
-                getTargetSample(
-                    currentTarget,
-                    sampleRate);
-
             // The auto miss must not fire before the (level- and speed-scaled)
             // late hit window closes.
             const double timingWindowScale =
@@ -395,31 +396,48 @@ void MainComponent::timerCallback()
                     sampleRate
                     * juce::jmax(0.300, 0.150 * timingWindowScale + 0.100));
 
-            if (currentSample >= targetSample + missTimeoutSamples)
+            // Resolve every target whose window has already passed, not just
+            // one per tick: after the last note (or a knockout) the remaining
+            // targets are overdue at once, and resolving one per 33 ms tick
+            // delayed the finish screen by seconds.
+            for (int guard = 0; guard < 64; ++guard)
             {
-                DBG("AUTO MISS"
-                    << " target=" << currentTarget
-                    << " currentSample=" << currentSample
-                    << " targetSample=" << targetSample
-                    << " deltaMs="
-                    << ((currentSample - targetSample) * 1000.0 / sampleRate));
+                const int target =
+                    gameSession.getTargetNoteIndex();
 
-                if (gameSession.resolveTarget(currentTarget))
-                {
-                    onDuelNoteResolved(currentTarget,
-                                       static_cast<int>(HitQuality::Miss));
+                if (target < 0
+                    || target >= static_cast<int>(
+                        gameSession.getMidiNotes().size()))
+                    break;
 
-                    gameplayStats.recordMiss();
-                    gameSession.setTargetHit(true);
+                const auto targetSample =
+                    getTargetSample(target, sampleRate);
 
-                    juce::MessageManager::callAsync(
-                        [this]
-                        {
-                            showHitFeedback("MISS", 4);
-                        });
+                if (currentSample < targetSample + missTimeoutSamples)
+                    break;
 
-                    advanceTarget();
-                }
+                if (! gameSession.resolveTarget(target))
+                    break;
+
+                onDuelNoteResolved(target,
+                                   static_cast<int>(HitQuality::Miss));
+
+                gameplayStats.recordMiss();
+                gameSession.setTargetHit(true);
+
+                juce::MessageManager::callAsync(
+                    [this]
+                    {
+                        showHitFeedback("MISS", 4);
+                    });
+
+                advanceTarget();
+
+                // The chart ended: advanceTarget switched to Finished and
+                // asked the duel to finish.
+                if (gameState.load(std::memory_order_relaxed)
+                    != GameState::Playing)
+                    break;
             }
         }
     }

@@ -2,6 +2,21 @@
 
 namespace
 {
+    // Temporary diagnostics for the duel flow: notes whether the match was
+    // created and what every exchange applied. Written next to the settings,
+    // only from the message/analysis threads that already log elsewhere.
+    void duelDebugLog (const juce::String& line)
+    {
+        auto directory = juce::File::getSpecialLocation (
+                             juce::File::userApplicationDataDirectory)
+                             .getChildFile ("GuitarBattle");
+
+        directory.createDirectory();
+        directory.getChildFile ("duel-debug.log")
+                 .appendText (juce::Time::getCurrentTime().toString (true, true)
+                              + "  " + line + "\n");
+    }
+
     DuelQuality toDuelQuality (int hitQuality)
     {
         switch (static_cast<HitQuality> (hitQuality))
@@ -113,7 +128,13 @@ void MainComponent::requestDuelWithBot (int botLevel)
         juce::jlimit (0, 2, botLevel));
     duelPending = true;
 
+    // Practice mode never scores: a duel must run the competitive path.
+    if (practiceMode)
+        setPracticeMode (false);
+
     resetDuelState();
+
+    duelDebugLog ("duel requested level=" + juce::String (botLevel));
 
     // The duel uses the normal song flow: the chart is loaded exactly as for
     // a regular game, then beginPendingDuelIfNeeded() attaches the duel state
@@ -155,7 +176,10 @@ void MainComponent::beginPendingDuelIfNeeded()
         static_cast<int> (gameSession.getMidiNotes().size());
 
     if (noteCount <= 0)
+    {
+        duelDebugLog ("bot match skipped: no notes");
         return;
+    }
 
     const auto seed = static_cast<std::uint32_t> (
         juce::Random::getSystemRandom().nextInt());
@@ -174,6 +198,10 @@ void MainComponent::beginPendingDuelIfNeeded()
     duelLastDamageMilli.store (0, std::memory_order_relaxed);
     duelFlashUntilMs.store (0.0, std::memory_order_relaxed);
     duelActive.store (true, std::memory_order_relaxed);
+
+    duelDebugLog ("bot match created notes=" + juce::String (noteCount)
+                  + " level=" + juce::String (static_cast<int> (duelPendingLevel))
+                  + " seed=" + juce::String (static_cast<int> (seed)));
 
     repaint();
     overlayComponent.repaint();
@@ -224,6 +252,13 @@ void MainComponent::onDuelNoteResolved (int noteIndex, int hitQuality)
     duelFlashUntilMs.store (
         juce::Time::getMillisecondCounterHiRes() + 900.0,
         std::memory_order_relaxed);
+
+    duelDebugLog ("note idx=" + juce::String (noteIndex)
+                  + " q=" + juce::String (static_cast<int> (quality))
+                  + " exc=" + juce::String (static_cast<int> (exchange))
+                  + " dmgO=" + juce::String (damageMilli / 1000.0, 1)
+                  + " hpP=" + juce::String (duelPlayerHealthMilli.load() / 1000.0, 1)
+                  + " hpO=" + juce::String (duelOpponentHealthMilli.load() / 1000.0, 1));
 
     if (finished)
         juce::MessageManager::callAsync ([this] { finishDuel(); });
@@ -319,9 +354,20 @@ void MainComponent::showDuelModeMenu()
                         });
 }
 
-void MainComponent::paintDuelOverlay (juce::Graphics& g)
+void MainComponent::repaintDuelHud()
 {
-    const auto state = gameState.load (std::memory_order_relaxed);
+    if (getWidth() <= 0 || overlayComponent.getWidth() <= 0)
+        return;
+
+    const juce::Rectangle<int> strip (24, 222, getWidth() - 48, 34);
+
+    // Only the strip is invalidated: a full overlay repaint would also redraw
+    // the tablature and the rest of the HUD on every 30 Hz tick.
+    overlayComponent.repaint (strip.expanded (4));
+}
+
+void MainComponent::paintDuelOverlay (juce::Graphics& g)
+{    const auto state = gameState.load (std::memory_order_relaxed);
 
     if (state != GameState::Playing && state != GameState::Finished)
         return;
@@ -497,9 +543,7 @@ void MainComponent::paintDuelOverlay (juce::Graphics& g)
     if (! duelActive.load (std::memory_order_relaxed))
         return;
 
-    const float stripW = juce::jmin (720.0f, width - 48.0f);
-    const juce::Rectangle<float> strip ((width - stripW) * 0.5f, 84.0f,
-                                        stripW, 38.0f);
+    const juce::Rectangle<float> strip (24.0f, 222.0f, width - 48.0f, 34.0f);
 
     g.setColour (UiColors::background.withAlpha (0.72f));
     g.fillRoundedRectangle (strip, 12.0f);
@@ -516,7 +560,7 @@ void MainComponent::paintDuelOverlay (juce::Graphics& g)
         return UiColors::red;
     };
 
-    const float barW = stripW * 0.30f;
+    const float barW = strip.getWidth() * 0.30f;
     const juce::Rectangle<float> leftBar (strip.getX() + 78.0f, strip.getY() + 14.0f,
                                           barW, 10.0f);
     const juce::Rectangle<float> rightBar (strip.getRight() - 78.0f - barW,
@@ -585,12 +629,15 @@ void MainComponent::paintDuelOverlay (juce::Graphics& g)
                 break;
 
             case DuelExchange::PlayerHit:
-                text = "DAMAGE " + juce::String (duelLastDamageMilli.load() / 1000.0, 1);
+                text = "YOU HIT +" + juce::String (duelLastDamageMilli.load() / 1000.0, 1)
+                       + " HP";
                 colour = UiColors::green;
                 break;
 
             case DuelExchange::OpponentHit:
-                text = "HIT -" + juce::String (duelLastDamageMilli.load() / 1000.0, 1);
+                text = juce::String (profile.name) + " HITS YOU -"
+                       + juce::String (duelLastDamageMilli.load() / 1000.0, 1)
+                       + " HP";
                 colour = UiColors::red;
                 break;
 
@@ -605,7 +652,7 @@ void MainComponent::paintDuelOverlay (juce::Graphics& g)
         g.drawText (text,
                     juce::Rectangle<float> (strip.getX() + barW + 90.0f,
                                             strip.getY() + 9.0f,
-                                            stripW - (barW + 90.0f) * 2.0f, 20.0f),
+                                            strip.getWidth() - (barW + 90.0f) * 2.0f, 20.0f),
                     juce::Justification::centred, false);
     }
 }
@@ -1795,9 +1842,7 @@ void MainComponent::paintOnlineDuelOverlay (juce::Graphics& g)
     if (! duelOnlineActive.load (std::memory_order_relaxed))
         return;
 
-    const float stripW = juce::jmin (720.0f, width - 48.0f);
-    const juce::Rectangle<float> strip ((width - stripW) * 0.5f, 84.0f,
-                                        stripW, 38.0f);
+    const juce::Rectangle<float> strip (24.0f, 222.0f, width - 48.0f, 34.0f);
 
     g.setColour (UiColors::background.withAlpha (0.72f));
     g.fillRoundedRectangle (strip, 12.0f);
@@ -1814,7 +1859,7 @@ void MainComponent::paintOnlineDuelOverlay (juce::Graphics& g)
         return UiColors::red;
     };
 
-    const float barW = stripW * 0.30f;
+    const float barW = strip.getWidth() * 0.30f;
     const juce::Rectangle<float> leftBar (strip.getX() + 78.0f, strip.getY() + 14.0f,
                                           barW, 10.0f);
     const juce::Rectangle<float> rightBar (strip.getRight() - 78.0f - barW,
@@ -1903,7 +1948,7 @@ void MainComponent::paintOnlineDuelOverlay (juce::Graphics& g)
         g.drawText (text,
                     juce::Rectangle<float> (strip.getX() + barW + 90.0f,
                                             strip.getY() + 9.0f,
-                                            stripW - (barW + 90.0f) * 2.0f, 20.0f),
+                                            strip.getWidth() - (barW + 90.0f) * 2.0f, 20.0f),
                     juce::Justification::centred, false);
     }
 }

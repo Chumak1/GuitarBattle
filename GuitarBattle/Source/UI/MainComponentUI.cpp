@@ -1682,7 +1682,8 @@ void MainComponent::paintOverlay(juce::Graphics& g)
     // three-column / two-row block. The freed height goes to the tablature.
     const float studioH = juce::jlimit(132.0f, 146.0f, height / 7.0f);
     const float studioY = bottomY - 14.0f - studioH;
-    const float tabY = hudY + hudH + 12.0f;
+    const float duelStripH = (duelActive.load (std::memory_order_relaxed) || duelOnlineActive.load (std::memory_order_relaxed)) ? 40.0f : 0.0f;
+    const float tabY = hudY + hudH + 12.0f + duelStripH;
     const float tabH = juce::jmax(150.0f, studioY - 12.0f - tabY);
 
     const juce::Rectangle<float> topBar(24.0f, topY, width - 48.0f, topH);
@@ -2571,7 +2572,8 @@ void MainComponent::resized()
         const int bottomY = height - 24 - bottomH;
         const int studioH = juce::jlimit(176, 218, height / 4);
         const int studioY = bottomY - 14 - studioH;
-        const int tabY = hudY + hudH + 12;
+        const int duelStripH = (duelActive.load (std::memory_order_relaxed) || duelOnlineActive.load (std::memory_order_relaxed)) ? 40 : 0;
+        const int tabY = hudY + hudH + 12 + duelStripH;
         const int tabH = juce::jmax(150, studioY - 12 - tabY);
         tablatureComponent.setBounds(24, tabY, width - 48, tabH);
         // The modal overlay paints the card above regular controls; keep the
@@ -2637,7 +2639,8 @@ void MainComponent::resized()
         const int bottomY = height - 24 - bottomH;
         const int studioH = juce::jlimit(132, 146, height / 7);
         const int studioY = bottomY - 14 - studioH;
-        const int tabY = hudY + hudH + 12;
+        const int duelStripH = (duelActive.load (std::memory_order_relaxed) || duelOnlineActive.load (std::memory_order_relaxed)) ? 40 : 0;
+        const int tabY = hudY + hudH + 12 + duelStripH;
         const int tabH = juce::jmax(150, studioY - 12 - tabY);
 
         const int audioW = 112;

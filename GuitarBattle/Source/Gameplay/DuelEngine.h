@@ -50,12 +50,12 @@ struct DuelConfig
 
     // Damage per point of quality difference: Perfect vs Good (30 points) is
     // a small hit, Perfect vs Miss (100 points) is the maximum.
-    double damagePerPoint = 0.030;
+    double damagePerPoint = 0.100;
 
     // A clear advantage always deals at least this much, and one note can
     // never take more than this much health.
-    double minDamage = 0.5;
-    double maxDamage = 5.0;
+    double minDamage = 1.0;
+    double maxDamage = 10.0;
 
     // Health gained back on a block, if the design wants chip healing later.
     double blockHeal = 0.0;

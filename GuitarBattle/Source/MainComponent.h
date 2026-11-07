@@ -1087,6 +1087,7 @@ private:
     void requestDuelWithBot(int botLevel);
     void showDuelModeMenu();
     void paintDuelOverlay(juce::Graphics& g);
+    void repaintDuelHud();
     void paintOnlineDuelOverlay(juce::Graphics& g);
     void beginPendingDuelIfNeeded();
     void onDuelNoteResolved(int noteIndex, int hitQuality);
