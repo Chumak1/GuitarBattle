@@ -2188,6 +2188,8 @@ void MainComponent::resized()
     previewButton.setVisible(false);
     practiceModeButton.setVisible(false);
     duelModeButton.setVisible(false);
+    if (duelLobby != nullptr)
+        duelLobby->setVisible(false);
     vstButton.setVisible(false);
     retryConnectionButton.setVisible(sessionOfflineRetryAvailable && authScreen);
     loginScreenTitleLabel.setVisible(authScreen);
@@ -2427,9 +2429,22 @@ void MainComponent::resized()
                                            118, 32);
         leaderboardLabel.setBounds(rightX + 24, contentY + 106,
                                    rightW - 48, 20);
+
+        // The lobby takes the lower part of the right column, the rating the
+        // rest; both stay inside the same card.
+        const int lobbyH = juce::jlimit(140, 180, contentH / 3);
+        const int lobbyTop = contentY + contentH - lobbyH - 4;
+
         leaderboardTable.setBounds(rightX + 24, contentY + 130,
                                    rightW - 48,
-                                   juce::jmax(120, contentH - 152));
+                                   juce::jmax(100, lobbyTop - 12 - (contentY + 130)));
+
+        if (duelLobby != nullptr)
+        {
+            duelLobby->setBounds(rightX + 24, lobbyTop, rightW - 48, lobbyH);
+            duelLobby->setVisible(songSelect);
+            duelLobby->setSignedIn(onlineAccessToken.isNotEmpty());
+        }
 
         progressionSummaryLabel.setBounds(48, 78, juce::jmax(200, width - 96), 22);
 
@@ -5467,6 +5482,16 @@ void MainComponent::initialiseUi()
     duelModeButton.setTooltip("Duel another player or one of the three bots on the selected song.");
     duelModeButton.onClick = [this] { showDuelModeMenu(); };
     addAndMakeVisible(duelModeButton);
+
+    // Open online rooms under the rating. Refresh is manual (the button) and
+    // also runs on a short timer while the song screen is visible.
+    duelLobby = std::make_unique<DuelLobbyComponent>();
+    duelLobby->onRefresh = [this] { refreshDuelLobby(); };
+    duelLobby->onJoin = [this] (const juce::String& matchId)
+    {
+        joinOnlineDuelRoom (matchId);
+    };
+    addAndMakeVisible(*duelLobby);
     setPracticeMode(false);
 
     // VST monitor plugin: sits in the header next to SETTINGS / AUDIO

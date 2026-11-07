@@ -901,6 +901,9 @@
     <ClCompile Include="..\..\Source\UI\GameStyle.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\UI\DuelLobby.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\UI\SelectComponent.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
@@ -4240,6 +4243,9 @@
       <Filter>GuitarBattle\Source\Gameplay</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\GameStyle.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\DuelLobby.h">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\SelectComponent.h">

@@ -11,6 +11,7 @@
 		043DE6E329640C30657EE2F1 /* CoreAudio.framework */ = {isa = PBXBuildFile; fileRef = 9906DEE299BCF205C57F5EB1; };
 		06EBFF45EC7BD91552735320 /* include_juce_audio_processors_headless_lv2_libs.cpp */ = {isa = PBXBuildFile; fileRef = E73B48B52FEB0084C1EA13A4; };
 		0772644DFE52EC7C2064EDF1 /* Tuner.cpp */ = {isa = PBXBuildFile; fileRef = 502F0368A928AE4EA31B606C; };
+		0BF7549BF5966674DDFB28E9 /* DuelLobby.cpp */ = {isa = PBXBuildFile; fileRef = CFCF1836E03DF387FEB1E75A; };
 		11F8B9B0C0B76BFE3E5428DF /* MainComponentAssets.cpp */ = {isa = PBXBuildFile; fileRef = 291E37827332BEC65370D017; };
 		1287F7261BE60DA9D9D8E90A /* include_juce_audio_devices.mm */ = {isa = PBXBuildFile; fileRef = C7299E56B3DDBC7ECE81FAA8; };
 		1B04C28E4FBF53EED0D95B93 /* MainComponentAudio.cpp */ = {isa = PBXBuildFile; fileRef = CB50024A03CB264C49870EC4; };
@@ -129,6 +130,7 @@
 		3D373C704CC7DC05EB3F4E26 /* GameController.h */ /* GameController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = GameController.h; path = ../../Source/Gameplay/GameController.h; sourceTree = SOURCE_ROOT; };
 		3DEB4F68E3F09409FA2BDA63 /* LogoDark.svg */ /* LogoDark.svg */ = {isa = PBXFileReference; lastKnownFileType = file.svg; name = LogoDark.svg; path = ../../Source/UI/Assets/LogoDark.svg; sourceTree = SOURCE_ROOT; };
 		44158F422F2513C5DD4A53B7 /* DuelMatch.h */ /* DuelMatch.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuelMatch.h; path = ../../Source/Gameplay/DuelMatch.h; sourceTree = SOURCE_ROOT; };
+		44CE8837098185886E56B936 /* DuelLobby.h */ /* DuelLobby.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; name = DuelLobby.h; path = ../../Source/UI/DuelLobby.h; sourceTree = SOURCE_ROOT; };
 		455BDE709FE9AC8D45379627 /* AudioEngine.cpp */ /* AudioEngine.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = AudioEngine.cpp; path = ../../Source/Audio/AudioEngine.cpp; sourceTree = SOURCE_ROOT; };
 		46B8F315CF5444201F4C929C /* GameSession.cpp */ /* GameSession.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = GameSession.cpp; path = ../../Source/Gameplay/GameSession.cpp; sourceTree = SOURCE_ROOT; };
 		488C4DFA0986BD703B29F0B6 /* MidiParser.cpp */ /* MidiParser.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MidiParser.cpp; path = ../../Source/Midi/MidiParser.cpp; sourceTree = SOURCE_ROOT; };
@@ -189,6 +191,7 @@
 		CB04834B2E057DCC9ACAAA56 /* include_juce_audio_processors_headless.mm */ /* include_juce_audio_processors_headless.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_audio_processors_headless.mm; path = ../../JuceLibraryCode/include_juce_audio_processors_headless.mm; sourceTree = SOURCE_ROOT; };
 		CB50024A03CB264C49870EC4 /* MainComponentAudio.cpp */ /* MainComponentAudio.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MainComponentAudio.cpp; path = ../../Source/Audio/MainComponentAudio.cpp; sourceTree = SOURCE_ROOT; };
 		CB9C4E9D1BCA6E5B4B926A3C /* include_juce_events.mm */ /* include_juce_events.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_events.mm; path = ../../JuceLibraryCode/include_juce_events.mm; sourceTree = SOURCE_ROOT; };
+		CFCF1836E03DF387FEB1E75A /* DuelLobby.cpp */ /* DuelLobby.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = DuelLobby.cpp; path = ../../Source/UI/DuelLobby.cpp; sourceTree = SOURCE_ROOT; };
 		D32B014A7969F2B1AA7EFB2E /* MainComponentNetwork.cpp */ /* MainComponentNetwork.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = MainComponentNetwork.cpp; path = ../../Source/Network/MainComponentNetwork.cpp; sourceTree = SOURCE_ROOT; };
 		D3A938AB11303338CC78FAAE /* GameplayEngine.cpp */ /* GameplayEngine.cpp */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.cpp; name = GameplayEngine.cpp; path = ../../Source/Gameplay/GameplayEngine.cpp; sourceTree = SOURCE_ROOT; };
 		D3ED8121D0DB872C35129690 /* include_juce_core.mm */ /* include_juce_core.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; name = include_juce_core.mm; path = ../../JuceLibraryCode/include_juce_core.mm; sourceTree = SOURCE_ROOT; };
@@ -336,6 +339,8 @@
 			children = (
 				0097114204BD78884524EBFF,
 				29B8EF3B8A03F73E99587325,
+				44CE8837098185886E56B936,
+				CFCF1836E03DF387FEB1E75A,
 				3C03A10D5AE41CAEFFFE25A5,
 				0A1405F76BFD702119DADF01,
 				267E2EE3EE12F49F5FCD01C4,
@@ -600,6 +605,7 @@
 				2F99298E3CC3890BE8FF585F,
 				682140FB369AD12CDBAE9A13,
 				27BE660E47133C0BFB2BC7C9,
+				0BF7549BF5966674DDFB28E9,
 				DB8633AB229AEAA0561DEEFE,
 				9FC27F715298DBA60EC8BFB8,
 				33BD13EE631DF1E8C4919549,

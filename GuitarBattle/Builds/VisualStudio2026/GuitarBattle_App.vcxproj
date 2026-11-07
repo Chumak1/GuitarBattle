@@ -156,6 +156,7 @@
     <ClCompile Include="..\..\Source\Gameplay\MainComponentGameplay.cpp"/>
     <ClCompile Include="..\..\Source\Gameplay\MainComponentPractice.cpp"/>
     <ClCompile Include="..\..\Source\UI\GameStyle.cpp"/>
+    <ClCompile Include="..\..\Source\UI\DuelLobby.cpp"/>
     <ClCompile Include="..\..\Source\UI\SelectComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\TunerComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\MainComponentUI.cpp"/>
@@ -3234,6 +3235,7 @@
     <ClInclude Include="..\..\Source\Gameplay\DuelEngine.h"/>
     <ClInclude Include="..\..\Source\Gameplay\DuelMatch.h"/>
     <ClInclude Include="..\..\Source\UI\GameStyle.h"/>
+    <ClInclude Include="..\..\Source\UI\DuelLobby.h"/>
     <ClInclude Include="..\..\Source\UI\SelectComponent.h"/>
     <ClInclude Include="..\..\Source\UI\TunerComponent.h"/>
     <ClInclude Include="..\..\Source\UI\GuitarInputMonitor.h"/>

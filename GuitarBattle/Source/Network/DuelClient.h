@@ -242,6 +242,27 @@ struct DuelLeaderboardReply
     int offset = 0;
 };
 
+// One open room in the duel lobby. The host created an online match and is
+// waiting for a second player.
+struct DuelLobbyRoom
+{
+    juce::String matchId;
+    juce::String songId;
+    juce::String songSlug;
+    juce::String songTitle;
+    juce::String hostName;
+    int hostRating = 1000;
+    int waitingSeconds = 0;
+    int noteCount = 0;
+};
+
+struct DuelLobbyReply
+{
+    bool valid = false;
+    std::vector<DuelLobbyRoom> rooms;
+    int total = 0;
+};
+
 struct DuelProfileTotals
 {
     int duels = 0;
@@ -283,6 +304,7 @@ public:
     using HistoryCallback     = std::function<void (const DuelReply&, const DuelHistoryReply&)>;
     using LeaderboardCallback = std::function<void (const DuelReply&, const DuelLeaderboardReply&)>;
     using ProfileCallback     = std::function<void (const DuelReply&, const DuelProfileReply&)>;
+using LobbyCallback       = std::function<void (const DuelReply&, const DuelLobbyReply&)>;
 
     explicit DuelClient (ApiClient& client) : api (client) {}
 
@@ -350,6 +372,9 @@ public:
                         const juce::String& bearerToken,
                         ProfileCallback onResult);
 
+    /** GET /duels/lobby - open online rooms waiting for a second player. */
+    void lobby (const juce::String& bearerToken, LobbyCallback onResult);
+
     //--------------------------------------------------------------------------
     // Parsers shared with MainComponentDuel.cpp
 
@@ -358,6 +383,7 @@ public:
     static DuelFinishReply parseFinish (const juce::var& json);
     static DuelHistoryReply parseHistory (const juce::var& json);
     static DuelLeaderboardReply parseLeaderboard (const juce::var& json);
+    static DuelLobbyReply parseLobby (const juce::var& json);
     static DuelProfileReply parseProfile (const juce::var& json);
 
 private:

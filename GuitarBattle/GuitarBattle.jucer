@@ -38,6 +38,8 @@
       <GROUP id="{85A8759B-236A-5392-9897-45659AFD7DD1}" name="UI">
         <FILE id="t9kAyH" name="GameStyle.cpp" compile="1" resource="0" file="Source/UI/GameStyle.cpp"/>
         <FILE id="O7EDSc" name="GameStyle.h" compile="0" resource="0" file="Source/UI/GameStyle.h"/>
+        <FILE id="DuelLo1" name="DuelLobby.h" compile="0" resource="0" file="Source/UI/DuelLobby.h"/>
+        <FILE id="DuelLo2" name="DuelLobby.cpp" compile="1" resource="0" file="Source/UI/DuelLobby.cpp"/>
         <FILE id="t8Skoe" name="SelectComponent.cpp" compile="1" resource="0"
               file="Source/UI/SelectComponent.cpp"/>
         <FILE id="QZun1U" name="SelectComponent.h" compile="0" resource="0"

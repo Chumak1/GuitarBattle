@@ -25,6 +25,7 @@
 #include "Network/ClientAssets.h"
 #include "UI/GameStyle.h"
 #include "UI/GuitarInputMonitor.h"
+#include "UI/DuelLobby.h"
 #include "Network/SessionStore.h"
 
 class MainComponent;
@@ -1088,6 +1089,12 @@ private:
     void showDuelModeMenu();
     void paintDuelOverlay(juce::Graphics& g);
     void repaintDuelHud();
+    void refreshDuelLobby();
+    void joinOnlineDuelRoom(const juce::String& matchId);
+
+    std::unique_ptr<DuelLobbyComponent> duelLobby;
+    bool duelLobbyInFlight = false;
+    int duelLobbyRefreshTicks = 0;
     void paintOnlineDuelOverlay(juce::Graphics& g);
     void beginPendingDuelIfNeeded();
     void onDuelNoteResolved(int noteIndex, int hitQuality);

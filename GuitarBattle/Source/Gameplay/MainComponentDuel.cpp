@@ -690,6 +690,133 @@ namespace
     }
 }
 
+void MainComponent::refreshDuelLobby()
+{
+    if (duelLobby == nullptr || duelLobbyInFlight)
+        return;
+
+    if (onlineAccessToken.isEmpty())
+    {
+        duelLobby->setSignedIn (false);
+        return;
+    }
+
+    duelLobby->setSignedIn (true);
+    duelLobbyInFlight = true;
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+
+    duelClient.lobby (onlineAccessToken,
+        [safeThis] (const DuelReply& reply, const DuelLobbyReply& lobby)
+        {
+            auto* self = safeThis.getComponent();
+
+            if (self == nullptr)
+                return;
+
+            self->duelLobbyInFlight = false;
+
+            if (self->duelLobby == nullptr)
+                return;
+
+            if (! reply.ok)
+            {
+                self->duelLobby->setStatus (
+                    reply.errorMessage.isNotEmpty()
+                        ? "Lobby unavailable: " + reply.errorMessage
+                        : juce::String ("Lobby unavailable."));
+                return;
+            }
+
+            self->duelLobby->setRooms (lobby.rooms);
+        });
+}
+
+void MainComponent::joinOnlineDuelRoom (const juce::String& matchId)
+{
+    if (matchId.isEmpty() || onlineAccessToken.isEmpty())
+        return;
+
+    if (duelOnlinePhase != DuelOnlinePhase::None)
+        return;
+
+    resetDuelState();
+
+    ++duelOnlineGeneration;
+    const int generation = duelOnlineGeneration;
+
+    duelOnlineMatchId = matchId;
+    duelOnlinePhase = DuelOnlinePhase::Waiting;
+    duelOnlinePollFailures = 0;
+    showOnlineDuelDialog ("JOINING DUEL...");
+
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+
+    duelClient.join (matchId, onlineAccessToken,
+        [safeThis, generation] (const DuelReply& reply, const DuelMatchSnapshot& match)
+        {
+            auto* self = safeThis.getComponent();
+
+            if (self == nullptr || generation != self->duelOnlineGeneration)
+                return;
+
+            if (! reply.ok || ! match.valid)
+            {
+                self->duelOnlinePhase = DuelOnlinePhase::None;
+                self->closeOnlineDuelDialog();
+                self->handleOnlineDuelReplyError (reply, "join");
+                return;
+            }
+
+            // The room's chart must already be cached: the server froze its
+            // note count and the client has to play exactly that chart.
+            int index = -1;
+
+            for (int i = 0; i < static_cast<int> (self->catalogSongs.size()); ++i)
+            {
+                if (self->catalogSongs[static_cast<size_t> (i)].slug
+                    == match.songSlug)
+                {
+                    index = i;
+                    break;
+                }
+            }
+
+            if (index < 0
+                || ! self->catalogSongs[static_cast<size_t> (index)].downloaded)
+            {
+                self->cancelOnlineDuel (true);
+
+                juce::AlertWindow::showMessageBoxAsync (
+                    juce::MessageBoxIconType::InfoIcon,
+                    "Duel lobby",
+                    "Download "
+                        + (match.songTitle.isNotEmpty() ? match.songTitle
+                                                        : match.songSlug)
+                        + " first: select it in the catalogue and press START SONG "
+                          "once, then join the room again.",
+                    "OK", self);
+                return;
+            }
+
+            self->selectedCatalogIndex = index;
+            self->duelOnlineMatchId = match.matchId;
+            self->duelOnlineMatch = match;
+            self->duelOnlineSnapshotAtMs = duelNowMs();
+            self->duelOnlineExpectedNotes = match.noteCount;
+            self->duelOnlinePhase = DuelOnlinePhase::Waiting;
+            self->duelOnlinePollFailures = 0;
+            self->updateOnlineDuelHud();
+
+            self->showOnlineDuelDialog (
+                "WAITING FOR OPPONENT...\n\n"
+                + (match.songTitle.isNotEmpty() ? match.songTitle
+                                                : match.songSlug));
+
+            self->duelOnlineNextPollMs = duelNowMs() + 800.0;
+            self->sendOnlineDuelReady();
+        });
+}
+
 void MainComponent::startOnlineDuel()
 {
     if (duelOnlinePhase != DuelOnlinePhase::None)

@@ -354,8 +354,36 @@ DuelLeaderboardReply DuelClient::parseLeaderboard (const juce::var& json)
     return reply;
 }
 
-DuelProfileReply DuelClient::parseProfile (const juce::var& json)
+DuelLobbyReply DuelClient::parseLobby (const juce::var& json)
 {
+    DuelLobbyReply reply;
+
+    if (! json.isObject())
+        return reply;
+
+    if (const auto* items = json.getProperty ("items", juce::var()).getArray())
+    {
+        for (const auto& item : *items)
+        {
+            DuelLobbyRoom room;
+            room.matchId = propString (item, "match_id");
+            room.songId = propString (item, "song_id");
+            room.songSlug = propString (item, "song_slug");
+            room.songTitle = propString (item, "song_title");
+            room.hostName = propString (item, "host_name");
+            room.hostRating = propInt (item, "host_rating", 1000);
+            room.waitingSeconds = propInt (item, "waiting_seconds");
+            room.noteCount = propInt (item, "note_count");
+            reply.rooms.push_back (room);
+        }
+    }
+
+    reply.total = propInt (json, "total");
+    reply.valid = true;
+    return reply;
+}
+
+DuelProfileReply DuelClient::parseProfile (const juce::var& json){
     DuelProfileReply reply;
 
     if (! json.isObject())
@@ -610,6 +638,16 @@ void DuelClient::me (const juce::String& bearerToken, ProfileCallback onResult)
                   {
                       if (onResult != nullptr)
                           onResult (reply, parseProfile (reply.json));
+                  });
+}
+
+void DuelClient::lobby (const juce::String& bearerToken, LobbyCallback onResult)
+{
+    getWithRetry ("/duels/lobby", bearerToken,
+                  [onResult] (const DuelReply& reply)
+                  {
+                      if (onResult != nullptr)
+                          onResult (reply, parseLobby (reply.json));
                   });
 }
 

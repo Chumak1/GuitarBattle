@@ -284,6 +284,24 @@ void MainComponent::timerCallback()
         || duelOnlinePhase == DuelOnlinePhase::Finished)
         repaintDuelHud();
 
+    // Open duel rooms stay fresh while the song screen is visible: the host's
+    // room appears for everyone within a few seconds without pressing REFRESH.
+    if (duelLobby != nullptr
+        && gameState.load (std::memory_order_relaxed) == GameState::SongSelect
+        && onlineAccessToken.isNotEmpty()
+        && ! showAuthScreen)
+    {
+        if (--duelLobbyRefreshTicks <= 0)
+        {
+            duelLobbyRefreshTicks = 150; // about 5 s at the 30 Hz tick
+            refreshDuelLobby();
+        }
+    }
+    else
+    {
+        duelLobbyRefreshTicks = 150;
+    }
+
     // Smoothly animate the level bar toward the server-side progress. Runs in
     // every state so the bar is already settled when the player returns to the
     // main screen.
