@@ -13,11 +13,13 @@
 - Авторизация REST: `Authorization: Bearer <access_token>`.
 - Авторизация WebSocket: `?token=<access_token>` (браузер не умеет ставить
   заголовок на handshake). Токен не логируется.
-- `rules_version = 1`; матч хранит версию, с которой он создан.
+- `rules_version = 2`; матч хранит версию, с которой он создан.
+  Версия 2 подняла урон до клиентского баланса 1.2.0 (0.10 за очко, зажим
+  `[1.0, 10.0]`); матчи версии 1 остаются в истории как есть.
 
 ---
 
-## 1. Правила дуэли (rules_version = 1)
+## 1. Правила дуэли (rules_version = 2)
 
 ### 1.1 Качества нот
 
@@ -42,12 +44,12 @@
 Урон:
 
 ```text
-damage = clamp(abs(points_a - points_b) * 0.03, 0.5, 5.0)
+damage = clamp(abs(points_a - points_b) * 0.10, 1.0, 10.0)
 ```
 
-- `perfect` vs `good`: `30 * 0.03 = 0.9`.
-- `perfect` vs `miss`: `100 * 0.03 = 3.0`.
-- `great` vs `good`: `15 * 0.03 = 0.45` → минимум `0.5`.
+- `perfect` vs `good`: `30 * 0.10 = 3.0`.
+- `perfect` vs `miss`: `100 * 0.10 = 10.0` (максимум).
+- `great` vs `good`: `15 * 0.10 = 1.5`.
 - HP стартует со `100`, после каждого обмена зажимается в `[0, 100]`.
 - При HP `0` сторона сразу проигрывает. Если чарт закончился без нокаута,
   побеждает сторона с большим HP; равный HP — ничья.
@@ -178,7 +180,7 @@ waiting ──(оба ready)──> playing ──(finish/нокаут/коне�
   "match_id": "9b8c7d6e-5f4a-3210-9fed-cba987654321",
   "mode": "online",
   "status": "playing",
-  "rules_version": 1,
+  "rules_version": 2,
   "seed": 3141592653,
   "bot_level": null,
   "song": { "...": "DuelSongInfo" },
@@ -492,10 +494,10 @@ Online (в очередь):
 { "type": "join", "match_id": "...", "user_id": "...", "side": "opponent" }
 { "type": "ready", "match_id": "...", "side": "player" }
 { "type": "countdown", "match_id": "...", "seconds": 3, "starts_in_ms": 3000 }
-{ "type": "start", "match_id": "...", "started_at": "2026-11-07T12:00:03Z", "countdown_ms": 3000, "rules_version": 1, "seed": 123, "note_count": 180 }
-{ "type": "note", "match_id": "...", "note_index": 12, "exchange": "player_hit", "quality": { "player": "perfect", "opponent": "good" }, "damage_to_player": 0.0, "damage_to_opponent": 0.9, "player_hp": 100.0, "opponent_hp": 99.1, "player_stats": { "...": "..." }, "opponent_stats": { "...": "..." } }
-{ "type": "block", "match_id": "...", "note_index": 13, "player_hp": 100.0, "opponent_hp": 99.1 }
-{ "type": "hp", "match_id": "...", "note_index": 13, "player_hp": 100.0, "opponent_hp": 99.1, "player_stats": { "...": "..." }, "opponent_stats": { "...": "..." } }
+{ "type": "start", "match_id": "...", "started_at": "2026-11-07T12:00:03Z", "countdown_ms": 3000, "rules_version": 2, "seed": 123, "note_count": 180 }
+{ "type": "note", "match_id": "...", "note_index": 12, "exchange": "player_hit", "quality": { "player": "perfect", "opponent": "good" }, "damage_to_player": 0.0, "damage_to_opponent": 3.0, "player_hp": 100.0, "opponent_hp": 97.0, "player_stats": { "...": "..." }, "opponent_stats": { "...": "..." } }
+{ "type": "block", "match_id": "...", "note_index": 13, "player_hp": 100.0, "opponent_hp": 97.0 }
+{ "type": "hp", "match_id": "...", "note_index": 13, "player_hp": 100.0, "opponent_hp": 97.0, "player_stats": { "...": "..." }, "opponent_stats": { "...": "..." } }
 { "type": "state", "match": { "...": "DuelMatchState" } }
 { "type": "finish", "match_id": "...", "result": { "...": "DuelMatchState" } }
 { "type": "cancelled", "match_id": "..." }

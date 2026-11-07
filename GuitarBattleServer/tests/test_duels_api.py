@@ -71,7 +71,7 @@ def test_bot_match_is_server_authoritative_and_idempotent(
     match = _create(db_client, user_account["headers"], published_song["id"])
     match_id = match["match_id"]
     assert match["mode"] == "bot"
-    assert match["rules_version"] == 1
+    assert match["rules_version"] == 2
     assert match["note_count"] > 0
     assert 0 <= match["seed"] <= 0xFFFFFFFF
     assert len(match["participants"]) == 2

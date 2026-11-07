@@ -206,7 +206,7 @@ Full contract, WebSocket messages and anti-cheat rules: [`docs/DUELS_API.md`](do
   `GET /duels/leaderboard?period=week|month|all`, `GET /duels/players/{user_id}`,
   `GET /duels/me`.
 - `WS /duels/{id}/ws?token=...` — join/ready/start/countdown/note/hp/block/finish.
-- Rules: quality points 100/85/70/0; damage `clamp(|diff| * 0.03, 0.5, 5.0)`; HP 100;
+- Rules (v2): quality points 100/85/70/0; damage `clamp(|diff| * 0.10, 1.0, 10.0)`; HP 100;
   XP `20 + perfect*5 + great*3 + good*2 + (win ? 40 : 0)`; Elo K=32 from 1000 for
   online human-vs-human only. Bots never change the rating.
 - Migration: `0021_duels` (`duel_matches`, `duel_participants`, `duel_events`).

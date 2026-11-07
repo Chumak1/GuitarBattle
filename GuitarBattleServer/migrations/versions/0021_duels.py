@@ -35,7 +35,7 @@ def upgrade() -> None:
         sa.Column(
             "status", sa.String(16), nullable=False, server_default="waiting"
         ),
-        sa.Column("rules_version", sa.Integer(), nullable=False, server_default="1"),
+        sa.Column("rules_version", sa.Integer(), nullable=False, server_default="2"),
         sa.Column("seed", sa.BigInteger(), nullable=False),
         sa.Column("note_count", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("note_times_ms", postgresql.JSONB(), nullable=True),

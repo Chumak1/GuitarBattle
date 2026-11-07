@@ -5,14 +5,14 @@ This module is a Python port of the client rules in
 must never trust a client-reported HP, damage or result, so every number here
 is derived from the note qualities only.
 
-Rules (``rules_version = 1``)
+Rules (``rules_version = 2``)
 -----------------------------
 * Quality points: ``perfect = 100``, ``great = 85``, ``good = 70``, ``miss = 0``.
 * Every note compares the two sides:
   - both miss -> ``both_miss``, no damage;
   - the same quality (and both hit) -> ``block``, no damage;
   - otherwise the better side deals
-    ``clamp(abs(points_a - points_b) * 0.03, 0.5, 5.0)`` damage.
+    ``clamp(abs(points_a - points_b) * 0.10, 1.0, 10.0)`` damage.
 * HP starts at ``100`` and is clamped to ``[0, 100]`` after every exchange.
 * A side at ``0`` HP loses immediately; if the chart ends without a knockout,
   the higher remaining HP wins and equal HP is a draw.
@@ -34,7 +34,9 @@ from typing import Any, Final
 
 #: The only rules version implemented by this module. Stored on every match so
 #: a future balance change can be rolled out without rewriting old results.
-RULES_VERSION: Final[int] = 1
+#: Version 2 raised the damage scale to match the client build 1.2.0
+#: (``DuelConfig``: 0.10 per point, clamp ``[1.0, 10.0]``).
+RULES_VERSION: Final[int] = 2
 
 #: HP both sides start with.
 MAX_HEALTH: Final[float] = 100.0
@@ -47,9 +49,9 @@ QUALITY_POINTS: Final[dict[str, float]] = {
     "miss": 0.0,
 }
 
-DAMAGE_PER_POINT: Final[float] = 0.030
-MIN_DAMAGE: Final[float] = 0.5
-MAX_DAMAGE: Final[float] = 5.0
+DAMAGE_PER_POINT: Final[float] = 0.100
+MIN_DAMAGE: Final[float] = 1.0
+MAX_DAMAGE: Final[float] = 10.0
 
 #: Floating-point tolerance for "the two sides played the same quality".
 _SAME_POINTS_EPSILON: Final[float] = 0.0001

@@ -78,7 +78,7 @@ class DuelMatch(Base):
     )
     #: Rules snapshot. The server rejects a match whose version is unknown.
     rules_version: Mapped[int] = mapped_column(
-        Integer, nullable=False, default=1, server_default="1"
+        Integer, nullable=False, default=2, server_default="2"
     )
     #: Deterministic bot seed (32-bit unsigned stored in a wider column).
     seed: Mapped[int] = mapped_column(BigInteger, nullable=False)

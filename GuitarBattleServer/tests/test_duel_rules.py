@@ -32,6 +32,15 @@ def test_quality_points_match_the_client():
         DuelQuality.from_token("almost")
 
 
+def test_damage_constants_match_the_client_build():
+    # Keep in sync with GuitarBattle/Source/Gameplay/DuelEngine.h (DuelConfig).
+    assert duel_rules.RULES_VERSION == 2
+    assert duel_rules.MAX_HEALTH == 100.0
+    assert duel_rules.DAMAGE_PER_POINT == 0.10
+    assert duel_rules.MIN_DAMAGE == 1.0
+    assert duel_rules.MAX_DAMAGE == 10.0
+
+
 def test_both_miss_is_a_no_damage_exchange():
     result = duel_rules.resolve_note(DuelQuality.MISS, DuelQuality.MISS)
     assert result.exchange is DuelExchange.BOTH_MISS
@@ -53,12 +62,12 @@ def test_equal_qualities_block(quality):
 def test_player_hit_and_opponent_hit_are_symmetric():
     player = duel_rules.resolve_note(DuelQuality.PERFECT, DuelQuality.GOOD)
     assert player.exchange is DuelExchange.PLAYER_HIT
-    assert player.damage_to_opponent == pytest.approx(0.9)
+    assert player.damage_to_opponent == pytest.approx(3.0)
     assert player.damage_to_player == 0.0
 
     opponent = duel_rules.resolve_note(DuelQuality.GOOD, DuelQuality.PERFECT)
     assert opponent.exchange is DuelExchange.OPPONENT_HIT
-    assert opponent.damage_to_player == pytest.approx(0.9)
+    assert opponent.damage_to_player == pytest.approx(3.0)
     assert opponent.damage_to_opponent == 0.0
 
 
@@ -78,30 +87,33 @@ def test_every_pair_is_symmetric(left, right):
 
 
 def test_one_sided_hit_uses_the_full_quality_difference():
-    # Perfect (100) vs Miss (0): 100 * 0.03 = 3.0
+    # Perfect (100) vs Miss (0): 100 * 0.10 = 10.0 (the ceiling)
     result = duel_rules.resolve_note(DuelQuality.PERFECT, DuelQuality.MISS)
-    assert result.damage_to_opponent == pytest.approx(3.0)
+    assert result.damage_to_opponent == pytest.approx(10.0)
 
-    # Great (85) vs Miss: 85 * 0.03 = 2.55
+    # Great (85) vs Miss: 85 * 0.10 = 8.5
     result = duel_rules.resolve_note(DuelQuality.GREAT, DuelQuality.MISS)
-    assert result.damage_to_opponent == pytest.approx(2.55)
+    assert result.damage_to_opponent == pytest.approx(8.5)
 
-    # Good (70) vs Miss: 70 * 0.03 = 2.1
+    # Good (70) vs Miss: 70 * 0.10 = 7.0
     result = duel_rules.resolve_note(DuelQuality.GOOD, DuelQuality.MISS)
-    assert result.damage_to_opponent == pytest.approx(2.1)
+    assert result.damage_to_opponent == pytest.approx(7.0)
 
 
 def test_damage_is_clamped_to_the_minimum():
-    # Great (85) vs Good (70): 15 * 0.03 = 0.45 -> 0.5
+    # Great (85) vs Good (70): 15 * 0.10 = 1.5, above the 1.0 floor.
     result = duel_rules.resolve_note(DuelQuality.GREAT, DuelQuality.GOOD)
-    assert result.damage_to_opponent == pytest.approx(0.5)
+    assert result.damage_to_opponent == pytest.approx(1.5)
+
+    # No quality pair can produce less than the floor, so pin the helper.
+    assert duel_rules.clamp(duel_rules.MIN_DAMAGE, duel_rules.MAX_DAMAGE, 0.2) == 1.0
 
 
 def test_damage_never_exceeds_the_maximum():
-    # The quality points cannot produce more than 3.0, but the helper itself
-    # must respect the documented 5.0 ceiling.
-    assert duel_rules.clamp(duel_rules.MIN_DAMAGE, duel_rules.MAX_DAMAGE, 99.0) == 5.0
+    # Perfect vs Miss is exactly the documented 10.0 ceiling.
+    assert duel_rules.clamp(duel_rules.MIN_DAMAGE, duel_rules.MAX_DAMAGE, 99.0) == 10.0
     result = duel_rules.resolve_note(DuelQuality.PERFECT, DuelQuality.MISS)
+    assert result.damage_to_opponent == pytest.approx(duel_rules.MAX_DAMAGE)
     assert result.damage_to_opponent <= duel_rules.MAX_DAMAGE
 
 
