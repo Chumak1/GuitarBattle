@@ -28,7 +28,7 @@
 // not affected (the CRT hook is compiled in but no assertion fires there).
 namespace CrashDiagnostics
 {
-#if JUCE_WINDOWS
+#if JUCE_WINDOWS && defined(_DEBUG)
     static juce::File assertionLogFile()
     {
         auto directory = juce::File::getSpecialLocation (
@@ -77,7 +77,7 @@ namespace CrashDiagnostics
 
     static void install()
     {
-#if JUCE_WINDOWS
+#if JUCE_WINDOWS && defined(_DEBUG)
         _CrtSetReportHook2 (_CRT_RPTHOOK_INSTALL, assertionReportHook);
 #endif
     }
