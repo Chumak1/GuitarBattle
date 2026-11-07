@@ -318,6 +318,10 @@ void MainComponent::finishDuel()
 
     juce::MessageManager::callAsync ([this]
     {
+        // The finished layout hides the gameplay controls and shows PLAY
+        // AGAIN / MAIN MENU; without resized() the session-complete screen
+        // keeps the previous layout until the next window resize.
+        resized();
         repaint();
         overlayComponent.repaint();
     });
@@ -445,8 +449,8 @@ void MainComponent::paintDuelOverlay (juce::Graphics& g)
     if (finished)
     {
         const float cardW = juce::jmin (640.0f, width - 48.0f);
-        const juce::Rectangle<float> card ((width - cardW) * 0.5f, 96.0f,
-                                           cardW, 330.0f);
+        const juce::Rectangle<float> card ((width - cardW) * 0.5f, 128.0f,
+                                           cardW, 326.0f);
 
         g.setColour (UiColors::background.withAlpha (0.82f));
         g.fillRoundedRectangle (card.expanded (6.0f), 24.0f);

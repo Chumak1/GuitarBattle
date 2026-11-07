@@ -1665,6 +1665,10 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             }
         }
 
+        // A finished duel draws its victory/defeat card on top of the session
+        // summary; this branch returns before the gameplay overlay call.
+        paintDuelOverlay (g);
+
         return;
     }
 
