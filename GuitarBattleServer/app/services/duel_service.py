@@ -59,6 +59,10 @@ SYNTHETIC_WINDOW_AFTER_MS = 15_000
 MAX_EVENTS_PER_BATCH = 100
 MAX_NOTE_COUNT = 5_000
 
+#: Hard cap of the lobby page. Waiting rooms live at most ``QUEUE_TIMEOUT_SECONDS``,
+#: so the list is naturally small; the cap only bounds a pathological burst.
+LOBBY_LIMIT = 50
+
 QUALITY_COUNTER = {
     "perfect": "perfect_count",
     "great": "great_count",
@@ -218,6 +222,107 @@ def _latest_rating_subquery():
         .subquery()
     )
     return select(ranked.c.user_id, ranked.c.rating).where(ranked.c.rn == 1).subquery()
+
+
+# ---------------------------------------------------------------------------
+# Lobby
+# ---------------------------------------------------------------------------
+def lobby(
+    db: Session, *, now: datetime | None = None
+) -> tuple[list[dict[str, Any]], int]:
+    """Joinable online rooms, newest first.
+
+    A room is listed only when it can still be joined by ``POST /join``:
+
+    - ``mode = online`` and ``status = waiting``;
+    - created no earlier than ``QUEUE_TIMEOUT_SECONDS`` ago (the same cutoff
+      ``join_match`` enforces before it cancels an expired queue);
+    - the host side (``player``) exists and is a human;
+    - no ``opponent`` side yet, so the room is not full.
+
+    Rooms disappear from the list as soon as the second player joins, both
+    sides are ready (``playing``), the host leaves (``cancelled``) or the queue
+    expires.
+    """
+    now = now or _now()
+    cutoff = now - QUEUE_TTL
+    host = aliased(DuelParticipant)
+    other = aliased(DuelParticipant)
+    latest_rating = _latest_rating_subquery()
+
+    opponent_exists = (
+        select(other.id)
+        .where(
+            other.match_id == DuelMatch.id,
+            other.side == "opponent",
+        )
+        .exists()
+    )
+    filters = (
+        DuelMatch.mode == "online",
+        DuelMatch.status == "waiting",
+        DuelMatch.created_at >= cutoff,
+        host.side == "player",
+        host.user_id.is_not(None),
+        host.is_bot.is_(False),
+        ~opponent_exists,
+    )
+
+    rows = db.execute(
+        select(
+            DuelMatch.id,
+            DuelMatch.song_id,
+            DuelMatch.note_count,
+            DuelMatch.created_at,
+            Song.slug,
+            Song.title,
+            User.username,
+            User.display_name,
+            latest_rating.c.rating,
+        )
+        .select_from(DuelMatch)
+        .join(host, host.match_id == DuelMatch.id)
+        .join(Song, Song.id == DuelMatch.song_id)
+        .outerjoin(User, User.id == host.user_id)
+        .outerjoin(latest_rating, latest_rating.c.user_id == host.user_id)
+        .where(*filters)
+        .order_by(DuelMatch.created_at.desc(), DuelMatch.id.desc())
+        .limit(LOBBY_LIMIT)
+    ).all()
+
+    total = int(
+        db.scalar(
+            select(func.count(DuelMatch.id))
+            .select_from(DuelMatch)
+            .join(host, host.match_id == DuelMatch.id)
+            .where(*filters)
+        )
+        or 0
+    )
+
+    items: list[dict[str, Any]] = []
+    for row in rows:
+        created_at = _aware(row.created_at) or now
+        items.append(
+            {
+                "match_id": row.id,
+                "song_id": row.song_id,
+                "song_slug": row.slug,
+                "song_title": row.title,
+                "host_name": row.display_name or row.username or "Player",
+                "host_rating": (
+                    int(row.rating)
+                    if row.rating is not None
+                    else duel_rules.ELO_START_RATING
+                ),
+                "created_at": created_at,
+                "waiting_seconds": max(
+                    0, int((now - created_at).total_seconds())
+                ),
+                "note_count": int(row.note_count or 0),
+            }
+        )
+    return items, total
 
 
 # ---------------------------------------------------------------------------
@@ -585,6 +690,7 @@ def join_match(
         user_id=user.id,
         side="opponent",
         is_bot=False,
+        joined_at=_now(),
         rating_before=current_rating(db, user.id),
     )
     db.add(participant)

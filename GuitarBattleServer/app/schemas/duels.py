@@ -181,6 +181,28 @@ class DuelLeaderboardResponse(BaseModel):
     offset: int
 
 
+class DuelLobbyItem(BaseModel):
+    """One joinable online room shown in the duel lobby."""
+
+    match_id: UUID
+    song_id: UUID
+    song_slug: str
+    song_title: str
+    #: Display name of the host, falling back to the username.
+    host_name: str
+    #: Latest online Elo of the host, or the start rating before the first duel.
+    host_rating: int = 1000
+    created_at: datetime
+    #: Whole seconds the host has been waiting; never negative.
+    waiting_seconds: int = 0
+    note_count: int = 0
+
+
+class DuelLobbyResponse(BaseModel):
+    items: list[DuelLobbyItem]
+    total: int
+
+
 class DuelProfileTotals(BaseModel):
     duels: int = 0
     wins: int = 0

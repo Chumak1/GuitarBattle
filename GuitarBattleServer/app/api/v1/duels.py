@@ -35,6 +35,7 @@ from app.schemas.duels import (
     DuelEventsResponse,
     DuelHistoryResponse,
     DuelLeaderboardResponse,
+    DuelLobbyResponse,
     DuelMatchState,
     DuelMeResponse,
     DuelProfileResponse,
@@ -178,6 +179,19 @@ def duel_leaderboard(
     return DuelLeaderboardResponse(
         period=period, items=items, total=total, limit=limit, offset=offset
     )
+
+
+@router.get(
+    "/lobby",
+    response_model=DuelLobbyResponse,
+    summary="Waiting online rooms available to join",
+)
+def duel_lobby(
+    db: Session = Depends(get_db),
+    _: User = Depends(get_current_user),
+) -> DuelLobbyResponse:
+    items, total = duel_service.lobby(db)
+    return DuelLobbyResponse(items=items, total=total)
 
 
 @router.get(

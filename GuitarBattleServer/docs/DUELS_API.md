@@ -242,18 +242,61 @@ Online (в очередь):
 `POST /duels/{match_id}/join`
 
 Добавляет игрока в `waiting` online-матч на сторону `opponent`. Повторный
-вызов тем же игроком идемпотентен. Ошибки: `403 not_participant` (не
+вызов тем же игроком идемпотентен. При входе сервер проставляет
+`joined_at` и фиксирует `rating_before`; статус остаётся `waiting` до
+`ready` обоих игроков. Ошибки: `403 not_participant` (не
 участник, но это не join), `409 not_joinable`, `409 match_not_waiting`,
 `409 match_full`, `409 no_opponent`.
 
-### 4.3 Состояние
+### 4.3 Лобби ожидающих комнат
+
+`GET /duels/lobby` (нужен access token)
+
+Список комнат, в которые можно войти прямо сейчас. Комната попадает в список,
+только если одновременно выполнено:
+
+- `mode = online` и `status = waiting`;
+- она создана не раньше `QUEUE_TIMEOUT_SECONDS` (30 с) назад;
+- сторона `player` (хост) существует и является человеком;
+- стороны `opponent` ещё нет, то есть комната не заполнена.
+
+Комната исчезает из лобби, как только второй игрок вошёл (`join`), оба нажали
+`ready` (`playing`), хост вышел (`cancelled`) или истекли 30 секунд очереди.
+Сортировка — по `created_at` (новые сверху), не больше 50 комнат.
+
+```json
+{
+  "items": [
+    {
+      "match_id": "9b8c7d6e-5f4a-3210-9fed-cba987654321",
+      "song_id": "5f0f1c1e-5e0a-4a7e-9a3c-8a1b2c3d4e5f",
+      "song_slug": "pridumay-svetlyy-mir",
+      "song_title": "Придумай светлый мир",
+      "host_name": "Player One",
+      "host_rating": 1016,
+      "created_at": "2026-11-07T12:00:00Z",
+      "waiting_seconds": 4,
+      "note_count": 180
+    }
+  ],
+  "total": 1
+}
+```
+
+- `host_name` — `display_name` хоста, иначе `username`.
+- `host_rating` — последний Elo online-матча хоста; до первого матча `1000`.
+- `waiting_seconds` — целые секунды ожидания, не меньше нуля.
+- `total` — число подходящих комнат, `items` ограничены 50.
+- Комнату из лобби можно сразу передать в `POST /duels/{match_id}/join`.
+
+### 4.4 Состояние
 
 `GET /duels/{match_id}`
 
 Только для участника. Возвращает `DuelMatchState`. На этом же эндпоинте
 клиент после переподключения получает актуальные HP и `next_note_index`.
 
-### 4.4 Готовность
+### 4.5 Готовность
 
 `POST /duels/{match_id}/ready`
 
@@ -271,7 +314,7 @@ Online (в очередь):
 - До старта `ready` можно повторять; после старта ответ идемпотентен.
 - Если online-пара не нашлась за 30 секунд: `409 no_opponent`.
 
-### 4.5 События нот
+### 4.6 События нот
 
 `POST /duels/{match_id}/events`
 
@@ -326,7 +369,7 @@ Online (в очередь):
 Коды `rejected[].code`: `event_out_of_range`, `invalid_quality`,
 `invalid_note_index`, `event_too_early`, `event_too_late`.
 
-### 4.6 Завершить
+### 4.7 Завершить
 
 `POST /duels/{match_id}/finish`
 
@@ -349,7 +392,7 @@ Online (в очередь):
   XP/рейтинг второй раз.
 - Конец чарта и нокаут также завершают матч автоматически.
 
-### 4.7 Покинуть
+### 4.8 Покинуть
 
 `POST /duels/{match_id}/leave`
 
@@ -359,14 +402,14 @@ Online (в очередь):
 - `playing` и события были → победитель по текущему HP.
 - Повторный вызов идемпотентен.
 
-### 4.8 Результат
+### 4.9 Результат
 
 `GET /duels/{match_id}/result`
 
 `200` с `DuelMatchState` только для `finished`; иначе `409 match_not_finished`.
 Участник получает полный результат: HP, счётчики, урон, XP, рейтинг.
 
-### 4.9 История
+### 4.10 История
 
 `GET /duels/history?limit=20&offset=0&mode=bot|online&result=win|loss|draw`
 
@@ -395,7 +438,7 @@ Online (в очередь):
 }
 ```
 
-### 4.10 Лидерборд
+### 4.11 Лидерборд
 
 `GET /duels/leaderboard?period=week|month|all&limit=20&offset=0`
 
@@ -429,7 +472,7 @@ Online (в очередь):
 }
 ```
 
-### 4.11 Профиль игрока
+### 4.12 Профиль игрока
 
 `GET /duels/players/{user_id}` (нужен любой валидный токен)
 
@@ -455,7 +498,7 @@ Online (в очередь):
 }
 ```
 
-### 4.12 Мой профиль
+### 4.13 Мой профиль
 
 `GET /duels/me` — тот же профиль плюс `active_match`
 (`DuelMatchState | null`) для `waiting`/`playing`.
@@ -638,6 +681,9 @@ Online (в очередь):
    `note`, `hp`, `block`, `finish`, `ping`.
 8. При обрыве — переподключиться в течение 30 секунд и получить `state`.
 9. Бот-матчи не меняют рейтинг; показывать «RATING UNCHANGED».
+10. Список комнат под рейтингом — `GET /duels/lobby` (refresh по кнопке,
+    затем `POST /duels/{match_id}/join`). Комнаты старше 30 секунд сервер
+    в список не отдаёт, поэтому опрашивать чаще раза в 5–10 секунд нет смысла.
 
 ---
 
@@ -670,6 +716,7 @@ app/api/v1/duels.py
 migrations/versions/0021_duels.py
 tests/test_duel_rules.py
 tests/test_duels_api.py
+tests/test_duel_lobby.py
 ```
 
 ---
@@ -696,4 +743,7 @@ docker run --rm -d --name guitarbattle-test-db `
 
 `tests/test_duels_api.py` проверяет бота, идемпотентность событий и `finish`,
 online-пару, Elo/лидерборд, `no_opponent`, `leave` (техническое поражение и
-по HP) и WebSocket handshake. Без БД эти тесты штатно пропускаются.
+по HP) и WebSocket handshake. `tests/test_duel_lobby.py` проверяет фильтр
+лобби (online + waiting + не старше 30 с + есть места), сортировку, поля
+комнаты, вход из лобби и исчезновение комнаты после старта/истечения очереди.
+Без БД эти тесты штатно пропускаются.
