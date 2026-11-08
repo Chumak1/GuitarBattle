@@ -90,8 +90,11 @@ MainComponent::MainComponent()
                 {
                     const int note = parts[i].getIntValue();
 
+                    // -1 is an empty slot; every other value must be a valid
+                    // MIDI note. The old 24..96 window rejected a five-string
+                    // bass low B (23) and silently reset the tuning.
                     if (note != GuitarTuning::emptyNote
-                        && (note < 24 || note > 96))
+                        && (note < 0 || note > 127))
                     {
                         valid = false;
                         break;

@@ -1187,8 +1187,11 @@ void MainComponent::setCurrentTuning(const GuitarTuning::Tuning& tuning,
 
         const int note = nextTuning.notes[static_cast<size_t>(slot)];
 
+        // A five-string bass reaches B0 (MIDI 23), so the old 24..96 clamp
+        // silently moved its lowest string up a semitone. Keep every valid
+        // MIDI note; the pitch detector's own 20 Hz floor is the real limit.
         if (note != GuitarTuning::emptyNote)
-            nextTuning.notes[static_cast<size_t>(slot)] = juce::jlimit(24, 96, note);
+            nextTuning.notes[static_cast<size_t>(slot)] = juce::jlimit(0, 127, note);
     }
 
     // A tuning with no playable string would silently produce an empty chart.

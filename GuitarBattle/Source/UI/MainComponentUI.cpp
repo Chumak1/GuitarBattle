@@ -5009,14 +5009,19 @@ namespace
     struct TuningPreset
     {
         const char* name;
+        //: Strings the preset describes. Guitars use six; the bass presets
+        //: four or five, and the remaining slots stay empty.
+        int count;
         std::array<int, 6> notes;
     };
 
-    constexpr int customTuningItemId = 8;
-    constexpr int tuningPresetCount = 7;
+    //: Item id of the "Custom" entry. It must not collide with the preset ids
+    //: (1..tuningPresetCount), which are handed out by initialiseTuningSelector.
+    constexpr int customTuningItemId = 100;
+    constexpr int tuningPresetCount = 9;
 
     //: ComboBox item id for "EMPTY". MIDI notes start at 0 and the tuner only
-    //: offers 24..96, so 1 cannot collide with a real open note.
+    //: offers 23..96, so 1 cannot collide with a real open note.
     constexpr int emptyComboItemId = 1;
 
     bool comboHasItemId(juce::ComboBox& combo, int itemId)
@@ -5032,13 +5037,22 @@ namespace
     {
         static const TuningPreset presets[] =
         {
-            { "STANDARD", { 40, 45, 50, 55, 59, 64 } },
-            { "DROP D",   { 38, 45, 50, 55, 59, 64 } },
-            { "EB",       { 39, 44, 49, 54, 58, 63 } },
-            { "DADGAD",   { 38, 45, 50, 55, 57, 62 } },
-            { "OPEN G",   { 38, 43, 50, 55, 59, 62 } },
-            { "OPEN D",   { 38, 45, 50, 54, 57, 62 } },
-            { "DROP C",   { 36, 43, 48, 53, 57, 62 } },
+            { "STANDARD",   6, { 40, 45, 50, 55, 59, 64 } },
+            { "DROP D",     6, { 38, 45, 50, 55, 59, 64 } },
+            { "EB",         6, { 39, 44, 49, 54, 58, 63 } },
+            { "DADGAD",     6, { 38, 45, 50, 55, 57, 62 } },
+            { "OPEN G",     6, { 38, 43, 50, 55, 59, 62 } },
+            { "OPEN D",     6, { 38, 45, 50, 54, 57, 62 } },
+            { "DROP C",     6, { 36, 43, 48, 53, 57, 62 } },
+
+            // Basses sound an octave below a guitar. The MIDI parser moves the
+            // whole chart into the selected range, so a guitar chart becomes
+            // playable on these strings instead of asking for notes above the
+            // bass neck.
+            { "BASS EADG",  4, { 28, 33, 38, 43,
+                                 GuitarTuning::emptyNote, GuitarTuning::emptyNote } },
+            { "BASS BEADG", 5, { 23, 28, 33, 38, 43,
+                                 GuitarTuning::emptyNote } },
         };
 
         return presets[juce::jlimit(0, tuningPresetCount - 1, index)];
@@ -5047,13 +5061,20 @@ namespace
 
 GuitarTuning::Tuning MainComponent::presetNotes(int presetIndex)
 {
-    // Presets describe a six-string guitar; the slot count is part of the
-    // tuning, so selecting one resets an extended-range instrument to six.
+    // A preset carries its own string count: the guitar presets describe a
+    // six-string guitar, the bass presets four or five strings. Selecting one
+    // resets an extended-range instrument to that count; unused slots stay
+    // empty so neither the tuner nor the MIDI parser can use them.
     GuitarTuning::Tuning tuning = GuitarTuning::standardTuning();
     const auto& preset = tuningPreset(presetIndex);
 
+    tuning.count = juce::jlimit(1, 6, preset.count);
+
     for (int slot = 0; slot < 6; ++slot)
         tuning.notes[static_cast<size_t>(slot)] = preset.notes[static_cast<size_t>(slot)];
+
+    for (int slot = tuning.count; slot < GuitarTuning::maxStrings; ++slot)
+        tuning.notes[static_cast<size_t>(slot)] = GuitarTuning::emptyNote;
 
     return tuning;
 }
@@ -5081,7 +5102,9 @@ void MainComponent::initialiseTuningSelector()
 
     tuningPresetCombo.addItem("Custom", customTuningItemId);
     tuningPresetCombo.setTooltip(
-        "Open-string tuning. The tablature is rebuilt for the selected tuning.");
+        "Open-string tuning. The chart and the tablature are moved into the "
+        "selected range, so a guitar song stays playable on a bass "
+        "(BASS EADG / BASS BEADG).");
     tuningPresetCombo.setColour(juce::ComboBox::backgroundColourId, UiColors::surface2);
     tuningPresetCombo.setColour(juce::ComboBox::textColourId, UiColors::text);
     tuningPresetCombo.setColour(juce::ComboBox::outlineColourId, UiColors::border);
@@ -5248,9 +5271,10 @@ void MainComponent::applyPresetTuning(int presetItemId)
     if (index < 0 || index >= tuningPresetCount)
         return;
 
-    // A preset describes a six-string guitar, so it also resets an
-    // extended-range instrument back to six slots. The neck length is a
-    // property of the player's instrument, not of the tuning, so it stays.
+    // A preset carries its own string count: a guitar preset resets an
+    // extended-range instrument back to six slots, a bass preset sets four or
+    // five. The neck length is a property of the player's instrument, not of
+    // the tuning, so it stays.
     auto preset = presetNotes(index);
     preset.fretCount = currentTuning.fretCount;
 

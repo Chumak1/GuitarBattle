@@ -80,25 +80,6 @@ public:
                         static_cast<float>(pitch),
                         std::memory_order_relaxed);
 
-                    // Tuner diagnostics: what the detector actually sees. Bass
-                    // problems (range, level, pitch) show up here.
-                    if (owner.tunerActive.load (std::memory_order_relaxed))
-                    {
-                        if (++tunerDiagFrames >= 20)
-                        {
-                            tunerDiagFrames = 0;
-                            owner.appendAudioDebugLog (
-                                "TUNER range=" + juce::String (pitchRange.getStart(), 1)
-                                + ".." + juce::String (pitchRange.getEnd(), 1)
-                                + " pitch=" + juce::String (pitch, 2)
-                                + " rms=" + juce::String (rms, 5));
-                        }
-                    }
-                    else
-                    {
-                        tunerDiagFrames = 0;
-                    }
-
                     const auto* blockSamples =
                         owner.pitchAnalysisBuffer
                         .getReadPointer(0);
@@ -343,6 +324,32 @@ public:
                         }
                     }
 
+                    // A rejected attack is invisible in the scoring log. Record
+                    // it so a bass that the input gate does not accept can be
+                    // told apart from one that is simply the wrong pitch.
+                    if (! owner.tunerActive.load (std::memory_order_relaxed)
+                        && onset
+                        && ! pluckAccepted
+                        && onsetAnalysis.decided)
+                    {
+                        const double nowMs =
+                            juce::Time::getMillisecondCounterHiRes();
+
+                        if (gateDiagLines < 200
+                            && nowMs - gateDiagLastMs >= 1000.0)
+                        {
+                            gateDiagLastMs = nowMs;
+                            ++gateDiagLines;
+                            owner.appendAudioDebugLog (
+                                "PLUCK rejected attack=" + juce::String (onsetAnalysis.attackMs, 1)
+                                + " climb=" + juce::String (onsetAnalysis.climbFraction, 2)
+                                + " rise=" + juce::String (onsetAnalysis.riseDb, 1)
+                                + " voice=" + juce::String (onsetAnalysis.voiceLike ? 1 : 0)
+                                + " pitch=" + juce::String (pitch, 2)
+                                + " rms=" + juce::String (rms, 5));
+                        }
+                    }
+
 
                     //==========================================================
                     // Practice mode: publish the live pitch on every analysis
@@ -395,6 +402,29 @@ public:
                     // treated as stale instead of freezing the old value.
                     const int tunerStringIndex =
                         tunerActive ? owner.tuner.detectString(pitch) : -1;
+
+                    // Tuner diagnostics: what the detector actually sees.
+                    // Bass problems (range, level, pitch, gate) show up here.
+                    if (tunerActive)
+                    {
+                        if (++tunerDiagFrames >= 20)
+                        {
+                            tunerDiagFrames = 0;
+                            owner.appendAudioDebugLog (
+                                "TUNER range=" + juce::String (pitchRange.getStart(), 1)
+                                + ".." + juce::String (pitchRange.getEnd(), 1)
+                                + " pitch=" + juce::String (pitch, 2)
+                                + " rms=" + juce::String (rms, 5)
+                                + " string=" + juce::String (tunerStringIndex)
+                                + " gate=" + juce::String (owner.gateDecision.load (std::memory_order_relaxed))
+                                + " attack=" + juce::String (owner.gateAttackMs.load (std::memory_order_relaxed), 1)
+                                + " climb=" + juce::String (owner.gateClimbFraction.load (std::memory_order_relaxed), 2));
+                        }
+                    }
+                    else
+                    {
+                        tunerDiagFrames = 0;
+                    }
 
                     //==========================================================
                     // Note stability
@@ -970,6 +1000,28 @@ public:
                                     const bool insideTimingWindow =
                                         noteEvaluation.insideTimingWindow;
 
+                                    // One line per second: target vs detected
+                                    // proves whether the input reaches scoring
+                                    // and at which octave it arrives. A bass
+                                    // playing a guitar chart shows up here as a
+                                    // constant 12- or 24-semitone gap.
+                                    const double nowMs =
+                                        juce::Time::getMillisecondCounterHiRes();
+
+                                    if (gameplayDiagLines < 300
+                                        && nowMs - gameplayDiagLastMs >= 1000.0)
+                                    {
+                                        gameplayDiagLastMs = nowMs;
+                                        ++gameplayDiagLines;
+                                        owner.appendAudioDebugLog (
+                                            "PLAY target=" + juce::String (targetMidi)
+                                            + " detected=" + juce::String (detectedMidi)
+                                            + " cents=" + juce::String (noteEvaluation.pitchErrorCents, 1)
+                                            + " timing=" + juce::String (timingErrorMs, 1)
+                                            + " rms=" + juce::String (rms, 5)
+                                            + " correct=" + juce::String (noteEvaluation.correctPitch ? 1 : 0));
+                                    }
+
 
 
 
@@ -1336,6 +1388,13 @@ private:
 
     // Throttle for the tuner diagnostics written to audio-debug.log.
     int tunerDiagFrames = 0;
+
+    // Throttle for the scoring and input-gate diagnostics. Both write at most
+    // one line per second and stop after a few hundred lines.
+    double gameplayDiagLastMs = 0.0;
+    int gameplayDiagLines = 0;
+    double gateDiagLastMs = 0.0;
+    int gateDiagLines = 0;
 
     // Pitch stability: how many consecutive analysis frames carried the same
     // note (within 60 cents). Speech jumps between notes every syllable; a
