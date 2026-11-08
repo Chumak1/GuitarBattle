@@ -1103,7 +1103,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
                             juce::Rectangle<float>(42.0f, 82.0f, 360.0f, 16.0f));
         g.setColour(UiColors::text);
         g.setFont(GameUi::heading(34.0f));
-        g.drawText("Tune your guitar",
+        g.drawText("Tune your instrument",
                    juce::Rectangle<float>(42.0f, 100.0f, width - 84.0f, 44.0f),
                    juce::Justification::centredLeft, false);
         g.setColour(UiColors::muted);
