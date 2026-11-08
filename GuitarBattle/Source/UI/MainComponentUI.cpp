@@ -5020,6 +5020,10 @@ namespace
     constexpr int customTuningItemId = 100;
     constexpr int tuningPresetCount = 9;
 
+    //: Index of "BASS EADG" in the preset list. Used by the octave migration
+    //: in initialiseTuningSelector.
+    constexpr int bassEadgPresetIndex = 7;
+
     //: ComboBox item id for "EMPTY". MIDI notes start at 0 and the tuner only
     //: offers 23..96, so 1 cannot collide with a real open note.
     constexpr int emptyComboItemId = 1;
@@ -5095,6 +5099,24 @@ int MainComponent::presetItemIdForTuning(const GuitarTuning::Tuning& tuning)
 
 void MainComponent::initialiseTuningSelector()
 {
+    // A four-string E-A-D-G tuning stored two octaves above the bass range is
+    // the same instrument with the wrong octave: the tuner looks for E3 while
+    // the string sounds E1, and the chart keeps guitar pitches above the bass
+    // neck. Snap it to the playable bass octave once, so the instrument works
+    // without editing four note combos. A real four-string guitar is tuned
+    // E2-A2-D3-G3 and is left alone.
+    if (currentTuning.count == 4
+        && currentTuning.notes[0] >= 52
+        && currentTuning.notes[0] % 12 == 4    // E
+        && currentTuning.notes[1] % 12 == 9    // A
+        && currentTuning.notes[2] % 12 == 2    // D
+        && currentTuning.notes[3] % 12 == 7)   // G
+    {
+        auto bass = presetNotes(bassEadgPresetIndex);
+        bass.fretCount = currentTuning.fretCount;
+        setCurrentTuning(bass, presetName(bassEadgPresetIndex), true);
+    }
+
     tuningPresetCombo.clear(juce::dontSendNotification);
 
     for (int i = 0; i < tuningPresetCount; ++i)
