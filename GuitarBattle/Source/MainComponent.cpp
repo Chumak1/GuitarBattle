@@ -38,6 +38,12 @@ MainComponent::MainComponent()
     options.commonToAllUsers = false;
     appProperties.setStorageParameters(options);
 
+    // UI sounds: preferences + manifest. The manager is safe before the audio
+    // device opens (it just queues triggers until the callback runs).
+    loadUiSoundPreferences();
+    uiSounds.setApiClient(&apiClient);
+    uiSounds.refreshManifest({});
+
     if (auto* settings = appProperties.getUserSettings())
     {
         preferredInputChannel.store(
@@ -49,6 +55,14 @@ MainComponent::MainComponent()
             juce::jlimit(0.0f, 1.0f,
                          static_cast<float>(
                              settings->getDoubleValue("InputSensitivity", 0.5))),
+            std::memory_order_relaxed);
+
+        // Manual timing calibration in milliseconds. 0 = trust the device's
+        // reported output latency; positive values compensate hits that still
+        // register late (hidden buffers, Bluetooth, slow input drivers).
+        timingOffsetMs.store(
+            juce::jlimit(-200, 200,
+                         settings->getIntValue("TimingOffsetMs", 0)),
             std::memory_order_relaxed);
 
         // Guitars only by default: a voice at the chart's pitch would
@@ -131,6 +145,10 @@ MainComponent::MainComponent()
     // initialiseAudio(), once the real sample rate and block size are known.
     vstHost.initialise(appProperties.getUserSettings());
 
+    // The duel backdrop sits below the overlay and the tablature. It is
+    // hidden until a duel is active, so the normal screens are untouched.
+    addChildComponent (duelStage);
+
     setSize(
         1000,
         950);
@@ -148,6 +166,9 @@ MainComponent::MainComponent()
         tablatureComponent);
 
     initialiseUi();
+
+    // Restore the profile character picked from the admin UI levels.
+    restoreSelectedCharacter();
 
     // Preview/background music share the existing audio device; settings are
     // restored before the device starts so the first block already has a gain.
@@ -191,6 +212,30 @@ MainComponent::MainComponent()
 // Timer
 //==============================================================================
 
+void MainComponent::loadUiSoundPreferences()
+{
+    auto* settings = appProperties.getUserSettings();
+
+    const bool enabled = settings != nullptr
+                             ? settings->getBoolValue ("UiSoundsEnabled", true)
+                             : true;
+    const float volume = settings != nullptr
+                             ? static_cast<float> (settings->getDoubleValue (
+                                   "UiSoundsVolume", 0.8))
+                             : 0.8f;
+    const bool navigation = settings != nullptr
+                                ? settings->getBoolValue ("UiSoundsNavigation", true)
+                                : true;
+    const bool actions = settings != nullptr
+                             ? settings->getBoolValue ("UiSoundsActions", true)
+                             : true;
+    const bool system = settings != nullptr
+                            ? settings->getBoolValue ("UiSoundsSystem", true)
+                            : true;
+
+    uiSounds.setPreferences (enabled, volume, navigation, actions, system);
+}
+
 void MainComponent::timerCallback()
 {
     // The live guitar monitor is silent on the sign-in / registration screen:
@@ -204,6 +249,19 @@ void MainComponent::timerCallback()
         applyPendingClientAssetsReload();
 
     updateHitFeedbackAnimation();
+
+    // Unread notification badge for the sidebar bell. A 20 s poll is enough for
+    // social events; the request itself runs on the network pool.
+    {
+        const auto now = juce::Time::getMillisecondCounter();
+
+        if (lastNotificationPollMs == 0 || now - lastNotificationPollMs > 20000)
+        {
+            lastNotificationPollMs = now;
+            refreshSocialNotifications();
+            refreshMessageUnread();
+        }
+    }
 
     // Input monitor: read the audio-thread atomics and advance the meter
     // smoothing / peak hold. Message thread only.
@@ -255,6 +313,16 @@ void MainComponent::timerCallback()
             0.0, 1.0,
             static_cast<double>(
                 songDownloadProgressState->load(std::memory_order_relaxed)));
+
+        // Campaign: the next opponent's stems/chart may still be downloading
+        // behind the victory card. That overlay is custom-painted from the
+        // value copied above, so it has to be repainted on every tick while
+        // the worker thread advances the shared fraction.
+        if (gameState.load (std::memory_order_relaxed) == GameState::Finished
+            && campaignFightActive)
+        {
+            overlayComponent.repaint();
+        }
     }
 
     // Practice mode: hold the transport at the target note and evaluate the
@@ -277,6 +345,14 @@ void MainComponent::timerCallback()
     // schedules work and applies results on the message thread.
     updateOnlineDuel();
 
+    // Show/hide the pixel-art stage as the duel state changes. setActive() is
+    // idempotent; the check keeps the 30 Hz timer free of layout work. The
+    // venue/opponent follow the current song's genre.
+    const bool stageActive = isDuelStageActive();
+
+    if (duelStage.isActive() != stageActive)
+        duelStage.setActive (stageActive);
+
     // The duel strip changes on every exchange and its damage label fades, so
     // it needs a repaint while a duel is running. Only the strip region is
     // invalidated: a full overlay repaint would also repaint the tablature.
@@ -290,19 +366,41 @@ void MainComponent::timerCallback()
     // Open duel rooms stay fresh while the song screen is visible: the host's
     // room appears for everyone within a few seconds without pressing REFRESH.
     if (duelLobby != nullptr
+        && currentSection == AppSection::OnlineDuel
         && gameState.load (std::memory_order_relaxed) == GameState::SongSelect
         && onlineAccessToken.isNotEmpty()
         && ! showAuthScreen)
     {
         if (--duelLobbyRefreshTicks <= 0)
         {
-            duelLobbyRefreshTicks = 150; // about 5 s at the 30 Hz tick
+            // The Online Duel section polls faster (~2 s); the Home/Songs hub
+            // keeps the old ~5 s cadence.
+            duelLobbyRefreshTicks = currentSection == AppSection::OnlineDuel ? 60 : 150;
             refreshDuelLobby();
         }
     }
     else
     {
         duelLobbyRefreshTicks = 150;
+    }
+
+    // Campaigns can be created or reordered in the admin panel while the
+    // player keeps the CAMPAIGN section open. Re-read the public list every
+    // ~10 seconds (silently: the visible list stays interactive).
+    if (campaignPanel != nullptr
+        && currentSection == AppSection::Campaign
+        && gameState.load (std::memory_order_relaxed) == GameState::SongSelect
+        && ! showAuthScreen)
+    {
+        if (--campaignRefreshTicks <= 0)
+        {
+            campaignRefreshTicks = 300;
+            refreshServerCampaigns (true);
+        }
+    }
+    else
+    {
+        campaignRefreshTicks = 300;
     }
 
     // Smoothly animate the level bar toward the server-side progress. Runs in
@@ -376,7 +474,7 @@ void MainComponent::timerCallback()
     }
 
     const double beat =
-        currentPlayheadBeat.load(
+        audiblePlayheadBeat.load(
             std::memory_order_relaxed);
 
     const int currentTarget =
@@ -410,7 +508,10 @@ void MainComponent::timerCallback()
                     std::memory_order_relaxed);
 
             // The auto miss must not fire before the (level- and speed-scaled)
-            // late hit window closes.
+            // late hit window closes. The extra allowance covers the pitch
+            // analysis lag: a valid attack can be resolved a few buffers after
+            // the note time, and auto-missing it first counted a real hit as a
+            // miss (visible in online duels).
             const double timingWindowScale =
                 ScoringSystem::getTimingWindowScale(
                     songLevel.load(std::memory_order_relaxed),
@@ -419,7 +520,8 @@ void MainComponent::timerCallback()
             const auto missTimeoutSamples =
                 static_cast<uint64_t>(
                     sampleRate
-                    * juce::jmax(0.300, 0.150 * timingWindowScale + 0.100));
+                    * juce::jmax(0.500, 0.150 * timingWindowScale + 0.300))
+                + getScoringLatencySamples(sampleRate);
 
             // Resolve every target whose window has already passed, not just
             // one per tick: after the last note (or a knockout) the remaining
@@ -427,6 +529,14 @@ void MainComponent::timerCallback()
             // delayed the finish screen by seconds.
             for (int guard = 0; guard < 64; ++guard)
             {
+                // Online: once the server has decided the match (or this side
+                // already asked to finish), the remaining chart notes are not
+                // part of the duel and must not be counted as misses.
+                if (duelOnlineActive.load (std::memory_order_relaxed)
+                    && (duelOnlinePhase == DuelOnlinePhase::Finishing
+                        || duelOnlinePhase == DuelOnlinePhase::Finished))
+                    break;
+
                 const int target =
                     gameSession.getTargetNoteIndex();
 

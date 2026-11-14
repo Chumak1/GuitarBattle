@@ -165,6 +165,69 @@ namespace
         totals.damageDealt = propDouble (object, "damage_dealt");
         totals.bestWinStreak = propInt (object, "best_win_streak");
     }
+
+    void parseRoomPlayer (const juce::var& object, DuelRoomPlayer& player)
+    {
+        player.userId = propString (object, "user_id");
+        player.username = propString (object, "username");
+        player.displayName = propString (object, "display_name");
+        player.isHost = propBool (object, "is_host");
+    }
+
+    /** Fills the lobby fields shared by DuelRoomSnapshot and its list rows. */
+    void parseRoomFields (const juce::var& json, DuelRoomSnapshot& room)
+    {
+        room.lobbyId = propString (json, "lobby_id");
+        room.name = propString (json, "name");
+        room.hasPassword = propBool (json, "has_password");
+        room.status = propString (json, "status");
+        room.hostUserId = propString (json, "host_user_id");
+        room.guestUserId = propString (json, "guest_user_id");
+        if (room.guestUserId == "null")
+            room.guestUserId.clear();
+        room.matchId = propString (json, "match_id");
+        if (room.matchId == "null")
+            room.matchId.clear();
+
+        // Pending start handshake; absent/null means "nobody asked to start".
+        const auto start = json.getProperty ("start", juce::var());
+        if (start.isObject())
+        {
+            room.start.active = true;
+            room.start.requestedBy = propString (start, "requested_by");
+            if (room.start.requestedBy == "null")
+                room.start.requestedBy.clear();
+            room.start.hostConfirmed = propBool (start, "host_confirmed");
+            room.start.guestConfirmed = propBool (start, "guest_confirmed");
+        }
+
+        const auto song = json.getProperty ("song", juce::var());
+        if (song.isObject())
+        {
+            room.songId = propString (song, "id");
+            room.songSlug = propString (song, "slug");
+            room.songTitle = propString (song, "title");
+            room.songArtist = propString (song, "artist");
+            room.songBpm = propInt (song, "bpm");
+            room.songDifficulty = propInt (song, "difficulty");
+            room.songDurationSeconds = propInt (song, "duration_seconds");
+        }
+
+        if (const auto* players = json.getProperty ("players", juce::var()).getArray())
+        {
+            room.players.reserve (static_cast<size_t> (players->size()));
+
+            for (const auto& item : *players)
+            {
+                DuelRoomPlayer player;
+                parseRoomPlayer (item, player);
+                room.players.push_back (player);
+            }
+        }
+
+        room.createdAt = propString (json, "created_at");
+        room.updatedAt = propString (json, "updated_at");
+    }
 }
 
 //==============================================================================
@@ -191,6 +254,9 @@ DuelMatchSnapshot DuelClient::parseMatch (const juce::var& json)
     match.rulesVersion = propInt (json, "rules_version");
     match.seed = propInt64 (json, "seed");
     match.botLevel = propString (json, "bot_level");
+    match.lobbyId = propString (json, "lobby_id");
+    if (match.lobbyId == "null")
+        match.lobbyId.clear();
 
     const auto song = json.getProperty ("song", juce::var());
     match.songId = propString (song, "id");
@@ -206,6 +272,19 @@ DuelMatchSnapshot DuelClient::parseMatch (const juce::var& json)
     match.yourSide = propString (json, "your_side");
     if (match.yourSide == "null")
         match.yourSide.clear();
+    match.youCharacterName = propString (json, "you_character_name");
+    if (match.youCharacterName == "null")
+        match.youCharacterName.clear();
+    match.youCharacterSheetUrl = propString (json, "you_character_sheet_url");
+    if (match.youCharacterSheetUrl == "null")
+        match.youCharacterSheetUrl.clear();
+    match.opponentCharacterName = propString (json, "opponent_character_name");
+    if (match.opponentCharacterName == "null")
+        match.opponentCharacterName.clear();
+    match.opponentCharacterSheetUrl =
+        propString (json, "opponent_character_sheet_url");
+    if (match.opponentCharacterSheetUrl == "null")
+        match.opponentCharacterSheetUrl.clear();
     match.startsInMs = propInt (json, "starts_in_ms");
     match.serverTimeMs = propInt (json, "server_time_ms");
     match.waitingSeconds = propInt (json, "waiting_seconds");
@@ -413,6 +492,114 @@ DuelProfileReply DuelClient::parseProfile (const juce::var& json){
         reply.activeMatch = parseMatch (active);
 
     reply.valid = reply.userId.isNotEmpty();
+    return reply;
+}
+
+DuelRoomSnapshot DuelClient::parseRoom (const juce::var& json)
+{
+    DuelRoomSnapshot room;
+
+    if (! json.isObject())
+        return room;
+
+    parseRoomFields (json, room);
+    room.valid = room.lobbyId.isNotEmpty();
+    return room;
+}
+
+DuelRoomListReply DuelClient::parseRoomList (const juce::var& json)
+{
+    DuelRoomListReply reply;
+
+    if (! json.isObject())
+        return reply;
+
+    if (const auto* items = json.getProperty ("items", juce::var()).getArray())
+    {
+        reply.rooms.reserve (static_cast<size_t> (items->size()));
+
+        for (const auto& item : *items)
+            reply.rooms.push_back (parseRoom (item));
+    }
+
+    reply.total = propInt (json, "total");
+    reply.valid = true;
+    return reply;
+}
+
+DuelChatMessage DuelClient::parseChatMessage (const juce::var& json)
+{
+    DuelChatMessage message;
+
+    if (! json.isObject())
+        return message;
+
+    message.id = propInt64 (json, "id");
+    message.userId = propString (json, "user_id");
+    message.username = propString (json, "username");
+    message.displayName = propString (json, "display_name");
+    message.text = propString (json, "text");
+    message.createdAt = propString (json, "created_at");
+    return message;
+}
+
+DuelChatHistoryReply DuelClient::parseChatHistory (const juce::var& json)
+{
+    DuelChatHistoryReply reply;
+
+    if (! json.isObject())
+        return reply;
+
+    if (const auto* items = json.getProperty ("items", juce::var()).getArray())
+    {
+        reply.messages.reserve (static_cast<size_t> (items->size()));
+
+        for (const auto& item : *items)
+            reply.messages.push_back (parseChatMessage (item));
+    }
+
+    reply.latestId = propInt64 (json, "latest_id");
+    reply.valid = true;
+    return reply;
+}
+
+DuelRoomStartReply DuelClient::parseRoomStart (const juce::var& json)
+{
+    DuelRoomStartReply reply;
+
+    if (! json.isObject())
+        return reply;
+
+    reply.matchId = propString (json, "match_id");
+    if (reply.matchId == "null")
+        reply.matchId.clear();
+
+    reply.lobby = parseRoom (json.getProperty ("lobby", juce::var()));
+    // A single confirmation returns match_id = null with the updated room, so
+    // validity must come from the room, not from the match id.
+    reply.valid = reply.lobby.valid;
+    return reply;
+}
+
+DuelRematchReply DuelClient::parseRematch (const juce::var& json)
+{
+    DuelRematchReply reply;
+
+    if (! json.isObject())
+        return reply;
+
+    reply.matchId = propString (json, "match_id");
+    reply.previousMatchId = propString (json, "previous_match_id");
+    reply.lobbyId = propString (json, "lobby_id");
+    if (reply.lobbyId == "null")
+        reply.lobbyId.clear();
+
+    const auto song = json.getProperty ("song", juce::var());
+    reply.songId = propString (song, "id");
+    reply.songSlug = propString (song, "slug");
+    reply.songTitle = propString (song, "title");
+    reply.alreadyCreated = propBool (json, "already_created");
+    reply.valid = reply.matchId.isNotEmpty();
     return reply;
 }
 
@@ -660,5 +847,238 @@ void DuelClient::playerProfile (const juce::String& userId,
                   {
                       if (onResult != nullptr)
                           onResult (reply, parseProfile (reply.json));
+                  });
+}
+
+//==============================================================================
+// Shared duel lobby (rooms with chat, song picker and a host-started match)
+
+void DuelClient::createRoom (const juce::String& name,
+                             const juce::String& password,
+                             const juce::String& bearerToken,
+                             RoomCallback onResult)
+{
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty ("name", name);
+
+    // The server treats a missing/blank password as "no password".
+    if (password.isNotEmpty())
+        body->setProperty ("password", password);
+
+    api.postJson ("/duels/lobbies", juce::var (body.get()), bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoom (response.json));
+                  });
+}
+
+void DuelClient::rooms (bool includeFull,
+                        const juce::String& bearerToken,
+                        RoomListCallback onResult)
+{
+    const auto path = includeFull ? juce::String ("/duels/lobbies?include_full=true")
+                                  : juce::String ("/duels/lobbies");
+
+    getWithRetry (path, bearerToken,
+                  [onResult] (const DuelReply& reply)
+                  {
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoomList (reply.json));
+                  });
+}
+
+void DuelClient::room (const juce::String& lobbyId,
+                       const juce::String& bearerToken,
+                       RoomCallback onResult)
+{
+    getWithRetry ("/duels/lobbies/" + lobbyId, bearerToken,
+                  [onResult] (const DuelReply& reply)
+                  {
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoom (reply.json));
+                  });
+}
+
+void DuelClient::joinRoom (const juce::String& lobbyId,
+                           const juce::String& password,
+                           const juce::String& bearerToken,
+                           RoomCallback onResult)
+{
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+
+    if (password.isNotEmpty())
+        body->setProperty ("password", password);
+
+    api.postJson ("/duels/lobbies/" + lobbyId + "/join", juce::var (body.get()),
+                  bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoom (response.json));
+                  });
+}
+
+void DuelClient::leaveRoom (const juce::String& lobbyId,
+                            const juce::String& bearerToken,
+                            RoomCallback onResult)
+{
+    api.postJson ("/duels/lobbies/" + lobbyId + "/leave", emptyObject(),
+                  bearerToken, 4000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoom (response.json));
+                  });
+}
+
+void DuelClient::selectRoomSong (const juce::String& lobbyId,
+                                 const juce::String& songId,
+                                 const juce::String& bearerToken,
+                                 RoomCallback onResult)
+{
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty ("song_id", songId);
+
+    api.postJson ("/duels/lobbies/" + lobbyId + "/song", juce::var (body.get()),
+                  bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoom (response.json));
+                  });
+}
+
+void DuelClient::startRoomMatch (const juce::String& lobbyId,
+                                 const juce::String& bearerToken,
+                                 StartRoomCallback onResult)
+{
+    api.postJson ("/duels/lobbies/" + lobbyId + "/start", emptyObject(),
+                  bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoomStart (response.json));
+                  });
+}
+
+void DuelClient::requestLobbyStart (const juce::String& lobbyId,
+                                    const juce::String& bearerToken,
+                                    RoomCallback onResult)
+{
+    api.postJson ("/duels/lobbies/" + lobbyId + "/start/request", emptyObject(),
+                  bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoom (response.json));
+                  });
+}
+
+void DuelClient::confirmLobbyStart (const juce::String& lobbyId,
+                                    const juce::String& bearerToken,
+                                    StartRoomCallback onResult)
+{
+    api.postJson ("/duels/lobbies/" + lobbyId + "/start/confirm", emptyObject(),
+                  bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoomStart (response.json));
+                  });
+}
+
+void DuelClient::declineLobbyStart (const juce::String& lobbyId,
+                                    const juce::String& bearerToken,
+                                    RoomCallback onResult)
+{
+    api.postJson ("/duels/lobbies/" + lobbyId + "/start/decline", emptyObject(),
+                  bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoom (response.json));
+                  });
+}
+
+void DuelClient::roomChat (const juce::String& lobbyId,
+                           juce::int64 afterId,
+                           int limit,
+                           const juce::String& bearerToken,
+                           ChatHistoryCallback onResult)
+{
+    const auto path = "/duels/lobbies/" + lobbyId + "/chat?after_id="
+                      + juce::String (juce::jmax<juce::int64> (0, afterId))
+                      + "&limit=" + juce::String (juce::jlimit (1, 200, limit));
+
+    getWithRetry (path, bearerToken,
+                  [onResult] (const DuelReply& reply)
+                  {
+                      if (onResult != nullptr)
+                          onResult (reply, parseChatHistory (reply.json));
+                  });
+}
+
+void DuelClient::sendRoomChat (const juce::String& lobbyId,
+                               const juce::String& message,
+                               const juce::String& bearerToken,
+                               ChatMessageCallback onResult)
+{
+    juce::DynamicObject::Ptr body = new juce::DynamicObject();
+    body->setProperty ("message", message);
+
+    api.postJson ("/duels/lobbies/" + lobbyId + "/chat", juce::var (body.get()),
+                  bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseChatMessage (response.json));
+                  });
+}
+
+void DuelClient::rematch (const juce::String& matchId,
+                          const juce::String& bearerToken,
+                          RematchCallback onResult)
+{
+    api.postJson ("/duels/" + matchId + "/rematch", emptyObject(), bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRematch (response.json));
+                  });
+}
+
+void DuelClient::returnToLobby (const juce::String& matchId,
+                                const juce::String& bearerToken,
+                                RoomCallback onResult)
+{
+    api.postJson ("/duels/" + matchId + "/return-to-lobby", emptyObject(),
+                  bearerToken, 6000,
+                  [onResult] (ApiClient::Response response)
+                  {
+                      const auto reply = makeReply (response);
+
+                      if (onResult != nullptr)
+                          onResult (reply, parseRoom (response.json));
                   });
 }

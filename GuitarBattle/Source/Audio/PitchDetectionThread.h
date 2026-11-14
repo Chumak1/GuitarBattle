@@ -33,18 +33,23 @@ public:
                     false,
                     std::memory_order_relaxed))
                 {
-                    auto* device =
-                        owner.deviceManager
-                        .getCurrentAudioDevice();
-
-                    if (device == nullptr)
-                        continue;
-
+                    // Read the rate cached by prepareToPlay() instead of
+                    // touching the device manager from this thread: the
+                    // device may be deleted/replaced by the message thread
+                    // while a device switch is in progress.
                     const double sampleRate =
-                        device->getCurrentSampleRate();
+                        owner.cachedSampleRate.load(
+                            std::memory_order_relaxed);
 
                     if (sampleRate <= 0.0)
                         continue;
+
+                    // Active analysis window, sized from the sample rate in
+                    // prepareToPlay(). The buffers are allocated at the
+                    // maximum size, so getNumSamples() is not the window.
+                    const int analysisWindow =
+                        owner.pitchAnalysisWindow.load(
+                            std::memory_order_relaxed);
 
                     // Frequency window for the analysis: during gameplay it
                     // follows the current target, so high frets above 700 Hz
@@ -56,7 +61,7 @@ public:
                         owner.pitchDetector.detectPitch(
                             owner.pitchAnalysisBuffer
                             .getReadPointer(0),
-                            owner.pitchAnalysisBuffer.getNumSamples(),
+                            analysisWindow,
                             sampleRate,
                             pitchRange.getStart(),
                             pitchRange.getEnd());
@@ -65,7 +70,7 @@ public:
                         owner.pitchDetector.detectRms(
                             owner.pitchAnalysisBuffer
                             .getReadPointer(0),
-                            owner.pitchAnalysisBuffer.getNumSamples());
+                            analysisWindow);
 
                     const auto analysisSample =
                         owner.pitchAnalysisStartSample.load(
@@ -91,8 +96,7 @@ public:
 
                     double maxSample = 0.0;
 
-                    const int numAnalysisSamples =
-                        owner.pitchAnalysisBuffer.getNumSamples();
+                    const int numAnalysisSamples = analysisWindow;
 
                     for (int i = 0;
                         i < numAnalysisSamples;
@@ -111,8 +115,7 @@ public:
 
                     if (threshold > 0.0)
                     {
-                        const int thresholdSampleCount =
-                            owner.pitchAnalysisBuffer.getNumSamples();
+                        const int thresholdSampleCount = analysisWindow;
 
                         for (int i = 0;
                             i < thresholdSampleCount;
@@ -538,6 +541,20 @@ public:
                         }
                     }
 
+                    // The chart timeline is the render timeline, but the
+                    // player hears it one output latency later. Subtract the
+                    // device latency (plus the manual calibration) from the
+                    // onset used for scoring, so a large buffer or a different
+                    // sample rate does not push on-time hits past the late
+                    // window. The detector and the gate keep the raw onset.
+                    const auto scoringLatencySamples =
+                        owner.getScoringLatencySamples(sampleRate);
+
+                    if (scoreOnset > scoringLatencySamples)
+                        scoreOnset -= scoringLatencySamples;
+                    else
+                        scoreOnset = 0;
+
                     const bool tunerUsable =
                         tunerActive && noteLevelValid && tunerStringIndex >= 0
                         && tunerHoldAccepted && noteStable;
@@ -819,6 +836,18 @@ public:
                                 if (!owner.gameSession.resolveTarget(currentTargetIndex))
                                     break;
 
+                                if (owner.duelOnlineActive.load(
+                                        std::memory_order_relaxed))
+                                    owner.appendAudioDebugLog(
+                                        "ONLINE MISS idx="
+                                        + juce::String(currentTargetIndex)
+                                        + " reason=late onset="
+                                        + juce::String(
+                                              static_cast<double>(scoreOnset)
+                                                  - static_cast<double>(targetSample),
+                                              0)
+                                        + "samp");
+
                                 owner.onDuelNoteResolved(
                                     currentTargetIndex,
                                     static_cast<int>(HitQuality::Miss));
@@ -883,7 +912,7 @@ public:
                                     {
                                         const auto chordDetectedNotes = owner.pitchDetector.detectMultipleMidiNotes(
                                             owner.pitchAnalysisBuffer.getReadPointer(0),
-                                            owner.pitchAnalysisBuffer.getNumSamples(),
+                                            analysisWindow,
                                             sampleRate,
                                             6);
 
@@ -929,6 +958,13 @@ public:
                                             }
                                             else
                                             {
+                                                if (owner.duelOnlineActive.load(
+                                                        std::memory_order_relaxed))
+                                                    owner.appendAudioDebugLog(
+                                                        "ONLINE MISS idx="
+                                                        + juce::String(targetIndex)
+                                                        + " reason=chord-partial");
+
                                                 owner.onDuelNoteResolved(
                                                     targetIndex,
                                                     static_cast<int>(HitQuality::Miss));
@@ -1053,6 +1089,28 @@ public:
                                     if (!correctPitch
                                         || !insideTimingWindow)
                                     {
+                                        // Online: record WHY the note was lost.
+                                        // A wrong quality or an out-of-window
+                                        // note is what the server stores.
+                                        if (owner.duelOnlineActive.load(
+                                                std::memory_order_relaxed))
+                                            owner.appendAudioDebugLog(
+                                                "ONLINE MISS idx="
+                                                + juce::String(currentTargetIndex)
+                                                + " reason="
+                                                + (correctPitch ? "timing"
+                                                                : "pitch")
+                                                + " target="
+                                                + juce::String(targetMidi)
+                                                + " detected="
+                                                + juce::String(detectedMidi)
+                                                + " cents="
+                                                + juce::String(
+                                                    noteEvaluation.pitchErrorCents, 1)
+                                                + " te="
+                                                + juce::String(timingErrorMs, 1)
+                                                + " rms=" + juce::String(rms, 5));
+
                                         if (owner.gameSession.resolveTarget(
                                             currentTargetIndex))
                                         {
@@ -1242,18 +1300,18 @@ public:
                     false,
                     std::memory_order_relaxed))
                 {
-                    auto* device =
-                        owner.deviceManager
-                        .getCurrentAudioDevice();
-
-                    if (device == nullptr)
-                        continue;
-
+                    // Display-only buffer: same cached rate as the scoring
+                    // path so a device switch cannot desynchronise them.
                     const double sampleRate =
-                        device->getCurrentSampleRate();
+                        owner.cachedSampleRate.load(
+                            std::memory_order_relaxed);
 
                     if (sampleRate <= 0.0)
                         continue;
+
+                    const int displayWindow =
+                        owner.pitchAnalysisWindow.load(
+                            std::memory_order_relaxed);
 
                     const auto displayPitchRange =
                         owner.getPitchAnalysisRange();
@@ -1262,7 +1320,7 @@ public:
                         owner.pitchDetector.detectPitch(
                             owner.pitchAnalysisBuffer2
                             .getReadPointer(0),
-                            owner.pitchAnalysisBuffer2.getNumSamples(),
+                            displayWindow,
                             sampleRate,
                             displayPitchRange.getStart(),
                             displayPitchRange.getEnd());
@@ -1271,7 +1329,7 @@ public:
                         owner.pitchDetector.detectRms(
                             owner.pitchAnalysisBuffer2
                             .getReadPointer(0),
-                            owner.pitchAnalysisBuffer2.getNumSamples());
+                            displayWindow);
 
                     const double previousRms =
                         owner.previousRmsValue2;
@@ -1311,8 +1369,7 @@ public:
                         || instrumentGate.acceptsSustain(
                                owner.pitchAnalysisStartSample2.load(
                                    std::memory_order_relaxed)
-                                   + static_cast<uint64_t>(
-                                       owner.pitchAnalysisBuffer2.getNumSamples()),
+                                   + static_cast<uint64_t>(displayWindow),
                                rms);
 
                     // Loud input that the gate rejects must not leave the

@@ -149,6 +149,18 @@ class StatisticsUserItem(BaseModel):
     # from. Shown in the admin tooltip only.
     registration_ip: str | None = None
     last_login_ip: str | None = None
+    # Compact game-mode summaries (additive). Both groups are filled by one
+    # grouped query for the users on the current page:
+    # * ``online_*`` — finished *online* human duels only, rating is the newest
+    #   non-NULL one (``null`` when the player was never rated);
+    # * ``battle_*`` — completed towers and cleared stages, with the stage count
+    #   clamped to the published stages of each tower.
+    online_rating: int | None = None
+    online_matches: int = 0
+    online_wins: int = 0
+    online_losses: int = 0
+    battle_towers_completed: int = 0
+    battle_stages_cleared: int = 0
 
 
 class StatisticsUserList(BaseModel):

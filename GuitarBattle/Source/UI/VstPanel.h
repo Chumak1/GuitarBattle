@@ -20,6 +20,11 @@ public:
     explicit VstPanel (VstHost& hostToUse);
     ~VstPanel() override;
 
+    // The chooser is normally a dialog; in the VST section it is embedded in
+    // the hub, so the CLOSE button is not needed.
+    void setEmbedded (bool shouldBeEmbedded);
+    bool isEmbedded() const noexcept { return embedded; }
+
     void paint (juce::Graphics& g) override;
     void resized() override;
 
@@ -67,6 +72,7 @@ private:
 
     juce::Array<juce::PluginDescription> types;
     int lastStateVersion = -1;
+    bool embedded = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (VstPanel)
 };

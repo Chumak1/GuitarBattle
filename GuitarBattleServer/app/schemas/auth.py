@@ -111,6 +111,12 @@ class UserResponse(BaseModel):
     #: preview). The server never trusts this flag — every admin-only endpoint
     #: re-checks ``User.is_admin`` from the database.
     is_admin: bool = False
+    #: Additive player character selection. ``character_id`` is the integer
+    #: ``UiCharacter.public_id`` accepted by ``PATCH /auth/me``; the name and the
+    #: origin-relative spritesheet URL are read from the current selection.
+    character_id: int | None = None
+    character_name: str | None = None
+    character_sheet_url: str | None = None
 
 
 class ProfileUpdateRequest(BaseModel):
@@ -127,6 +133,10 @@ class ProfileUpdateRequest(BaseModel):
         max_length=32,
         pattern=r"^[A-Za-z0-9_.-]+$",
     )
+    #: Player character selection. ``null`` clears it. Omitted fields are left
+    #: untouched, so ``model_fields_set`` (not ``None``) distinguishes "not
+    #: sent" from an explicit clear.
+    character_id: int | None = Field(default=None, ge=1)
 
     @field_validator("display_name")
     @classmethod
@@ -147,7 +157,9 @@ class ProfileUpdateRequest(BaseModel):
 
     @model_validator(mode="after")
     def require_at_least_one_field(self) -> "ProfileUpdateRequest":
-        if self.username is None and self.display_name is None:
+        if not (
+            {"username", "display_name", "character_id"} & self.model_fields_set
+        ):
             raise ValueError("Nothing to update")
         return self
 

@@ -35,6 +35,17 @@
     token: sessionStorage.getItem(TOKEN_KEY) || "",
     user: null,
     songs: [],
+    // Gameplay visuals for the song form: UI-level characters and stage
+    // backgrounds, loaded from the admin endpoints. Empty until the first
+    // successful load; the form still works (both selectors are optional).
+    characters: [],
+    stages: [],
+    // Selection of the currently open song form. Kept in state so a slow
+    // `/admin/ui-levels` response cannot wipe the choice the modal was opened
+    // with: the selects are re-rendered when the options arrive.
+    formCharacterId: "",
+    formStageId: "",
+    visualsLoaded: false,
     total: 0,
     search: "",
     published: "",
@@ -457,6 +468,87 @@
     return Math.min(10, Math.max(1, parsed));
   }
 
+  // ---------------------------------------------------------------------
+  // Gameplay visuals (UI LEVELS characters + STAGE LEVELS backgrounds)
+  // ---------------------------------------------------------------------
+  async function loadVisualOptions() {
+    try {
+      const [characters, stages] = await Promise.all([
+        request("/admin/ui-levels"),
+        request("/admin/stage-levels"),
+      ]);
+      state.characters = characters?.items || [];
+      state.stages = stages?.items || [];
+    } catch (error) {
+      if (error.status === 401 || error.status === 403) {
+        return;
+      }
+      // The selectors are optional metadata: the songs tab must keep working
+      // when a visual lookup fails.
+      state.characters = [];
+      state.stages = [];
+    }
+    state.visualsLoaded = true;
+    // Keep an open form in sync without losing the current selection.
+    if (el("songCharacter") && el("songStage")) {
+      renderSongVisualSelects(state.formCharacterId, state.formStageId);
+    }
+  }
+
+  async function ensureVisualOptions() {
+    if (state.visualsLoaded) {
+      return;
+    }
+    await loadVisualOptions();
+  }
+
+  function stageOptionsHtml(selectedStageId) {
+    // Stages are standalone backgrounds (migration 0025): every stage can be
+    // paired with any character, so the character selection never filters them.
+    const options = ['<option value="">Не задано</option>'];
+    state.stages.forEach((stage) => {
+      const selected = stage.id === selectedStageId ? " selected" : "";
+      options.push(
+        `<option value="${escapeHtml(stage.id)}"${selected}>${escapeHtml(stage.name)}</option>`,
+      );
+    });
+    return options.join("");
+  }
+
+  function renderSongVisualSelects(characterId, stageId) {
+    const characterSelect = el("songCharacter");
+    const stageSelect = el("songStage");
+    if (!characterSelect || !stageSelect) {
+      return;
+    }
+    state.formCharacterId = characterId || "";
+    state.formStageId = stageId || "";
+    const characterOptions = ['<option value="">Не задано</option>'];
+    state.characters.forEach((character) => {
+      const selected = character.id === characterId ? " selected" : "";
+      characterOptions.push(
+        `<option value="${escapeHtml(character.id)}"${selected}>${escapeHtml(character.name)}</option>`,
+      );
+    });
+    characterSelect.innerHTML = characterOptions.join("");
+    characterSelect.value = characterId || "";
+    stageSelect.innerHTML = stageOptionsHtml(stageId || "");
+    stageSelect.value = stageId || "";
+  }
+
+  function visualCell(song) {
+    const character = song.character_name
+      ? `<span class="badge-soft badge-visual" title="UI LEVEL">${escapeHtml(song.character_name)}</span>`
+      : "";
+    const stage = song.stage_name
+      ? `<span class="badge-soft badge-visual" title="STAGE LEVEL">${escapeHtml(song.stage_name)}</span>`
+      : "";
+    if (!character && !stage) {
+      return '<span class="text-secondary small">—</span>';
+    }
+    return `<div class="d-flex flex-column gap-1 align-items-start">${character}${stage}</div>`;
+  }
+
   function songRow(song) {
     const artist = song.artist ? escapeHtml(song.artist) : '<span class="text-secondary">Без исполнителя</span>';
     const initial = escapeHtml((song.title || "?").trim().charAt(0).toUpperCase() || "?");
@@ -502,6 +594,7 @@
         <td class="d-none d-lg-table-cell"><span class="text-nowrap">${escapeHtml(timeSignature)}</span></td>
         <td class="d-none d-xl-table-cell"><span class="text-nowrap">${formatDuration(song.duration_seconds)}</span></td>
         <td class="d-none d-xl-table-cell"><span class="text-nowrap small text-secondary">${formatDate(song.updated_at)}</span></td>
+        <td class="d-none d-md-table-cell">${visualCell(song)}</td>
         <td class="text-end">
           <div class="action-group">
             <button type="button" class="action-btn" data-action="preview" title="${previewTitle}" aria-label="Послушать Preview Song" ${hasPreview ? "" : "disabled"}>
@@ -686,6 +779,8 @@
     el("userEmail").textContent = user?.email || "—";
     showLoginAlert("");
     loadBackgroundMusic();
+    // Selectors of the song form; a failure is non-fatal (see loadVisualOptions).
+    loadVisualOptions();
   }
 
   function setLoginBusy(busy) {
@@ -773,12 +868,15 @@
     showLogin();
   }
 
-  function openSongModal(song = null) {
+  async function openSongModal(song = null) {
     const form = el("songForm");
     form.reset();
     form.classList.remove("was-validated");
     showFormAlert(el("songFormAlert"), "");
     state.slugTouched = Boolean(song);
+    // Load the character/stage options before rendering their selects, so an
+    // edit always shows the stored selection even on a slow connection.
+    await ensureVisualOptions();
 
     el("songId").value = song?.id || "";
     el("songTitle").value = song?.title || "";
@@ -794,6 +892,7 @@
       song?.daily_weekday === null || song?.daily_weekday === undefined
         ? ""
         : String(song.daily_weekday);
+    renderSongVisualSelects(song?.character_id || "", song?.stage_id || "");
     el("songDescription").value = song?.description || "";
     el("songModalTitle").textContent = song ? "Редактировать песню" : "Новая песня";
     el("songModalSubtitle").textContent = song
@@ -842,6 +941,9 @@
       // Always sent so that an explicit "Не задано" clears an existing slot;
       // PATCH treats a present null as "remove the song from the schedule".
       daily_weekday: dailyWeekday === "" ? null : Number(dailyWeekday),
+      // Optional gameplay visuals; null clears the selection.
+      character_id: el("songCharacter").value || null,
+      stage_id: el("songStage").value || null,
     };
 
     showFormAlert(el("songFormAlert"), "");
@@ -1794,6 +1896,12 @@
       state.slugTouched = true;
     });
     el("songDuration").addEventListener("input", updateDurationPreview);
+    el("songCharacter").addEventListener("change", () => {
+      state.formCharacterId = el("songCharacter").value;
+    });
+    el("songStage").addEventListener("change", () => {
+      state.formStageId = el("songStage").value;
+    });
     el("songForm").addEventListener("submit", saveSong);
 
     el("confirmDeleteButton").addEventListener("click", confirmDelete);
@@ -1822,6 +1930,8 @@
     // The Daily Challenge tab changes song slots; the songs table shows the
     // resulting badge and catalogue state, so it exposes a reload hook.
     reloadSongs: loadSongs,
+    // The gameplay visuals tabs change the character/stage selectors.
+    reloadVisualOptions: loadVisualOptions,
   };
 
   document.addEventListener("DOMContentLoaded", init);

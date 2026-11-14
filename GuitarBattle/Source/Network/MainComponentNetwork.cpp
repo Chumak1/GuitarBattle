@@ -1,4 +1,7 @@
-#include "../MainComponent.h"
+﻿#include "../MainComponent.h"
+#include "../UI/PlayerCard.h"
+#include "../UI/GameStyle.h"
+#include "../UI/FriendsPanel.h"
 
 #include <algorithm>
 #include <functional>
@@ -461,6 +464,10 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             juce::String display = fallbackName;
             juce::String username = fallbackName;
             bool isAdmin = false;
+            int characterId = 0;
+            juce::String characterName;
+            juce::String characterSheetUrl;
+            juce::String email;
             if (response.transportOk)
             {
                 const auto profile = response.json;
@@ -477,6 +484,15 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
                 // tools simply stay hidden.
                 isAdmin = static_cast<bool>(
                     profile.getProperty("is_admin", juce::var(false)));
+
+                characterId = static_cast<int>(
+                    profile.getProperty("character_id", 0));
+                characterName = profile.getProperty(
+                    "character_name", juce::var()).toString();
+                characterSheetUrl = profile.getProperty(
+                    "character_sheet_url", juce::var()).toString();
+                // Shown in the HOME account summary line.
+                email = profile.getProperty("email", juce::var()).toString();
             }
 
             // The ADMIN toggle is restored only for an administrator. The
@@ -492,7 +508,35 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
 
             self->currentUsername = username;
             self->currentUserLabel.setText(self->currentUsername, juce::dontSendNotification);
-            self->showAuthScreen = false;
+            self->accountEmail = email;            self->showAuthScreen = false;
+            self->currentSection = AppSection::Home;
+            self->matchOriginSection = AppSection::Home;
+
+            // Profile character: the account choice wins; a brand-new profile
+            // starts with Ray selected. Existing profiles without a character
+            // keep their local choice instead of being forced to a default.
+            if (characterId > 0 && characterName.isNotEmpty()
+                && characterSheetUrl.isNotEmpty())
+            {
+                self->applyCharacterFromServer (characterId, characterName,
+                                                characterSheetUrl);
+            }
+            else if (createAccount)
+            {
+                self->applyDefaultCharacterIfNeeded (true);
+            }
+            else if (self->selectedCharacterId > 0
+                     && self->selectedCharacterSheetUrl.isNotEmpty())
+            {
+                self->setSelectedCharacter (self->selectedCharacterId,
+                                            self->selectedCharacterName,
+                                            self->selectedCharacterSheetUrl);
+            }
+
+            if (self->sectionSidebar != nullptr)
+                self->sectionSidebar->setUser (self->currentUsername,
+                                               self->progressionLevel);
+
             self->resized();
             self->repaint();
             const auto successMessage = createAccount
@@ -531,6 +575,13 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             self->telemetryClientSessionId = juce::Uuid().toString();
             self->telemetryTickCounter = 0;
             self->sendActivityHeartbeat(false);
+            // Merge server-side tower progress after a successful sign-in:
+            // uploads local clears, then takes max(local, server) and handles
+            // any newly unlocked character. Runs entirely on ApiClient's pool.
+            self->syncServerCampaignProgress();
+            // Warm the Battle list in the background, so opening the section
+            // shows the towers immediately instead of waiting for a request.
+            self->refreshServerCampaigns (true);
         });
 }
 
@@ -676,6 +727,7 @@ void MainComponent::logoutCurrentUser()
     onlineAccessToken.clear();
     onlineGameSessionUuid.clear();
     currentSessionIsDaily = false;
+    currentSessionIsPractice = false;
     // The admin tools belong to the account, not to the machine: hide them and
     // drop the preview mode. The saved preference stays in the settings so the
     // next admin sign-in restores it.
@@ -691,6 +743,35 @@ void MainComponent::logoutCurrentUser()
     currentUsername.clear();
     currentUserLabel.setText(juce::String(), juce::dontSendNotification);
     accountStatusLabel.setText(juce::String(), juce::dontSendNotification);
+
+    // The hub falls back to the signed-out landing screen. The embedded
+    // profile is destroyed asynchronously: logout can be triggered from inside
+    // the AccountWindow itself.
+    currentSection = AppSection::Home;
+    matchOriginSection = AppSection::Home;
+    campaignFightActive = false;
+    tunerStandalone = false;
+    tunerActive.store (false, std::memory_order_relaxed);
+
+    if (profileViewport != nullptr)
+        profileViewport->setVisible (false);
+
+    {
+        juce::Component::SafePointer<MainComponent> safeThis (this);
+        juce::MessageManager::callAsync ([safeThis]
+        {
+            if (auto* self = safeThis.getComponent())
+            {
+                if (self->profileViewport != nullptr)
+                {
+                    self->removeChildComponent (self->profileViewport.get());
+                    self->profileViewport.reset();
+                    self->profileContent.reset();
+                }
+            }
+        });
+    }
+
     showAuthScreen = true;
     gameState = GameState::SongSelect;
     resized();
@@ -767,6 +848,9 @@ void MainComponent::startOnlineGameSession()
                                       juce::roundToInt(
                                           static_cast<double>(speedPercent))));
     payload->setProperty("daily", currentSessionIsDaily);
+    // A Practice-section run is stored by the server for audit only: no XP, no
+    // rating, no personal best. Older servers ignore the unknown field.
+    payload->setProperty("practice", currentSessionIsPractice);
 
     juce::Component::SafePointer<MainComponent> safeThis(this);
     apiClient.postJson("/games/sessions", juce::var(payload.get()), onlineAccessToken, 4000,
@@ -805,13 +889,16 @@ void MainComponent::startOnlineGameSession()
             self->onlineGameSessionUuid = response.json.getProperty("id", juce::var()).toString();
 
             // The server is authoritative for the session kind: a draft attempt
-            // comes back as "preview" (nothing is ranked, no XP is awarded).
-            // Older servers only know "normal"/"daily", so the flag simply
-            // stays false for them.
+            // comes back as "preview" and a Practice-section run as "practice"
+            // (nothing is ranked, no XP is awarded). Older servers only know
+            // "normal"/"daily", so the flags follow the local request.
             const auto sessionMode =
                 response.json.getProperty("mode", juce::var()).toString();
             if (sessionMode.isNotEmpty())
+            {
                 self->currentSessionIsPreview = sessionMode == "preview";
+                self->currentSessionIsPractice = sessionMode == "practice";
+            }
 
             // The daily flag applies to exactly this session; a replay starts
             // a normal session unless the daily button is used again.
@@ -825,8 +912,12 @@ void MainComponent::startOnlineGameSession()
 
 void MainComponent::submitOnlineGameResult()
 {
-    // An online duel is scored by the /duels endpoints; submitting the same
-    // run as a regular game session would award progression twice.
+    // An online duel is scored by the /duels endpoints; a Battle ("tower")
+    // stage is scored by the campaign stage-result endpoint. Submitting the
+    // same run as a regular game session would award progression twice.
+    if (campaignFightActive)
+        return;
+
     if (duelOnlinePhase != DuelOnlinePhase::None
         && duelOnlinePhase != DuelOnlinePhase::Finished)
         return;
@@ -873,10 +964,15 @@ void MainComponent::submitOnlineGameResult()
     // The finished game cannot adopt a session that is still being created.
     ++onlineSessionRequestId;
 
+    // Capture the attempt kind now: the player may leave the results screen
+    // (which clears the flags) before the response arrives.
+    const bool previewRun = currentSessionIsPreview;
+    const bool practiceRun = currentSessionIsPractice;
+
     juce::Component::SafePointer<MainComponent> safeThis(this);
     apiClient.postJson("/games/sessions/" + sessionUuid + "/finish",
                        juce::var(payload.get()), onlineAccessToken, 5000,
-        [safeThis](ApiClient::Response response)
+        [safeThis, previewRun, practiceRun](ApiClient::Response response)
         {
             auto* self = safeThis.getComponent();
             if (self == nullptr)
@@ -891,19 +987,31 @@ void MainComponent::submitOnlineGameResult()
 
             if (response.json.getProperty("id", juce::var()).toString().isNotEmpty())
             {
+                const bool unranked = previewRun || practiceRun;
+
+                if (unranked)
+                {
+                    // An unranked attempt never contributes to the results
+                    // card's progression block.
+                    self->lastProgressionValid = false;
+                    self->lastAchievementsText.clear();
+                }
+
                 self->accountStatusLabel.setText(
-                    self->currentSessionIsPreview
-                        ? "Preview attempt saved. This result is not ranked."
-                        : "Online score submitted. Refreshing global rating...",
+                    practiceRun
+                        ? "Practice attempt saved. This result is not ranked."
+                        : previewRun
+                            ? "Preview attempt saved. This result is not ranked."
+                            : "Online score submitted. Refreshing global rating...",
                     juce::dontSendNotification);
 
                 // Progression returned by the server: XP, level and any
                 // achievements unlocked by this attempt. A preview attempt of
-                // an unpublished draft never awards any, so the results card
-                // keeps its progression block hidden.
+                // an unpublished draft and a Practice-section run never award
+                // any, so the results card keeps its progression block hidden.
                 const auto& json = response.json;
 
-                if (json.hasProperty("xp_earned") && ! self->currentSessionIsPreview)
+                if (json.hasProperty("xp_earned") && ! unranked)
                 {
                     self->lastProgressionValid = true;
                     self->lastXpEarned =
@@ -917,14 +1025,15 @@ void MainComponent::submitOnlineGameResult()
                             "xp_to_next",
                             json.getProperty("xp_for_next", 0)));
 
-                    // A finished attempt can raise the player level, which may
-                    // unlock the next difficulty tier: refresh the catalogue
-                    // state without waiting for the next progression poll.
+                    // A finished attempt can raise the player level: repaint the
+                    // catalogue without waiting for the next progression poll.
                     if (self->lastLevel > 0)
                     {
                         self->progressionLevel = self->lastLevel;
                         self->songListBox.repaint();
-                        self->refreshSongUnlockState();
+
+                        if (self->campaignPanel != nullptr)
+                            self->campaignPanel->setPlayerLevel (self->lastLevel);
                     }
 
                     juce::String achievements;
@@ -946,11 +1055,16 @@ void MainComponent::submitOnlineGameResult()
                     self->lastAchievementsText = achievements;
                 }
 
-                self->refreshGlobalLeaderboard();
-                // Pick up the new personal best for this song right away.
-                self->refreshOnlineBestScores();
-                // The official daily attempt is now used; update the button.
-                self->refreshDailyChallenge();
+                // An unranked attempt changes neither the rating nor the
+                // personal bests, so there is nothing to refresh.
+                if (! unranked)
+                {
+                    self->refreshGlobalLeaderboard();
+                    // Pick up the new personal best for this song right away.
+                    self->refreshOnlineBestScores();
+                    // The official daily attempt is now used; update the button.
+                    self->refreshDailyChallenge();
+                }
             }
             else
             {
@@ -962,7 +1076,7 @@ void MainComponent::submitOnlineGameResult()
 
 void MainComponent::refreshGlobalLeaderboard()
 {
-    leaderboardLabel.setText("Loading global rating...", juce::dontSendNotification);
+    leaderboardLabel.setText("Loading Guitar Skills...", juce::dontSendNotification);
 
     const int requestId = ++leaderboardRequestId;
     juce::Component::SafePointer<MainComponent> safeThis(this);
@@ -1013,6 +1127,47 @@ void MainComponent::refreshGlobalLeaderboard()
                 row.level = static_cast<int>(item.getProperty("level", 1));
                 row.rating =
                     static_cast<int>(item.getProperty("rating_points", 0));
+
+                if (const auto* object = item.getDynamicObject())
+                {
+                    if (object->hasProperty("guitar_skills"))
+                        row.guitarSkills = static_cast<double>(
+                            object->getProperty("guitar_skills"));
+                }
+
+                // accuracy_percent is the new field; older servers only send
+                // best_accuracy. Use it as the fallback so the column is not
+                // stuck at 0.0% before the server rollout.
+                const double bestAccuracy = static_cast<double>(
+                    item.getProperty("best_accuracy", 0.0));
+                row.accuracyPercent = static_cast<double>(
+                    item.getProperty("accuracy_percent", bestAccuracy));
+                row.duelWinRate = static_cast<double>(
+                    item.getProperty("duel_win_rate", 0.0));
+                row.duelWins = static_cast<int>(
+                    item.getProperty("duel_wins", 0));
+                row.duelLosses = static_cast<int>(
+                    item.getProperty("duel_losses", 0));
+                row.duelDraws = static_cast<int>(
+                    item.getProperty("duel_draws", 0));
+                row.xpTotal = static_cast<int>(
+                    item.getProperty("xp_total", 0));
+                row.provisional = static_cast<bool>(
+                    item.getProperty("provisional", false));
+
+                // position_change is null on the first calculation; only draw
+                // the arrow when the server actually knows the previous rank.
+                if (const auto* object = item.getDynamicObject())
+                {
+                    if (object->hasProperty("position_change")
+                        && ! object->getProperty("position_change").isVoid())
+                    {
+                        row.positionChange = static_cast<int>(
+                            object->getProperty("position_change"));
+                        row.hasPositionChange = true;
+                    }
+                }
+
                 rows.push_back(row);
             }
 
@@ -1022,13 +1177,16 @@ void MainComponent::refreshGlobalLeaderboard()
                 // window does. Set on every refresh so a login or rename is
                 // reflected without recreating the table.
                 self->leaderboardModel->setCurrentUsername(self->currentUsername);
-                self->leaderboardModel->setRows(std::move(rows));
+                self->leaderboardModel->setRows(rows);
+                // The page shows the top three as a podium and the table below.
+                self->leaderboardModel->setFirstRow(
+                    juce::jmin(3, static_cast<int>(rows.size())));
             }
 
             self->leaderboardTable.updateContent();
             self->leaderboardTable.repaint();
             self->leaderboardLabel.setText(
-                "Click a player to open their card.",
+                "Ranked by Guitar Skills. PROV = provisional. Click a player to open their card.",
                 juce::dontSendNotification);
         });
 }
@@ -1113,6 +1271,13 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
             // it returns is a published song.
             row.published = static_cast<bool>(
                 item.getProperty("is_published", juce::var(true)));
+            // Visuals assigned in the admin panel: the stage backdrop and the
+            // opponent character. Older servers omit them; the client then
+            // keeps the neutral stage.
+            row.characterName = item.getProperty("character_name", juce::var()).toString();
+            row.characterSheetUrl = item.getProperty("character_sheet_url", juce::var()).toString();
+            row.stageName = item.getProperty("stage_name", juce::var()).toString();
+            row.stageBackgroundUrl = item.getProperty("stage_background_url", juce::var()).toString();
             row.online = true;
             row.downloaded = findOnlineLibraryEntry(slug) != nullptr
                 || cacheRoot.getChildFile(slug).getChildFile("version.txt").existsAsFile();
@@ -1152,6 +1317,12 @@ void MainComponent::rebuildCatalogRows(const juce::var& serverItems)
 
     updateCatalogRows();
 
+    // The Battle stage rows are resolved against this catalogue: an open
+    // Battle section must pick up the songs that just arrived, otherwise its
+    // FIGHT button keeps saying "not in the catalogue" until the player leaves
+    // and re-enters the section.
+    applyServerCampaigns();
+
     if (!catalogSongs.empty())
         selectCatalogSong(selectedCatalogIndex);
 }
@@ -1175,16 +1346,21 @@ void MainComponent::setAdminPreviewMode(bool enabled)
     // thread; only the callback touches the UI.
     refreshOnlineCatalog();
 
-    // Admin mode also lifts the level gate, so the already loaded rows and the
-    // START button must switch immediately instead of waiting for the next
+    // Admin mode reloads the catalogue with drafts; the already loaded rows and
+    // the START button must switch immediately instead of waiting for the next
     // selection or catalogue refresh.
-    refreshSongUnlockState();
+    updateStartButtonState();
     songListBox.repaint();
     repaint();
 }
 
 void MainComponent::refreshOnlineCatalog()
 {
+    if (onlineCatalogInFlight)
+        return;
+
+    onlineCatalogInFlight = true;
+
     // The catalogue refresh is also a natural retry point when the initial
     // sound-pack download failed (for example while the network was offline).
     if (! clientAssetsReady && ! clientAssetsRefreshInFlight)
@@ -1216,6 +1392,7 @@ void MainComponent::refreshOnlineCatalog()
             if (self == nullptr)
                 return;
 
+            self->onlineCatalogInFlight = false;
             self->onlineCatalogButton.setEnabled(true);
 
             if (!response.transportOk || !response.json.isObject())
@@ -1290,6 +1467,15 @@ void MainComponent::refreshOnlineBestScores()
             self->ratingPoints = static_cast<int>(
                 response.json.getProperty("rating_points", 0));
 
+            // HOME account summary: the same numbers the personal account page
+            // used to show in its stat cards.
+            self->accountScoresText = juce::String(self->ratingPoints);
+            self->accountSongsText = juce::String(static_cast<int>(
+                response.json.getProperty("songs_played", 0)));
+            self->accountAttemptsText = juce::String(static_cast<int>(
+                response.json.getProperty("games_played", 0)));
+            self->refreshHomeAccountRank();
+
             const auto itemsValue = response.json.getProperty("items", juce::var());
             const auto* items = itemsValue.getArray();
             if (items == nullptr)
@@ -1309,6 +1495,51 @@ void MainComponent::refreshOnlineBestScores()
             self->updateCatalogRows();
             self->repaint();
             self->refreshProgressionSummary();
+        });
+}
+
+void MainComponent::refreshHomeAccountRank()
+{
+    if (onlineAccessToken.isEmpty() || currentUsername.isEmpty())
+        return;
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    apiClient.getJson("/leaderboard/global?limit=50", onlineAccessToken, 6000,
+        [safeThis](ApiClient::Response response)
+        {
+            auto* self = safeThis.getComponent();
+            if (self == nullptr || !response.transportOk
+                || !response.json.isObject())
+                return;
+
+            const auto* items =
+                response.json.getProperty("items", juce::var()).getArray();
+
+            if (items == nullptr)
+                return;
+
+            for (const auto& item : *items)
+            {
+                if (item.getProperty("username", juce::var()).toString()
+                    == self->currentUsername)
+                {
+                    const int rank = static_cast<int>(item.getProperty("rank", 0));
+
+                    if (rank > 0)
+                    {
+                        self->accountRankText = "#" + juce::String(rank);
+                        self->accountRankNote = "in the global top 50";
+                        self->repaint();
+                    }
+
+                    return;
+                }
+            }
+
+            self->accountRankText = "-";
+            self->accountRankNote = "not in the top 50";
+            self->repaint();
         });
 }
 
@@ -1348,10 +1579,33 @@ void MainComponent::refreshProgressionSummary()
             self->progressionXpRemaining =
                 static_cast<int>(json.getProperty("xp_remaining", 0));
 
-            // The catalogue unlocks by level, so a level-up must re-evaluate the
-            // rows and the START button immediately.
+            if (self->campaignPanel != nullptr)
+                self->campaignPanel->setPlayerLevel (level);
+
+            // HOME account summary cards.
+            self->accountLevelText = juce::String(level);
+            self->accountXpText = juce::String(xp);
+            self->accountXpNote = juce::String(xpForNext) + " to level "
+                                  + juce::String(level + 1);
+
+            const auto accountStats = json.getProperty("stats", juce::var());
+            const auto accountAccuracy =
+                accountStats.getProperty("accuracy", juce::var());
+
+            if (! accountAccuracy.isVoid())
+                self->accountAccuracyText = juce::String(juce::roundToInt(
+                    static_cast<double>(accountAccuracy))) + "%";
+
+            const auto accountTiming =
+                accountStats.getProperty("timing", juce::var());
+
+            self->accountTimingText = accountTiming.isVoid()
+                ? juce::String("n/a")
+                : juce::String(juce::roundToInt(
+                      static_cast<double>(accountTiming))) + "%";
+
+            // The catalogue repaint keeps the level tag in sync after a level-up.
             self->songListBox.repaint();
-            self->refreshSongUnlockState();
 
             juce::String text;
             text << "LEVEL " << level
@@ -1496,8 +1750,10 @@ void MainComponent::onDailyChallengeClicked()
     // One official attempt per day; after it is used the same song can still
     // be played as a normal practice session.
     currentSessionIsDaily = ! dailyOfficialUsed;
-    // The daily song is always published, so its attempt is never a preview.
+    // The daily song is always published, so its attempt is never a preview,
+    // and an official attempt is never a Practice-section run.
     currentSessionIsPreview = false;
+    currentSessionIsPractice = false;
 
     dailyChallengeStatusLabel.setText(
         currentSessionIsDaily
@@ -1513,63 +1769,155 @@ void MainComponent::openPublicProfile(const juce::String& userId)
     if (userId.isEmpty() || onlineAccessToken.isEmpty())
         return;
 
+    if (publicProfileViewport == nullptr)
+    {
+        publicProfileViewport = std::make_unique<juce::Viewport>();
+        publicProfileViewport->setScrollBarsShown(true, false);
+        publicProfileViewport->setScrollBarThickness(10);
+        publicProfileViewport->setColour(
+            juce::ScrollBar::thumbColourId,
+            UiColors::accent.withAlpha(0.45f));
+        addChildComponent(*publicProfileViewport);
+    }
+
+    if (publicProfilePanel == nullptr)
+    {
+        auto panel = std::make_unique<PublicProfilePanel>(apiClient, onlineAccessToken);
+        panel->onBack = [safeThis = juce::Component::SafePointer<MainComponent>(this)]
+        {
+            if (auto* self = safeThis.getComponent())
+                self->closePublicProfile();
+        };
+        panel->onChallenge = [safeThis = juce::Component::SafePointer<MainComponent>(this)]
+                             (const juce::String&)
+        {
+            // Duels are lobby based: the challenge opens the Online section
+            // where the player can host or join a room.
+            if (auto* self = safeThis.getComponent())
+            {
+                self->closePublicProfile();
+                self->setSection(AppSection::OnlineDuel);
+            }
+        };
+        panel->onEditOwnProfile = [safeThis = juce::Component::SafePointer<MainComponent>(this)]
+        {
+            if (auto* self = safeThis.getComponent())
+            {
+                self->closePublicProfile();
+                self->setSection(AppSection::Profile);
+            }
+        };
+        panel->onMessage = [safeThis = juce::Component::SafePointer<MainComponent>(this)]
+                           (const juce::String& userId, const juce::String& name)
+        {
+            if (auto* self = safeThis.getComponent())
+                self->openMessagesFor (userId, name);
+        };
+
+        publicProfilePanel = std::move(panel);
+        publicProfileViewport->setViewedComponent(publicProfilePanel.get(), false);
+    }
+
+    publicProfileReturnSection = currentSection;
+    publicProfilePanel->open(userId);
+    publicProfilePanel->setVisible(true);
+    publicProfileViewport->setVisible(true);
+    publicProfileViewport->toFront(false);
+    resized();
+    // A new profile always starts at the header, not at the previous scroll.
+    publicProfileViewport->setViewPosition(0, 0);
+    repaint();
+}
+
+void MainComponent::closePublicProfile()
+{
+    if (publicProfileViewport != nullptr)
+        publicProfileViewport->setVisible(false);
+
+    const auto back = publicProfileReturnSection;
+
+    if (currentSection != back)
+        setSection(back);
+    else
+    {
+        resized();
+        repaint();
+    }
+}
+
+void MainComponent::openNotifications()
+{
+    if (onlineAccessToken.isEmpty())
+        return;
+
+    setSection(AppSection::Friends);
+    ensureFriendsSection();
+
+    if (auto* panel = dynamic_cast<FriendsPanel*>(friendsContent.get()))
+        panel->openNotificationsView();
+}
+
+void MainComponent::refreshSocialNotifications()
+{
+    if (onlineAccessToken.isEmpty())
+    {
+        socialUnreadNotifications = 0;
+
+        if (sectionSidebar != nullptr)
+            sectionSidebar->setUnreadNotifications(0);
+
+        return;
+    }
+
     juce::Component::SafePointer<MainComponent> safeThis(this);
 
-    apiClient.getJson("/profile/users/" + userId, onlineAccessToken, 5000,
-        [safeThis](ApiClient::Response response)
+    apiClient.getJson("/social/notifications?limit=1", onlineAccessToken, 6000,
+        [safeThis](ApiClient::Response reply)
         {
             auto* self = safeThis.getComponent();
-            if (self == nullptr)
+
+            if (self == nullptr || ! reply.transportOk)
                 return;
 
-            if (! response.transportOk)
-            {
-                self->accountStatusLabel.setText(
-                    "Could not load the player card.", juce::dontSendNotification);
+            self->socialUnreadNotifications =
+                static_cast<int>(reply.json.getProperty("unread", 0));
+
+            if (self->sectionSidebar != nullptr)
+                self->sectionSidebar->setUnreadNotifications(
+                    self->socialUnreadNotifications);
+        });
+}
+
+void MainComponent::refreshMessageUnread()
+{
+    if (onlineAccessToken.isEmpty())
+    {
+        if (sectionSidebar != nullptr)
+            sectionSidebar->setUnreadMessages(0);
+
+        return;
+    }
+
+    juce::Component::SafePointer<MainComponent> safeThis(this);
+
+    apiClient.getJson("/messages/unread", onlineAccessToken, 6000,
+        [safeThis](ApiClient::Response reply)
+        {
+            auto* self = safeThis.getComponent();
+
+            if (self == nullptr || ! reply.transportOk)
                 return;
-            }
 
-            const auto& json = response.json;
-            auto name = json.getProperty("display_name", juce::var()).toString();
-
-            if (name.isEmpty())
-                name = json.getProperty("username", juce::var()).toString();
-
-            juce::String text;
-            text << "Level: " << static_cast<int>(json.getProperty("level", 1))
-                 << "\nXP: " << static_cast<int>(json.getProperty("xp_total", 0))
-                 << "\nSongs mastered: "
-                 << static_cast<int>(json.getProperty("songs_mastered", 0))
-                 << "\n\n";
-
-            const auto* achievements =
-                json.getProperty("achievements", juce::var()).getArray();
-            const int unlocked = achievements != nullptr
-                ? achievements->size()
-                : static_cast<int>(json.getProperty("achievements_unlocked", 0));
-
-            text << "Achievements (" << unlocked << "):\n";
-
-            if (achievements != nullptr)
-            {
-                for (const auto& item : *achievements)
-                    text << "* "
-                         << item.getProperty("title", juce::var()).toString()
-                         << "  (+"
-                         << static_cast<int>(item.getProperty("xp_bonus", 0))
-                         << " XP)\n";
-            }
-
-            juce::AlertWindow::showMessageBoxAsync(
-                juce::MessageBoxIconType::NoIcon,
-                name.isNotEmpty() ? name : juce::String("Player"),
-                text, "OK", self);
+            if (self->sectionSidebar != nullptr)
+                self->sectionSidebar->setUnreadMessages(
+                    static_cast<int>(reply.json.getProperty("unread_total", 0)));
         });
 }
 
 void MainComponent::downloadOnlineSong(const juce::String& slug,
                                        const juce::String& serverId,
-                                       bool startAfterDownload)
+                                       bool startAfterDownload,
+                                       bool forDuel)
 {
     juce::Component::SafePointer<MainComponent> safeThis(this);
     auto download = std::make_shared<OnlineCatalogDownload>();
@@ -1582,6 +1930,16 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
     songDownloadProgressState = std::make_shared<std::atomic<float>>(0.0f);
     songDownloadProgressValue = 0.0;
     songDownloadProgressBar.setVisible(true);
+
+    // Campaign: the next opponent's download starts behind the finished-stage
+    // card. Relayout now so the card's buttons are hidden under the loading
+    // overlay instead of staying clickable through it.
+    if (gameState.load (std::memory_order_relaxed) == GameState::Finished
+        && campaignFightActive)
+    {
+        resized();
+        overlayComponent.repaint();
+    }
 
     // A draft is only reachable with the admin token: the detail lookup and
     // every file download carry it in preview mode. For a published song (or a
@@ -1838,7 +2196,7 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
         DBG("ONLINE CATALOG: loaded " + title + " (version " + juce::String(serverVersion) + ")");
     };
 
-    apiClient.runAsync(std::move(backgroundWork), [safeThis, download, startAfterDownload]()
+    apiClient.runAsync(std::move(backgroundWork), [safeThis, download, startAfterDownload, forDuel]()
     {
         auto* self = safeThis.getComponent();
         if (self == nullptr)
@@ -1908,8 +2266,16 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
 
             self->updateCatalogRows();
 
+            // A campaign/duel start can be pending while the screen is still
+            // the previous result card (GameState::Finished): the next chart
+            // must be loaded there too, or the player is stuck on SONG
+            // COMPLETE with the duel state already cleared.
+            const bool pendingDuelStart = self->duelPending
+                || self->duelOnlinePlaybackPending;
+
             if (startAfterDownload
-                && self->gameState == MainComponent::GameState::SongSelect)
+                && (self->gameState == MainComponent::GameState::SongSelect
+                    || pendingDuelStart))
             {
                 // Open the online session for exactly this song.
                 self->onlineSongUuid = download->songId;
@@ -1918,7 +2284,9 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
 
                 // Keep the highlight on the song that was actually loaded, even
                 // if the player clicked another row while the download ran.
-                if (loaded)
+                // A pending duel must not run selectCatalogSong(): it would
+                // start the preview and rewrite the campaign's song choice.
+                if (loaded && ! pendingDuelStart)
                 {
                     for (int i = 0; i < static_cast<int>(self->catalogSongs.size()); ++i)
                         if (self->catalogSongs[static_cast<size_t>(i)].slug == download->slug)
@@ -1949,8 +2317,20 @@ void MainComponent::downloadOnlineSong(const juce::String& slug,
         self->onlineCatalogStatusLabel.setText(statusText, juce::dontSendNotification);
         self->resized();
         self->repaint();
-        if (loaded)
+
+        const bool onlinePreparing =
+            self->duelOnlinePhase != MainComponent::DuelOnlinePhase::None
+            && self->duelOnlinePhase != MainComponent::DuelOnlinePhase::Finished;
+
+        if (forDuel)
+            self->completeOnlineDuelSongPreparation(download->ok, download->slug);
+        else if (loaded && ! onlinePreparing)
             self->beginTuningForSelectedSong();
+        else if (startAfterDownload && ! loaded)
+            self->abortPendingDuelStart(
+                download->ok
+                    ? juce::String("Could not load the next song. Press NEXT OPPONENT to retry.")
+                    : juce::String("Could not download the next song. Check the connection and press NEXT OPPONENT again."));
     });
 }
 

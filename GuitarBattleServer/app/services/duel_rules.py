@@ -5,14 +5,20 @@ This module is a Python port of the client rules in
 must never trust a client-reported HP, damage or result, so every number here
 is derived from the note qualities only.
 
-Rules (``rules_version = 2``)
+Rules (``rules_version = 3``)
 -----------------------------
 * Quality points: ``perfect = 100``, ``great = 85``, ``good = 70``, ``miss = 0``.
 * Every note compares the two sides:
   - both miss -> ``both_miss``, no damage;
   - the same quality (and both hit) -> ``block``, no damage;
   - otherwise the better side deals
-    ``clamp(abs(points_a - points_b) * 0.10, 1.0, 10.0)`` damage.
+    ``clamp(abs(points_a - points_b) * 0.10, 1.0, 10.0)`` base damage.
+* Version 3 scales that base damage by the chart length, so a 3x longer song
+  does not end the duel 3x faster: charts of at most ``DAMAGE_REFERENCE_NOTES``
+  (48) notes keep the full damage, longer charts deal
+  ``max(0.20, 48 / note_count)`` of it. The scaled value is **not** clamped
+  again, so a long chart can deal less than one HP per note. Version 2 and
+  older matches keep unscaled damage: the version is frozen on the match.
 * HP starts at ``100`` and is clamped to ``[0, 100]`` after every exchange.
 * A side at ``0`` HP loses immediately; if the chart ends without a knockout,
   the higher remaining HP wins and equal HP is a draw.
@@ -36,7 +42,10 @@ from typing import Any, Final
 #: a future balance change can be rolled out without rewriting old results.
 #: Version 2 raised the damage scale to match the client build 1.2.0
 #: (``DuelConfig``: 0.10 per point, clamp ``[1.0, 10.0]``).
-RULES_VERSION: Final[int] = 2
+#: Version 3 scales damage by the frozen chart length
+#: (``damage_scale_for_note_count``) as implemented by the client
+#: ``duelConfigForNoteCount``; older matches keep unscaled damage.
+RULES_VERSION: Final[int] = 3
 
 #: HP both sides start with.
 MAX_HEALTH: Final[float] = 100.0
@@ -52,6 +61,15 @@ QUALITY_POINTS: Final[dict[str, float]] = {
 DAMAGE_PER_POINT: Final[float] = 0.100
 MIN_DAMAGE: Final[float] = 1.0
 MAX_DAMAGE: Final[float] = 10.0
+
+#: Charts at or below this length keep the full damage. Longer charts scale
+#: down so the total possible damage stays comparable across songs
+#: (``duelDamageReferenceNotes`` in the client).
+DAMAGE_REFERENCE_NOTES: Final[int] = 48
+
+#: Longest charts deal at most this fraction of the base damage per note
+#: (``duelDamageMinScale`` in the client).
+DAMAGE_MIN_SCALE: Final[float] = 0.20
 
 #: Floating-point tolerance for "the two sides played the same quality".
 _SAME_POINTS_EPSILON: Final[float] = 0.0001
@@ -131,6 +149,23 @@ def clamp(low: float, high: float, value: float) -> float:
     return value
 
 
+def damage_scale_for_note_count(note_count: int) -> float:
+    """Chart-length damage factor, port of ``duelDamageScaleForNoteCount``.
+
+    Charts of at most :data:`DAMAGE_REFERENCE_NOTES` notes keep the full
+    damage (``1.0``). Longer charts deal ``48 / note_count`` of it, never less
+    than :data:`DAMAGE_MIN_SCALE` (``0.20``). The factor multiplies the clamped
+    base damage; it is not clamped again afterwards.
+    """
+    try:
+        count = int(note_count)
+    except (TypeError, ValueError):
+        return 1.0
+    if count <= DAMAGE_REFERENCE_NOTES:
+        return 1.0
+    return clamp(DAMAGE_MIN_SCALE, 1.0, DAMAGE_REFERENCE_NOTES / float(count))
+
+
 def quality_points(quality: DuelQuality | str) -> float:
     token = quality.token if isinstance(quality, DuelQuality) else str(quality).lower()
     return QUALITY_POINTS.get(token, 0.0)
@@ -153,8 +188,16 @@ class DuelNoteResult:
 def resolve_note(
     player_quality: DuelQuality | str,
     opponent_quality: DuelQuality | str,
+    *,
+    damage_scale: float = 1.0,
 ) -> DuelNoteResult:
     """Resolve one note exactly like ``DuelEngine::resolve``.
+
+    ``damage_scale`` is the chart-length factor from
+    :func:`damage_scale_for_note_count` (the C++ ``DuelConfig::damageScale``).
+    It multiplies the clamped base damage and is **not** clamped again, so a
+    long chart may deal less than :data:`MIN_DAMAGE` per note. The default
+    ``1.0`` keeps the pre-v3 behaviour for direct callers and old matches.
 
     The result is symmetric: swapping the inputs swaps the two damage fields
     and the exchange side.
@@ -170,10 +213,20 @@ def resolve_note(
     if abs(difference) < _SAME_POINTS_EPSILON:
         return DuelNoteResult(DuelExchange.BLOCK)
 
-    damage = clamp(
-        MIN_DAMAGE,
-        MAX_DAMAGE,
-        abs(difference) * DAMAGE_PER_POINT,
+    # A negative or non-finite factor would be meaningless; never boost damage
+    # through it accidentally.
+    scale = 1.0 if damage_scale is None else float(damage_scale)
+    if not math.isfinite(scale):
+        scale = 1.0
+    scale = max(0.0, scale)
+
+    damage = (
+        clamp(
+            MIN_DAMAGE,
+            MAX_DAMAGE,
+            abs(difference) * DAMAGE_PER_POINT,
+        )
+        * scale
     )
 
     if difference > 0.0:

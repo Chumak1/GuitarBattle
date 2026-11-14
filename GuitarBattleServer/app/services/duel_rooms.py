@@ -223,3 +223,8 @@ duel_event_limiter = RateLimiter(rate_per_second=40.0, burst=120)
 duel_create_limiter = RateLimiter(rate_per_second=0.2, burst=5)
 #: WebSocket message budget per connection.
 duel_ws_limiter = RateLimiter(rate_per_second=20.0, burst=60)
+#: Lobby creation: a burst of six rooms, then one every two seconds.
+duel_lobby_create_limiter = RateLimiter(rate_per_second=0.5, burst=6)
+#: Lobby chat: two messages per second with a short burst, keyed by
+#: ``(lobby_id, user_id)``. Comfortable for humans, hostile to spam scripts.
+duel_chat_limiter = RateLimiter(rate_per_second=2.0, burst=12)

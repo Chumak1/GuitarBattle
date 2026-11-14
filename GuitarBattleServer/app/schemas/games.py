@@ -16,6 +16,17 @@ class GameSessionCreate(BaseModel):
     #: free-play session. The song must match the challenge of the current UTC
     #: day and the player must not have used the official attempt yet.
     daily: bool = False
+    #: ``True`` marks the attempt as a Practice-section run: the score is stored
+    #: for audit, but it never awards XP, achievements, a personal best or
+    #: rating points. Older clients omit the field and keep ``False``.
+    practice: bool = False
+
+    @model_validator(mode="after")
+    def _reject_ambiguous_flags(self) -> "GameSessionCreate":
+        """A daily attempt is always competitive; practice is never."""
+        if self.daily and self.practice:
+            raise ValueError("daily and practice cannot be combined")
+        return self
 
 class GameSessionResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -63,6 +74,9 @@ class ScoreResponse(BaseModel):
     id: UUID
     session_id: UUID
     score_points: int
+    #: ``score_points`` extrapolated to a full song; ``NULL`` for very early
+    #: ends, unranked attempts and rows written before migration 0030.
+    normalized_score: int | None = None
     accuracy_percent: float
     max_combo: int
     perfect_count: int

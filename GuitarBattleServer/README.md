@@ -30,10 +30,31 @@ FastAPI + PostgreSQL + SQLAlchemy + Alembic + Docker Compose.
 - The social preview cards are `app/static/app/og-image.png` (ru) and
   `og-image-en.png` (en), 1200×630, rebuilt with
   `powershell -File scripts\build_og_image.ps1` when the brand changes.
+- Site icons and the web manifest live in `app/static/app/` and are generated
+  from `logo.png` (600×600) by `python scripts/build_brand_icons.py` (build-time
+  Pillow, no runtime dependency; commit the binaries): `favicon.ico` (16/32/48),
+  `icon-48/96/192/512.png`, `apple-touch-icon.png` (180×180) and
+  `site.webmanifest`. The root aliases `GET /favicon.ico`,
+  `GET /apple-touch-icon.png` and `GET /apple-touch-icon-precomposed.png` serve the
+  same files with `Cache-Control: public, max-age=604800`; the `/app/<name>` URLs
+  stay reachable through the static mount. `Organization.logo` in the landing
+  JSON-LD points at `https://fretfight.online/app/icon-512.png`. `robots.txt` does
+  not disallow any icon or the manifest.
+
+  **A new icon does not appear in Google overnight.** Google indexes the favicon
+  on its own schedule (days to weeks; Yandex is similar) and only after the
+  homepage has been re-crawled. To speed it up: ship the release, request
+  re-indexing of `https://fretfight.online/` in Google Search Console (URL
+  inspection → Request indexing) and re-submit `sitemap.xml`, then confirm
+  `https://fretfight.online/favicon.ico` and `/app/icon-512.png` return 200
+  without `X-Robots-Tag: noindex`. Search results may keep the old icon or a
+  generic globe for a while; that is a cached snippet, not a server bug. A
+  browser tab updates after a hard reload or a cache purge.
 - `GET /login`, `GET /register` — sign-in, registration with email confirmation, and password reset at `app/static/app/auth.html`.
 - `GET /account` — the signed-in player page at `app/static/app/account.html`: global rating, attempt history, username/display name and password changes.
-- `GET /admin/` — the admin SPA at `app/static/admin/`. It has five sections:
-  songs, «Daily Challenge», landing CMS, game builds and «Статистика». The
+- `GET /admin/` — the admin SPA at `app/static/admin/`. It has nine tabs:
+  songs, «UI LEVELS», «STAGE LEVELS», «Daily Challenge», «КАМПАНИИ / TOWER
+  RIFF», landing CMS, support page, game builds and «Статистика». The
   statistics tab (`app/static/admin/admin-statistics.js`, panel
   `#sectionStatistics`) shows app time, sessions and game launches per account
   plus game aggregates; it loads lazily on the first visit and refreshes on
@@ -41,8 +62,14 @@ FastAPI + PostgreSQL + SQLAlchemy + Alembic + Docker Compose.
   `/admin/statistics/*` API, and an expired token returns the SPA to its single
   login view (`window.FFAdmin.handleUnauthorized`). The Daily Challenge tab
   (`app/static/admin/admin-daily.js`, panel `#sectionDaily`) holds the weekly
-  schedule: one song per weekday with «Назначить» / «Очистить». There is no
-  separate `/statistics` page.
+  schedule: one song per weekday with «Назначить» / «Очистить». The campaigns
+  tab (`app/static/admin/admin-campaigns.js`, panel `#sectionCampaigns`) creates
+  «Tower riffs» campaigns (administrator-chosen name, default bot difficulty and
+  a per-stage difficulty) and edits their ordered song list with ADD / up /
+  down / remove / per-stage level / SAVE. Contacts
+  are no longer a separate tab: the CONTACTS card lives inside the landing panel
+  (`#sectionLanding`) and loads together with it. There is no separate
+  `/statistics` page.
 
 All of them are served by FastAPI from inside the API image. Caddy only needs to reverse-proxy `fretfight.online` to `127.0.0.1:8000`; no separate static-site root is required.
 
@@ -108,6 +135,26 @@ All paths below use `/api/v1`.
 - `GET /leaderboard?limit=20&offset=0` — global top scores.
 - `GET /leaderboard?song_slug=pridumay-svetly-mir` — scores for one song.
 
+### Campaigns ("Tower riffs")
+
+- `GET /campaigns` — anonymous list of playable campaigns. Every campaign has a
+  name, a default `bot_level` (`0` EASY, `1` NORMAL, `2` HARD), `song_count` and
+  an ordered `songs` array (`position` 0-based). Each stage also carries its own
+  effective `bot_level`; its order is unchanged. Only **published** songs are
+  returned; a campaign with zero published songs is omitted until one of its
+  songs is published again. Campaigns are sorted by name, songs by position.
+- `GET /admin/campaigns`, `POST /admin/campaigns`, `GET|PATCH|DELETE
+  /admin/campaigns/{id}`, `PUT /admin/campaigns/{id}/songs` and
+  `PATCH /admin/campaigns/{id}/songs/{song_id}` — administrator CRUD (Bearer
+  admin). `PUT .../songs` replaces the list atomically with
+  `{ "songs": [{ "song_id": "<uuid>", "bot_level": 0 }] }` or the legacy
+  `{ "song_ids": ["<uuid>", ...] }` (which preserves the existing per-stage
+  levels); duplicates → 422, unknown song → 404, and the previous list is left
+  untouched on either error. The JSON shape is the same as the public item, but
+  the admin list keeps unpublished stages. Migrations `0026_campaigns` and
+  `0028_campaign_song_bot_level`. Full contract:
+  [`docs/CAMPAIGNS_API.md`](docs/CAMPAIGNS_API.md).
+
 The API returns JSON in UTF-8. PowerShell 5.1 can misdecode response bodies when using `Invoke-RestMethod` on some responses; to inspect Russian text, save response bytes with `curl.exe -o` and read using `[System.IO.File]::ReadAllText(path, [System.Text.Encoding]::UTF8)`.
 
 ### Accounts
@@ -119,8 +166,9 @@ The API returns JSON in UTF-8. PowerShell 5.1 can misdecode response bodies when
 - `POST /auth/resend-verification` — `{ "email": "..." }`; always returns 202 and sends a new code when appropriate.
 - `POST /auth/forgot-password` — `{ "email": "..." }`; always returns 202 and sends a reset code when appropriate.
 - `POST /auth/reset-password` — `{ "email": "...", "code": "123456", "new_password": "..." }`; returns an access token and revokes all refresh sessions of the account.
-- `GET /auth/me` — authenticated profile (additive `privacy_consent_at`, `null` for accounts created before the consent requirement).
-- `PATCH /auth/me` — authenticated partial profile update: `{ "display_name": "Player One" }` and/or `{ "username": "player_one" }` (3–32 characters `[A-Za-z0-9_.-]`, lowercased, 409 if taken).
+- `GET /auth/me` — authenticated profile (additive `privacy_consent_at`, `null` for accounts created before the consent requirement; additive `character_id`, `character_name`, `character_sheet_url`).
+- `PATCH /auth/me` — authenticated partial profile update: `{ "display_name": "Player One" }`, `{ "username": "player_one" }` (3–32 characters `[A-Za-z0-9_.-]`, lowercased, 409 if taken) and/or `{ "character_id": 1 }` (`null` clears the choice, unknown id → 422).
+- `GET /characters` — public list of playable characters: `[{ "id": 1, "name": "Bard", "sheet_url": "/media/characters/<uuid>.png" }]`, sorted by name.
 - `POST /auth/change-password` — Bearer, `{ "current_password": "...", "new_password": "..." }`; returns 204.
 
 Passwords are Argon2-hashed and access tokens are JWTs. Refresh tokens are stored only as sha256 hashes in `refresh_sessions` (`0001`…`0014` migrations; `0014_privacy_refresh` adds consent and sessions). Codes are stored only as HMAC-SHA256 hashes, expire after 15 minutes, are single-use, and allow at most five failed attempts. Registration is rejected with 503 if the verification email cannot be sent, so an unreachable account is not created. Changing or resetting a password increments the user's token version, invalidates all older JWTs and revokes every refresh session. Existing accounts are marked verified by migration `0005` so they are not locked out when this feature is deployed; they keep `privacy_consent_at = NULL`.
@@ -179,11 +227,11 @@ The API currently relies on this application-level resend cooldown and code atte
 
 ### Game sessions and scores
 All endpoints below except leaderboard require `Authorization: Bearer <access_token>`:
-- `POST /games/sessions` — start a session. Body: `{ "song_id": "<published-song-uuid>", "speed_percent": 100, "daily": false }`. `daily: true` asks for the official daily-challenge attempt (see below) and creates a session with `mode: "daily"`.
+- `POST /games/sessions` — start a session. Body: `{ "song_id": "<published-song-uuid>", "speed_percent": 100, "daily": false, "practice": false }`. `daily: true` asks for the official daily-challenge attempt (see below) and creates a session with `mode: "daily"`. `practice: true` marks a Practice-section run: a published song gets `mode: "practice"`, an unpublished draft stays `"preview"`, and `daily: true` together with `practice: true` is `422`. A session stores `mode` (`normal`/`daily`/`preview`/`practice`).
 - `POST /games/sessions/{session_id}/finish` — submit final score and mark the session finished. Body example:
   `{ "score_points": 1200, "accuracy_percent": 92.5, "max_combo": 14, "perfect_count": 8, "good_count": 4, "miss_count": 2 }`
-  Optional progression fields: `completion_percent` (0–100, default 100), `avg_timing_error_ms` (0–2000), `notes_total`, `notes_played`. The response contains the score fields plus `xp_earned`, `xp_total`, `level`, `level_up`, `xp_to_next`, `xp_remaining`, `personal_best_updated`, `mastery` and `achievements_awarded`; a client that only reads the score fields keeps working.
-- `GET /games/history` - current player's recent sessions.
+  Optional progression fields: `completion_percent` (0–100, default 100), `avg_timing_error_ms` (0–2000), `notes_total`, `notes_played`. The response contains the score fields plus `xp_earned`, `xp_total`, `level`, `level_up`, `xp_to_next`, `xp_remaining`, `personal_best_updated`, `mastery` and `achievements_awarded`; a client that only reads the score fields keeps working. A `preview` or `practice` session returns the score with `xp_earned: 0` and the unchanged level: the row is stored for audit only and is excluded from history, best scores, the per-song leaderboard, the global rating and profile statistics.
+- `GET /games/history` - current player's recent sessions, excluding `practice` audit rows.
 - `GET /games/best-scores` - signed-in player's best score for every song outside the Daily Challenge schedule, plus the personal rating total (`rating_points` = sum of those best scores). Used by the client to show a best score next to each catalogue row; daily songs never feed the ordinary rating. Only `mode: "normal"` sessions count, and songs that were later unpublished or archived stay in the list — hiding a song never removes earned points.
 
 Important: score submission is still client-reported. Progression clamps everything
@@ -283,7 +331,9 @@ Daily challenge rules (migration `0009_daily_slots`):
   like a free slot until the song is published.
 - `POST /games/sessions` with `daily: true` requires the frozen song of today and
   an unused official attempt, otherwise `409`. Practice sessions on the same
-  song stay `mode: "normal"` and never enter the daily ranking.
+  song stay `mode: "normal"` and never enter the daily ranking; a Practice
+  section run asks for `practice: true` and gets `mode: "practice"` instead
+  (stored for audit, never ranked, never awards XP/achievements).
 - `finish` of a daily session inserts `daily_results` (unique `(date, user_id)`);
   a second official attempt returns `409`. Timing, score and accuracy are stored
   for the daily ranking, which sorts by score desc, then accuracy desc.
@@ -354,6 +404,10 @@ Administrator-only aggregates (`Bearer` with `is_admin`):
   `last_seen_at`, `launches_count`, `last_launch_at`, `games_distinct`,
   `scores_count`, `best_score`, `country_code`, `country_name`, `country_flag`,
   `registration_ip`, `last_login_ip`, plus `total`/`limit`/`offset`.
+  Additive game-mode columns: `online_rating`, `online_matches`,
+  `online_wins`, `online_losses`, `battle_towers_completed`,
+  `battle_stages_cleared` (one grouped query per group for the current page;
+  `online_rating` is `null` when the player was never rated).
   `search` is a case-insensitive substring of username, display name or email.
   `country` is an ISO 3166-1 alpha-2 filter (any case) on the country of
   registration. The five country/IP fields are additive and `null` for accounts
@@ -371,6 +425,40 @@ Administrator-only aggregates (`Bearer` with `is_admin`):
   foreign key to `users.id` is `ON DELETE CASCADE`, so game sessions and their
   scores, app sessions, game launches, email codes and competitions are removed
   with the account. The audit log line contains ids only.
+- `GET /admin/users/{user_id}/overview` — one account card for the admin panel
+  (404 `user_not_found`). Four groups, each aggregated in SQL with a constant
+  number of queries (no N+1 per duel, tower or character):
+  - `basics` — `user_id`, `username`, `display_name`, `email`, `level`,
+    `xp_total`, `created_at`, `is_active`, `selected_character`
+    (`{id, public_id, name, sheet_url}` or `null`);
+  - `online` — finished **online human** duels only: `matches`, `wins`,
+    `losses`, `draws`, `win_rate`, `rating` (newest non-NULL `rating_after`,
+    `null` when the player was never rated), `best_win_streak`, `accuracy`
+    (quality points over all played notes), `damage_dealt`, `xp_earned`,
+    `last_match_at`. Bot and cancelled matches never count;
+  - `battle` — `towers_completed` (progress rows with `completed_at`),
+    `stages_cleared` (sum of `min(best_stage, published stage count)`), `runs`,
+    `xp_earned` (sum of `campaign_stage_runs.xp_awarded`), `last_run_at`, and
+    `towers` (`campaign_id`, `name`, `best_stage`, `stage_count`, `completions`,
+    `completed_at`) for every tower the account has started;
+  - `characters` — `owned` and `available` rows with `id` (UUID),
+    `public_id`, `name`, `sheet_url`, `is_starter`, `unlocked_at`,
+    `source_campaign_id`, `can_remove` (always `false` for starters), plus
+    `selected_character_id` (integer public id or `null`). `available` is the
+    whole catalogue; the UI hides what the account already owns.
+- `POST /admin/users/{user_id}/characters/{character_id}` — grant one catalogue
+  character (`character_id` is the `ui_characters` UUID). Answers 201 with
+  `created: true` when the row was inserted and 200 with `created: false` when
+  it was already owned (idempotent). Starters are owned by design, so granting
+  one is a 200 no-op that writes nothing. 404 `user_not_found` /
+  `character_not_found`. The response carries the refreshed
+  `selected_character_id`.
+- `DELETE /admin/users/{user_id}/characters/{character_id}` — revoke a
+  non-starter character. Removes the `user_characters` row and clears
+  `users.character_id` when it pointed at the same character; answers
+  `{removed, cleared_selected, selected_character_id}`. 409
+  `starter_character` for starters (they are always available), 404
+  `user_not_found` / `character_not_found` / `not_owned`.
 - `GET /admin/statistics/games?days=30&limit=100` — launches grouped by
   `game_key` with `title`, `launches`, `unique_users`, `last_launch_at`. The title
   is the song title of the newest launch that has a `song_id`; keys without a song
@@ -401,7 +489,13 @@ Scores column shows the number of results with the personal best underneath,
 the «Страна» column shows the flag and country name (or “—” for old accounts,
 with both IPs in the tooltip), a country filter sits next to the search field,
 and each row has a delete button (confirmation shows the login and email; the
-signed-in administrator's own row is disabled).
+signed-in administrator's own row is disabled). Two extra columns («Online»:
+rating plus `W/L`, «Battle»: completed towers / cleared stages) are hidden below
+`lg`. Clicking a row opens the account card (Bootstrap modal) with the basics,
+the online and Battle aggregates, the per-tower list and the character
+collection, where the administrator can grant a catalogue character from the
+picker or revoke a non-starter one; revoking the selected character clears it
+and the card is re-fetched to show the cleared state.
 
 ### Administrator song workflow
 Every `/admin/songs` route requires a Bearer token for a user whose `is_admin` flag is true:

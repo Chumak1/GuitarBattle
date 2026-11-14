@@ -815,8 +815,24 @@ def test_progression_endpoints_require_auth(db_client, path):
 def test_global_leaderboard_still_ignores_progression(
     db_client, user_account, second_user, published_song
 ):
-    _play(db_client, user_account["headers"], published_song["id"], score_points=1500)
-    _play(db_client, second_user["headers"], published_song["id"], score_points=900)
+    # The chart length is needed so score efficiency (S) differs between the two
+    # players; Guitar Skills, not XP/level, drives the order.
+    _play(
+        db_client,
+        user_account["headers"],
+        published_song["id"],
+        score_points=1500,
+        notes_total=100,
+        notes_played=100,
+    )
+    _play(
+        db_client,
+        second_user["headers"],
+        published_song["id"],
+        score_points=900,
+        notes_total=100,
+        notes_played=100,
+    )
 
     board = db_client.get(f"{helpers.API}/leaderboard/global").json()
     assert [item["username"] for item in board["items"]] == [

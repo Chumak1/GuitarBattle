@@ -46,6 +46,14 @@
     games: [],
     usersRequestId: 0,
     gamesRequestId: 0,
+    // One account card: fetched on row click, re-fetched after a character
+    // change. ``requestId`` drops answers for a card that is already closed.
+    detail: {
+      userId: "",
+      data: null,
+      requestId: 0,
+      busy: false,
+    },
   };
 
   const el = (id) => document.getElementById(id);
@@ -170,6 +178,14 @@
       hour: "2-digit",
       minute: "2-digit",
     }).format(date);
+  }
+
+  function formatPercent(value) {
+    const number = Number(value);
+    if (!Number.isFinite(number)) return "—";
+    return (
+      new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(number) + " %"
+    );
   }
 
   function relativeTime(value) {
@@ -394,6 +410,47 @@
     loadUsers();
   }
 
+  /* ---------- game-mode columns ---------- */
+
+  /* Compact "Online" column: the current Elo rating over the W/L record. A
+   * player with no finished online duel shows a dash instead of a misleading
+   * start rating. */
+  function onlineCell(user) {
+    const matches = Number(user.online_matches) || 0;
+    const wins = Number(user.online_wins) || 0;
+    const losses = Number(user.online_losses) || 0;
+    if (!matches && user.online_rating == null) {
+      return '<span class="stats-mode-empty">—</span>';
+    }
+    const tooltip = "Онлайн-дуэли: " + matches + " матчей, " + wins + " побед, " +
+      losses + " поражений";
+    const rating = user.online_rating == null ? "—" : formatNumber(user.online_rating);
+    return (
+      '<div class="stats-mode" title="' + escapeHtml(tooltip) + '">' +
+      '<span class="stats-mode-value">' + rating + "</span>" +
+      '<span class="stats-mono">' + formatNumber(wins) + "W / " + formatNumber(losses) +
+      "L</span>" +
+      "</div>"
+    );
+  }
+
+  /* Compact "Battle" column: completed towers / cleared stages. */
+  function battleCell(user) {
+    const towers = Number(user.battle_towers_completed) || 0;
+    const stages = Number(user.battle_stages_cleared) || 0;
+    if (!towers && !stages) {
+      return '<span class="stats-mode-empty">—</span>';
+    }
+    const tooltip = "Battle: " + towers + " башен пройдено, " + stages + " этапов зачищено";
+    return (
+      '<div class="stats-mode" title="' + escapeHtml(tooltip) + '">' +
+      '<span class="stats-mode-value">' + formatNumber(towers) + " / " +
+      formatNumber(stages) + "</span>" +
+      '<span class="stats-mono">башен / этапов</span>' +
+      "</div>"
+    );
+  }
+
   function userRow(user) {
     const activity = lastActivity(user);
     const activityMs = activity ? new Date(activity).getTime() : 0;
@@ -416,7 +473,8 @@
         '<i class="bi bi-trash3"></i></button>';
 
     return (
-      "<tr>" +
+      '<tr class="stats-user-row" data-stats-user="' + escapeHtml(user.user_id) +
+      '" tabindex="0" title="Открыть карточку игрока">' +
       "<td>" +
       '<div class="stats-login">' + escapeHtml(user.username) + "</div>" +
       '<div class="stats-mono">' + escapeHtml(user.user_id) + "</div>" +
@@ -438,6 +496,8 @@
       "<td><span class=\"text-nowrap\">LVL " + formatNumber(user.level) + "</span>" +
       (user.xp_total == null ? "" :
         '<div class="stats-mono">' + formatNumber(user.xp_total) + " XP</div>") + "</td>" +
+      '<td class="d-none d-lg-table-cell">' + onlineCell(user) + "</td>" +
+      '<td class="d-none d-lg-table-cell">' + battleCell(user) + "</td>" +
       '<td class="d-none d-lg-table-cell">' + platformsCell(user) + "</td>" +
       '<td class="d-none d-xl-table-cell">' +
       '<span class="text-nowrap small text-secondary">' + formatDateTime(user.last_launch_at) + "</span>" +
@@ -464,7 +524,7 @@
           ? "В этой стране пока нет игроков."
           : "Пока нет ни одного игрока.";
       body.innerHTML =
-        '<tr><td colspan="13" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
+        '<tr><td colspan="15" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
     } else {
       body.innerHTML = state.users.map(userRow).join("");
     }
@@ -484,7 +544,7 @@
     });
     if (loading) {
       el("statsUsersBody").innerHTML =
-        '<tr><td colspan="13" class="table-loading">' +
+        '<tr><td colspan="15" class="table-loading">' +
         '<span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
     }
   }
@@ -534,6 +594,13 @@
 
     try {
       await api("/admin/users/" + encodeURIComponent(user.user_id), { method: "DELETE" });
+      // The card of a deleted account cannot be refreshed any more.
+      if (state.detail.userId === String(user.user_id)) {
+        state.detail.requestId += 1;
+        state.detail.userId = "";
+        state.detail.data = null;
+        window.bootstrap?.Modal?.getInstance(el("statsUserModal"))?.hide();
+      }
       // The last row of a page may have just disappeared; step back one page
       // instead of showing an empty list.
       if (state.users.length === 1 && state.offset > 0) {
@@ -551,6 +618,334 @@
         button.disabled = false;
       });
     }
+  }
+
+  /* ---------- one account card ---------- */
+
+  /* The API answers these English codes for the character endpoints; the panel
+   * shows a Russian sentence instead of the raw code. */
+  const CHARACTER_ERRORS = {
+    starter_character: "Стартовый персонаж — всегда доступен, убрать его нельзя.",
+    not_owned: "Этот персонаж не добавлен этому игроку.",
+    character_not_found: "Персонаж не найден.",
+    user_not_found: "Пользователь не найден.",
+  };
+
+  function characterError(error) {
+    return CHARACTER_ERRORS[error && error.message] || errorText(error);
+  }
+
+  function detailAlert(message) {
+    const box = el("statsUserAlert");
+    if (!box) return;
+    box.textContent = message || "";
+    box.hidden = !message;
+  }
+
+  function detailMetric(label, value, hint) {
+    return (
+      '<div class="stats-detail-metric">' +
+      '<span class="stats-detail-label">' + escapeHtml(label) + "</span>" +
+      '<span class="stats-detail-value">' + value + "</span>" +
+      (hint ? '<span class="stats-detail-hint">' + escapeHtml(hint) + "</span>" : "") +
+      "</div>"
+    );
+  }
+
+  function detailBasics(basics) {
+    const selected = basics.selected_character
+      ? escapeHtml(basics.selected_character.name)
+      : '<span class="stats-mode-empty">не выбран</span>';
+    const rows = [
+      ["Почта", escapeHtml(basics.email)],
+      ["Уровень", "LVL " + formatNumber(basics.level) + " · " +
+        formatNumber(basics.xp_total) + " XP"],
+      ["Создан", formatDateTime(basics.created_at)],
+      ["Статус", basics.is_active
+        ? '<span class="stats-activity-state is-online">активен</span>'
+        : '<span class="stats-activity-state">отключён</span>'],
+      ["Персонаж", selected],
+      ["ID", '<span class="stats-mono">' + escapeHtml(basics.user_id) + "</span>"],
+    ];
+    const items = rows
+      .map(
+        ([label, value]) =>
+          "<div><dt>" + escapeHtml(label) + "</dt><dd>" + value + "</dd></div>",
+      )
+      .join("");
+    return (
+      '<section class="stats-detail-block">' +
+      '<div class="stats-detail-title">Основное</div>' +
+      '<dl class="stats-detail-kv">' + items + "</dl>" +
+      "</section>"
+    );
+  }
+
+  function detailOnline(online) {
+    const metrics = [
+      detailMetric("Матчи", formatNumber(online.matches)),
+      detailMetric(
+        "Победы / поражения",
+        formatNumber(online.wins) + " / " + formatNumber(online.losses),
+        online.draws ? "ничьих: " + formatNumber(online.draws) : "",
+      ),
+      detailMetric("Винрейт", formatPercent(online.win_rate)),
+      detailMetric(
+        "Рейтинг",
+        online.rating == null ? "—" : formatNumber(online.rating),
+        online.rating == null ? "нет рейтинговых матчей" : "текущий Elo",
+      ),
+      detailMetric("Лучшая серия", formatNumber(online.best_win_streak), "побед подряд"),
+      detailMetric("Точность", formatPercent(online.accuracy)),
+      detailMetric("Урон", formatNumber(online.damage_dealt)),
+      detailMetric("XP", formatNumber(online.xp_earned)),
+    ].join("");
+    return (
+      '<section class="stats-detail-block">' +
+      '<div class="stats-detail-head"><div class="stats-detail-title">Онлайн-дуэли</div>' +
+      '<div class="stats-detail-sub">последний матч: ' +
+      escapeHtml(relativeTime(online.last_match_at)) + "</div></div>" +
+      '<div class="stats-detail-metrics">' + metrics + "</div>" +
+      "</section>"
+    );
+  }
+
+  function detailTowers(towers) {
+    if (!towers || !towers.length) {
+      return '<p class="stats-detail-empty">Прогресса в башнях пока нет.</p>';
+    }
+    const rows = towers
+      .map((tower) => {
+        const done = tower.completed_at
+          ? '<span class="stats-activity-state is-online">да</span>'
+          : '<span class="stats-activity-state">нет</span>';
+        return (
+          "<tr>" +
+          "<td>" + escapeHtml(tower.name) + "</td>" +
+          '<td><span class="text-nowrap">' + formatNumber(tower.best_stage) + " / " +
+          formatNumber(tower.stage_count) + "</span></td>" +
+          "<td>" + formatNumber(tower.completions) + "</td>" +
+          "<td>" + done + "</td>" +
+          "</tr>"
+        );
+      })
+      .join("");
+    return (
+      '<div class="stats-towers-wrap">' +
+      '<table class="table stats-towers-table align-middle mb-0">' +
+      "<thead><tr><th>Башня</th><th>Этапы</th><th>Прохождений</th><th>Завершена</th></tr></thead>" +
+      "<tbody>" + rows + "</tbody></table></div>"
+    );
+  }
+
+  function detailBattle(battle) {
+    const metrics = [
+      detailMetric("Башен пройдено", formatNumber(battle.towers_completed)),
+      detailMetric("Этапов зачищено", formatNumber(battle.stages_cleared)),
+      detailMetric("Забегов", formatNumber(battle.runs)),
+      detailMetric("XP", formatNumber(battle.xp_earned)),
+    ].join("");
+    return (
+      '<section class="stats-detail-block">' +
+      '<div class="stats-detail-head"><div class="stats-detail-title">Battle</div>' +
+      '<div class="stats-detail-sub">последний забег: ' +
+      escapeHtml(relativeTime(battle.last_run_at)) + "</div></div>" +
+      '<div class="stats-detail-metrics">' + metrics + "</div>" +
+      detailTowers(battle.towers) +
+      "</section>"
+    );
+  }
+
+  function detailCharacters(characters, basics) {
+    const owned = characters.owned || [];
+    const ownedIds = new Set(owned.map((item) => item.id));
+    const available = (characters.available || []).filter(
+      (item) => !ownedIds.has(item.id),
+    );
+    const selectedId =
+      characters.selected_character_id == null
+        ? null
+        : String(characters.selected_character_id);
+
+    const items = owned
+      .map((character) => {
+        const selected =
+          selectedId != null && String(character.public_id) === selectedId;
+        const meta = character.is_starter
+          ? "стартовый"
+          : "открыт " + formatDateTime(character.unlocked_at);
+        const button = character.can_remove
+          ? '<button type="button" class="action-btn action-danger" ' +
+            'data-stats-char-remove="' + escapeHtml(character.id) + '" ' +
+            'title="Убрать персонажа" aria-label="Убрать персонажа">' +
+            '<i class="bi bi-x-lg"></i></button>'
+          : '<button type="button" class="action-btn" disabled ' +
+            'title="Стартовый персонаж — всегда доступен" ' +
+            'aria-label="Стартовый персонаж — всегда доступен">' +
+            '<i class="bi bi-lock"></i></button>';
+        return (
+          '<li class="stats-char' + (selected ? " is-selected" : "") + '">' +
+          '<div class="stats-char-text">' +
+          '<span class="stats-char-name">' + escapeHtml(character.name) +
+          (selected ? ' <span class="stats-char-badge">выбран</span>' : "") +
+          "</span>" +
+          '<span class="stats-char-meta">' + escapeHtml(meta) + "</span>" +
+          "</div>" + button + "</li>"
+        );
+      })
+      .join("");
+
+    const options = available
+      .map(
+        (character) =>
+          '<option value="' + escapeHtml(character.id) + '">' +
+          escapeHtml(character.name) + "</option>",
+      )
+      .join("");
+    const addBlock = available.length
+      ? '<div class="stats-chars-add">' +
+        '<select id="statsCharSelect" class="form-select form-select-sm" ' +
+        'aria-label="Персонаж для добавления">' + options + "</select>" +
+        '<button id="statsCharAdd" class="btn btn-sm btn-warning" type="button">' +
+        '<i class="bi bi-plus-lg me-1"></i>Добавить</button></div>'
+      : '<div class="form-hint">Все персонажи уже добавлены.</div>';
+
+    return (
+      '<section class="stats-detail-block">' +
+      '<div class="stats-detail-head"><div class="stats-detail-title">Персонажи</div>' +
+      '<div class="stats-detail-sub">выбран: ' +
+      (basics.selected_character
+        ? escapeHtml(basics.selected_character.name)
+        : "не выбран") +
+      "</div></div>" +
+      (items
+        ? '<ul class="stats-char-list">' + items + "</ul>"
+        : '<p class="stats-detail-empty">Персонажей пока нет.</p>') +
+      addBlock +
+      "</section>"
+    );
+  }
+
+  function renderDetail(data) {
+    const body = el("statsUserBody");
+    if (!body) return;
+    const basics = data.basics;
+    el("statsUserModalTitle").textContent =
+      basics.display_name || basics.username;
+    el("statsUserModalSubtitle").textContent =
+      basics.username + " · " + basics.email;
+    body.innerHTML =
+      detailBasics(basics) +
+      '<div class="stats-detail-grid">' +
+      detailOnline(data.online) +
+      detailBattle(data.battle) +
+      "</div>" +
+      detailCharacters(data.characters, basics);
+  }
+
+  function setDetailBusy(busy) {
+    state.detail.busy = busy;
+    document
+      .querySelectorAll(
+        "#statsUserBody [data-stats-char-remove], #statsUserBody #statsCharAdd, #statsUserBody #statsCharSelect",
+      )
+      .forEach((element) => {
+        element.disabled = busy;
+      });
+  }
+
+  async function loadDetail(userId, options = {}) {
+    const requestId = ++state.detail.requestId;
+    state.detail.userId = String(userId);
+    if (!options.silent) {
+      const body = el("statsUserBody");
+      if (body) {
+        body.innerHTML =
+          '<div class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</div>';
+      }
+    }
+    try {
+      const data = await api(
+        "/admin/users/" + encodeURIComponent(userId) + "/overview",
+      );
+      if (requestId !== state.detail.requestId) return;
+      state.detail.data = data;
+      detailAlert("");
+      renderDetail(data);
+    } catch (error) {
+      if (requestId !== state.detail.requestId) return;
+      state.detail.data = null;
+      if (error.status === 401 || error.status === 403) return;
+      detailAlert(errorText(error));
+      const body = el("statsUserBody");
+      if (body) {
+        body.innerHTML =
+          '<p class="stats-detail-empty">Не удалось загрузить карточку игрока.</p>';
+      }
+    }
+  }
+
+  function openUser(userId) {
+    const user = state.users.find((item) => String(item.user_id) === String(userId));
+    state.detail.data = null;
+    state.detail.userId = String(userId);
+    el("statsUserModalTitle").textContent =
+      (user && (user.display_name || user.username)) || "Игрок";
+    el("statsUserModalSubtitle").textContent =
+      user ? user.username + " · " + user.email : "Загрузка…";
+    detailAlert("");
+    const modal = window.bootstrap?.Modal
+      ? window.bootstrap.Modal.getOrCreateInstance(el("statsUserModal"))
+      : null;
+    modal?.show();
+    loadDetail(userId);
+  }
+
+  async function mutateCharacter(userId, characterId, method) {
+    if (state.detail.busy) return;
+    setDetailBusy(true);
+    try {
+      const result = await api(
+        "/admin/users/" + encodeURIComponent(userId) + "/characters/" +
+          encodeURIComponent(characterId),
+        { method },
+      );
+      if (method === "POST") {
+        notify(result.created ? "Персонаж добавлен." : "Персонаж уже был добавлен.");
+      } else {
+        notify(
+          result.cleared_selected
+            ? "Персонаж убран, выбранный персонаж сброшен."
+            : "Персонаж убран из коллекции.",
+        );
+      }
+      await loadDetail(userId, { silent: true });
+    } catch (error) {
+      if (error.status !== 401 && error.status !== 403) {
+        const message = characterError(error);
+        notify(message, "danger");
+        detailAlert(message);
+      }
+    } finally {
+      setDetailBusy(false);
+    }
+  }
+
+  function addCharacter() {
+    const userId = state.detail.userId;
+    const select = el("statsCharSelect");
+    if (!userId || !select || !select.value) return;
+    mutateCharacter(userId, select.value, "POST");
+  }
+
+  function removeCharacter(characterId) {
+    const userId = state.detail.userId;
+    if (!userId || !characterId) return;
+    const owned = (state.detail.data?.characters?.owned) || [];
+    const character = owned.find((item) => String(item.id) === String(characterId));
+    const name = character ? character.name : "персонажа";
+    if (!window.confirm("Убрать «" + name + "» из коллекции игрока?")) return;
+    mutateCharacter(userId, characterId, "DELETE");
   }
 
   /* ---------- games ---------- */
@@ -641,8 +1036,32 @@
     });
 
     el("statsUsersBody")?.addEventListener("click", (event) => {
-      const button = event.target.closest("[data-stats-delete]");
-      if (button) deleteUser(button.getAttribute("data-stats-delete"));
+      const remove = event.target.closest("[data-stats-delete]");
+      if (remove) {
+        deleteUser(remove.getAttribute("data-stats-delete"));
+        return;
+      }
+      const row = event.target.closest("tr[data-stats-user]");
+      if (row) openUser(row.getAttribute("data-stats-user"));
+    });
+
+    /* Rows are focusable so the card is reachable from the keyboard. */
+    el("statsUsersBody")?.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      if (event.target.closest("button")) return;
+      const row = event.target.closest("tr[data-stats-user]");
+      if (!row) return;
+      event.preventDefault();
+      openUser(row.getAttribute("data-stats-user"));
+    });
+
+    el("statsUserBody")?.addEventListener("click", (event) => {
+      if (event.target.closest("#statsCharAdd")) {
+        addCharacter();
+        return;
+      }
+      const remove = event.target.closest("[data-stats-char-remove]");
+      if (remove) removeCharacter(remove.getAttribute("data-stats-char-remove"));
     });
 
     el("statsPeriod")?.addEventListener("change", (event) => {

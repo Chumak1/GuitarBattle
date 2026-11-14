@@ -96,7 +96,9 @@ namespace GuitarTuning
 
     inline juce::String noteName(int midiNote, bool withOctave)
     {
-        return juce::MidiMessage::getMidiNoteName(midiNote, true, withOctave, 3);
+        // Middle C (MIDI 60) is C4 in scientific pitch notation, matching the
+        // frequency the tuner actually targets (bass E = 41.2 Hz = E1).
+        return juce::MidiMessage::getMidiNoteName(midiNote, true, withOctave, 4);
     }
 
     /** Note names of the active strings, low string first; empty slots are

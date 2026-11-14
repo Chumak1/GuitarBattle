@@ -17,6 +17,205 @@
 static juce::AudioBuffer<float> makePitchPreservingTimeStretch(
     const juce::AudioBuffer<float>& source, double speedRatio);
 
+void MainComponent::setPreferredMicChannel(int channel)
+{
+    if (channel >= 0 && ! ensureInputChannelEnabled (channel))
+        channel = -1;
+
+    preferredMicChannel.store (channel, std::memory_order_relaxed);
+
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        settings->setValue ("MicInputChannel", channel);
+        settings->saveIfNeeded();
+    }
+}
+
+void MainComponent::refreshDeviceLatency()
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+
+    if (device == nullptr)
+    {
+        deviceInputLatencyMs.store (0.0, std::memory_order_relaxed);
+        deviceOutputLatencyMs.store (0.0, std::memory_order_relaxed);
+        return;
+    }
+
+    const double sampleRate = device->getCurrentSampleRate();
+
+    if (sampleRate <= 0.0)
+        return;
+
+    // JUCE reports driver latency in samples. Some drivers report 0 even
+    // though one block is still in flight, so the block size is a floor.
+    const int bufferSamples = juce::jmax (1, device->getCurrentBufferSizeSamples());
+    const int inputSamples = juce::jmax (device->getInputLatencyInSamples(),
+                                         bufferSamples);
+    const int outputSamples = juce::jmax (device->getOutputLatencyInSamples(),
+                                          bufferSamples);
+
+    deviceInputLatencyMs.store (inputSamples * 1000.0 / sampleRate,
+                                std::memory_order_relaxed);
+    deviceOutputLatencyMs.store (outputSamples * 1000.0 / sampleRate,
+                                 std::memory_order_relaxed);
+}
+
+void MainComponent::setTimingOffsetMs(int offsetMs)
+{
+    const int clamped = juce::jlimit (-200, 200, offsetMs);
+
+    timingOffsetMs.store (clamped, std::memory_order_relaxed);
+
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        settings->setValue ("TimingOffsetMs", clamped);
+        settings->saveIfNeeded();
+    }
+}
+
+uint64_t MainComponent::getScoringLatencySamples(double sampleRate) const
+{
+    if (sampleRate <= 0.0)
+        return 0;
+
+    // Round trip from "the player hears the chart" to "the attack appears in
+    // the input buffer":
+    //   * output latency - the rendered block reaches the speakers later;
+    //   * input latency  - the captured attack is indexed later in the device
+    //     timeline than it physically happened.
+    // Subtracting both makes a note played to the music land on its chart
+    // position even with a 1024/2048-sample buffer. The manual offset trims
+    // drivers whose report is too small or too large (hidden buffers,
+    // Bluetooth).
+    const double latencyMs =
+        deviceOutputLatencyMs.load (std::memory_order_relaxed)
+        + deviceInputLatencyMs.load (std::memory_order_relaxed)
+        + static_cast<double> (timingOffsetMs.load (std::memory_order_relaxed));
+
+    const double clampedMs = juce::jlimit (0.0, 500.0, latencyMs);
+
+    return static_cast<uint64_t> (
+        std::llround (clampedMs * sampleRate / 1000.0));
+}
+
+juce::String MainComponent::getLatencyDiagnosticsText() const
+{
+    const double in = deviceInputLatencyMs.load (std::memory_order_relaxed);
+    const double out = deviceOutputLatencyMs.load (std::memory_order_relaxed);
+    const int offset = timingOffsetMs.load (std::memory_order_relaxed);
+
+    if (in <= 0.0 && out <= 0.0)
+        return "Device latency not reported - raise TIMING OFFSET if hits are late";
+
+    juce::String text;
+    text << "OUT " << juce::String (out, 1) << " ms / IN "
+         << juce::String (in, 1) << " ms - scoring compensates "
+         << juce::String (juce::jmax (0.0, out + in + static_cast<double> (offset)), 1)
+         << " ms";
+    return text;
+}
+
+juce::String MainComponent::getVoiceStatusText()
+{
+    auto* device = deviceManager.getCurrentAudioDevice();
+
+    if (device == nullptr)
+        return "MIC: no audio device";
+
+    const auto names = device->getInputChannelNames();
+
+    if (names.isEmpty())
+        return "MIC: no input on this device - choose an interface above";
+
+    juce::String text = "MIC: ";
+    const int mic = preferredMicChannel.load (std::memory_order_relaxed);
+
+    if (mic < 0)
+    {
+        text << "same as guitar";
+    }
+    else if (mic < names.size() && names[mic].trim().isNotEmpty())
+    {
+        text << names[mic].trim();
+    }
+    else if (mic < names.size())
+    {
+        text << "Input " << (mic + 1);
+    }
+    else
+    {
+        // The saved hardware channel does not exist on the current device
+        // (for example a 1-input headset after an 8-input interface).
+        // Capture already falls back to the guitar channel.
+        text << "same as guitar";
+    }
+
+    auto db = [] (float value)
+    {
+        return juce::String (juce::Decibels::gainToDecibels (value, -60.0f), 1);
+    };
+
+    text << "   IN " << db (voiceChat != nullptr ? voiceChat->getInputLevel() : 0.0f)
+         << " dB   OUT " << db (voiceChat != nullptr ? voiceChat->getOutputLevel() : 0.0f)
+         << " dB";
+
+    if (voiceChat != nullptr && voiceChat->isStarted())
+    {
+        if (! voiceChat->isEnabled())
+            text << "   MIC OFF";
+
+        if (voiceChat->isPeerActive())
+            text << "   P2P";
+        else
+            text << "   TX " << voiceChat->getSentChunks()
+                 << " / RX " << voiceChat->getReceivedChunks();
+
+        const int relayStatus = voiceChat->getLastHttpStatus();
+
+        if (relayStatus != 0 && relayStatus != 200)
+            text << "   RELAY HTTP " << relayStatus;
+    }
+
+    return text;
+}
+
+void MainComponent::setLobbyVoiceChat (bool shouldBeEnabled)
+{
+    if (voiceChat == nullptr)
+        voiceChat = std::make_unique<VoiceChat>();
+
+    if (! shouldBeEnabled)
+    {
+        voiceChat->setEnabled (false);
+        return;
+    }
+
+    if (activeVoiceLobbyId.isEmpty() || onlineAccessToken.isEmpty())
+        return;
+
+    if (! voiceChat->isStarted())
+        voiceChat->start (activeVoiceLobbyId, onlineAccessToken);
+
+    voiceChat->setEnabled (true);
+}
+
+void MainComponent::setLobbyMicrophoneEnabled (bool shouldBeEnabled)
+{
+    // The call itself is connected automatically when the room opens. The
+    // room button is a microphone mute, not a transport switch.
+    if (voiceChat != nullptr)
+        voiceChat->setEnabled (shouldBeEnabled);
+}
+
+void MainComponent::stopLobbyVoiceChat()
+{
+    if (voiceChat != nullptr)
+        voiceChat->stop();
+
+    activeVoiceLobbyId.clear();
+}
+
 void MainComponent::setPreferredInputChannel(int channel)
 {
     if (channel >= 0 && ! ensureInputChannelEnabled(channel))
@@ -140,6 +339,10 @@ void MainComponent::changeListenerCallback(juce::ChangeBroadcaster* source)
     {
         refreshGuitarInputCombo();
 
+        // Buffer size and sample rate both change the reported latency; the
+        // scoring thread reads the cached milliseconds, never the device.
+        refreshDeviceLatency();
+
         // Sample rate / block size may have changed (device switch, buffer
         // size selection, driver restart). The VST host reloads the plugin
         // asynchronously when the configuration differs.
@@ -189,6 +392,7 @@ void MainComponent::startAudioDevice(const juce::XmlElement* savedState)
         vstHost.prepareForDevice(device->getCurrentSampleRate(),
                                  device->getCurrentBufferSizeSamples());
 
+    refreshDeviceLatency();
     refreshGuitarInputCombo();
 }
 
@@ -914,20 +1118,12 @@ bool MainComponent::loadExternalAudioTrack(size_t index, const juce::File& file)
             const bool firstFrameIsSilent =
                 probeMagnitude < 1.0e-4f;
 
-            constexpr double codecDelaySeconds =
-                1105.0 / 44100.0;
-            constexpr double primingFrameSeconds =
-                1152.0 / 44100.0;
-
-            const double delaySeconds =
-                codecDelaySeconds
-                + (firstFrameIsSilent ? primingFrameSeconds : 0.0);
-
-            sourceStartOffset = juce::jmax(
-                0,
-                static_cast<int>(
-                    std::llround(
-                        reader->sampleRate * delaySeconds)));
+            // MP3 frames always decode to 1152 samples per channel and the
+            // decoder delay is 1105 samples per channel, regardless of the
+            // file's sample rate. Converting the 44.1 kHz durations to
+            // seconds and back over-trimmed 48/96 kHz stems by ~9%.
+            sourceStartOffset =
+                1105 + (firstFrameIsSilent ? 1152 : 0);
         }
     }
 
@@ -1015,6 +1211,11 @@ void MainComponent::prepareToPlay(
     // can select any active input without querying the device from the
     // realtime thread.
     cachedSampleRate.store(sampleRate, std::memory_order_relaxed);
+    refreshDeviceLatency();
+    uiSounds.prepare(sampleRate);
+
+    if (voiceChat != nullptr)
+        voiceChat->prepare(sampleRate);
     previewPlayer.setOutputSampleRate(sampleRate);
     backgroundPlayer.setOutputSampleRate(sampleRate);
     activeInputChannels.store(0, std::memory_order_relaxed);
@@ -1054,15 +1255,25 @@ void MainComponent::prepareToPlay(
     //==========================================================================
     // Pitch buffers
 
-    pitchBuffer.setSize(1, pitchAnalysisSize);
+    // ~93 ms of signal at any device rate: the detector and the onset
+    // threshold behave the same at 44.1, 48, 88.2 and 96 kHz. The buffers are
+    // allocated at the maximum size so a device change never frees memory the
+    // analysis thread may still be reading.
+    const int analysisWindow = juce::jlimit (
+        1024, maxPitchAnalysisSize,
+        static_cast<int> (std::lround (sampleRate * 0.093)));
+
+    pitchAnalysisWindow.store (analysisWindow, std::memory_order_relaxed);
+
+    pitchBuffer.setSize (1, maxPitchAnalysisSize, false, true, true);
 
     pitchBuffer.clear();
 
-    pitchAnalysisBuffer.setSize(1, pitchAnalysisSize);
+    pitchAnalysisBuffer.setSize (1, maxPitchAnalysisSize, false, true, true);
 
     pitchAnalysisBuffer.clear();
 
-    pitchAnalysisBuffer2.setSize(1, pitchAnalysisSize);
+    pitchAnalysisBuffer2.setSize (1, maxPitchAnalysisSize, false, true, true);
 
     pitchAnalysisBuffer2.clear();
 
@@ -1191,6 +1402,26 @@ void MainComponent::getNextAudioBlock(
             // when the player changes BPM mid-song.
             currentPlayheadBeat.store(
                 getSongBeatForSample(currentSample),
+                std::memory_order_relaxed);
+
+            // The UI scrolls to the beat the player hears, not to the block
+            // being rendered: with a 2048/4096-sample buffer the two differ
+            // by tens of milliseconds, which is visible on the note highway.
+            const double outputLatencyMs =
+                deviceOutputLatencyMs.load(std::memory_order_relaxed);
+            const double rate =
+                cachedSampleRate.load(std::memory_order_relaxed);
+            const auto displayLatencySamples = static_cast<uint64_t>(
+                std::llround(juce::jlimit(0.0, 500.0, outputLatencyMs)
+                             * rate / 1000.0));
+            const auto audibleSample = juce::jmax(
+                currentGameplayStart,
+                currentSample > displayLatencySamples
+                    ? currentSample - displayLatencySamples
+                    : 0);
+
+            audiblePlayheadBeat.store(
+                getSongBeatForSample(audibleSample),
                 std::memory_order_relaxed);
         }
     }
@@ -1326,6 +1557,43 @@ void MainComponent::getNextAudioBlock(
               bufferToFill.startSample)
         : nullptr;
 
+    // Voice chat captures the microphone channel selected in Settings from
+    // the current audio device. -1 means "same channel as the guitar".
+    if (voiceChat != nullptr && inputChannelCount > 0 && inputChannel >= 0)
+    {
+        int micIndex = inputChannel;
+        const int micHardware =
+            preferredMicChannel.load (std::memory_order_relaxed);
+
+        if (micHardware >= 0)
+        {
+            const int mappedCount = juce::jmin (
+                inputChannelCount,
+                static_cast<int> (activeInputHardwareChannels.size()));
+
+            for (int index = 0; index < mappedCount; ++index)
+            {
+                if (activeInputHardwareChannels[static_cast<size_t> (index)]
+                    == micHardware)
+                {
+                    micIndex = index;
+                    break;
+                }
+            }
+        }
+
+        if (micIndex >= 0 && micIndex < inputChannelCount)
+        {
+            const auto* micSamples = bufferToFill.buffer->getReadPointer (
+                micIndex, bufferToFill.startSample);
+
+            voiceChat->captureFromDeviceChannel (
+                micSamples,
+                bufferToFill.numSamples,
+                cachedSampleRate.load (std::memory_order_relaxed));
+        }
+    }
+
     //==========================================================================
     // Input level metering
     //
@@ -1423,6 +1691,9 @@ void MainComponent::getNextAudioBlock(
     //==========================================================================
 // Pitch buffer
 
+    const int analysisSize =
+        pitchAnalysisWindow.load(std::memory_order_relaxed);
+
     for (int i = 0;
         i < bufferToFill.numSamples;
         ++i)
@@ -1434,7 +1705,7 @@ void MainComponent::getNextAudioBlock(
 
         ++pitchBufferPosition;
 
-        if (pitchBufferPosition >= pitchAnalysisSize)
+        if (pitchBufferPosition >= analysisSize)
         {
             //==================================================================
             // First analysis buffer
@@ -1451,7 +1722,7 @@ void MainComponent::getNextAudioBlock(
                     pitchBuffer.getReadPointer(0);
 
                 for (int sample = 0;
-                    sample < pitchAnalysisSize;
+                    sample < analysisSize;
                     ++sample)
                 {
                     destination[sample] =
@@ -1461,7 +1732,7 @@ void MainComponent::getNextAudioBlock(
                 const auto analysisStartSample =
                     currentSample
                     + static_cast<uint64_t>(i + 1)
-                    - static_cast<uint64_t>(pitchAnalysisSize);
+                    - static_cast<uint64_t>(analysisSize);
 
                 pitchAnalysisStartSample.store(
                     analysisStartSample,
@@ -1491,7 +1762,7 @@ void MainComponent::getNextAudioBlock(
                     pitchBuffer.getReadPointer(0);
 
                 for (int sample = 0;
-                    sample < pitchAnalysisSize;
+                    sample < analysisSize;
                     ++sample)
                 {
                     destination[sample] =
@@ -1501,7 +1772,7 @@ void MainComponent::getNextAudioBlock(
                 const auto analysisStartSample =
                     currentSample
                     + static_cast<uint64_t>(i + 1)
-                    - static_cast<uint64_t>(pitchAnalysisSize);
+                    - static_cast<uint64_t>(analysisSize);
 
                 pitchAnalysisStartSample2.store(
                     analysisStartSample,
@@ -1626,11 +1897,41 @@ void MainComponent::getNextAudioBlock(
     }
 
     //==========================================================================
+    // Voice chat and UI sounds
+    //
+    // These must be mixed in every state: lobby voice is used while the room
+    // waits for the second player (GameState::SongSelect) and while the tuner
+    // is open (GameState::Tuner), both of which return before the gameplay
+    // mix below. During a round they are mixed last, after the distortion and
+    // the stems, so the plugin/amp path cannot process or cancel them.
+
+    auto renderVoiceAndUiSounds = [this, &bufferToFill, outputChannelCount]()
+    {
+        if (bufferToFill.buffer == nullptr)
+            return;
+
+        uiSounds.render (*bufferToFill.buffer,
+                         bufferToFill.startSample,
+                         bufferToFill.numSamples);
+
+        if (voiceChat != nullptr)
+            voiceChat->mixIntoOutput (*bufferToFill.buffer,
+                                      bufferToFill.startSample,
+                                      bufferToFill.numSamples,
+                                      outputChannelCount,
+                                      cachedSampleRate.load(
+                                          std::memory_order_relaxed));
+    };
+
+    //==========================================================================
     // Stop before the gameplay mix outside a round. The monitored guitar and
     // menu music have already been rendered above.
 
     if (gameState != GameState::Playing)
+    {
+        renderVoiceAndUiSounds();
         return;
+    }
 
     // Apply distortion to the monitored guitar signal only after the clean samples
     // have been copied to the pitch-analysis buffers, preserving fair scoring.
@@ -2015,6 +2316,13 @@ void MainComponent::getNextAudioBlock(
             getSongBeatForSample(practiceGateValue),
             std::memory_order_relaxed);
 
+        // The tablature must stay on the target note while the transport is
+        // held, not on the pre-gate position (which is one output latency
+        // behind on a large buffer).
+        audiblePlayheadBeat.store(
+            getSongBeatForSample(practiceGateValue),
+            std::memory_order_relaxed);
+
         practiceHoldStartSample.store(
             practiceGateValue,
             std::memory_order_relaxed);
@@ -2023,6 +2331,11 @@ void MainComponent::getNextAudioBlock(
             true,
             std::memory_order_release);
     }
+
+    // Mixed last so the distortion, stems and backing cannot process or
+    // cancel the UI sounds or the received voice. Both renderers only read
+    // preallocated buffers: no allocation, locks or I/O in the callback.
+    renderVoiceAndUiSounds();
 }
 
 void MainComponent::releaseResources()
@@ -2058,7 +2371,32 @@ void MainComponent::initialiseAudio()
     // Song stems are loaded when a catalogue entry is selected.
 
     deviceManager.addChangeListener(this);
+    if (voiceChat == nullptr)
+        voiceChat = std::make_unique<VoiceChat>();
+
+    voiceChat->setMonitorEnabled (true);
+
     startAudioDevice(savedState.get());
+
+    if (auto* settings = appProperties.getUserSettings())
+    {
+        // A headset exposes fewer inputs than the interface the preference
+        // was saved on. Keep the saved value for the next device, but never
+        // point voice capture at a channel this device does not have.
+        int savedMic = settings->getIntValue ("MicInputChannel", -1);
+        auto* device = deviceManager.getCurrentAudioDevice();
+        const int availableInputs = device != nullptr
+            ? device->getInputChannelNames().size()
+            : 0;
+
+        if (savedMic >= 0
+            && (savedMic >= availableInputs
+                || ! ensureInputChannelEnabled (savedMic)))
+            savedMic = -1;
+
+        preferredMicChannel.store (savedMic, std::memory_order_relaxed);
+    }
+
     startClientAssetRefresh();
 
     //==========================================================================

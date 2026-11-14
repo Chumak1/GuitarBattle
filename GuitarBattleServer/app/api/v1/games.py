@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_user
 from app.database import get_db
 from app.models.game_session import GameSession, Score
-from app.models.progression import UserAchievement
 from app.models.progression import DailyResult
 from app.models.song import Song
 from app.models.user import User
@@ -21,45 +20,28 @@ from app.schemas.games import (
     ScoreSubmit,
     SongBestScore,
 )
-from app.services import progression
+from app.schemas.guitar_skills import (
+    GuitarSkillsLeaderboardResponse,
+    GuitarSkillsPlayerDetail,
+)
+from app.schemas.reward_rules import GameplayRulesResponse
+from app.services import guitar_skills, progression, reward_config
 
 router = APIRouter(tags=["games"])
 
 
-def _best_score_per_song_subquery():
-    """One row per (user, catalogued song) holding that player's best attempt.
+@router.get(
+    "/gameplay/rules",
+    response_model=GameplayRulesResponse,
+    summary="Read-only reward rules used by the server",
+)
+def gameplay_rules() -> GameplayRulesResponse:
+    """Public snapshot of the anti-farm / normalization tuning.
 
-    The global rating must not grow with every replay: only the best score a
-    player has on a song contributes to the rating. Aggregating on read keeps
-    every historical attempt in the database untouched. Daily-challenge songs
-    are excluded so an official daily result never feeds the ordinary rating.
-
-    Availability is deliberately *not* part of this rule: unpublishing or
-    archiving a song hides it from the catalogue but must never erase the points
-    a player already earned. Every song keeps exactly one contributing row, so
-    hiding/restoring cannot double-count either.
+    The client may show these numbers (e.g. on a result card) but never sends
+    them back: every award is recomputed server-side from the same constants.
     """
-    return (
-        select(
-            GameSession.user_id.label("user_id"),
-            GameSession.song_id.label("song_id"),
-            func.max(Score.score_points).label("best_score"),
-            func.max(Score.accuracy_percent).label("best_accuracy"),
-        )
-        .join(Score, Score.session_id == GameSession.id)
-        .join(Song, Song.id == GameSession.song_id)
-        .where(
-            GameSession.status == "finished",
-            # Only free play feeds the ordinary rating. Filtering on the session
-            # mode (not on the song's current daily slot) keeps an official daily
-            # attempt out of the rating even after the song is unscheduled or
-            # archived.
-            GameSession.mode == "normal",
-            Song.daily_weekday.is_(None),
-        )
-        .group_by(GameSession.user_id, GameSession.song_id)
-        .subquery()
-    )
+    return GameplayRulesResponse(**reward_config.rules_payload())
 
 
 @router.post("/games/sessions", response_model=GameSessionResponse, status_code=status.HTTP_201_CREATED)
@@ -81,6 +63,11 @@ def create_session(payload: GameSessionCreate, db: Session = Depends(get_db),
         raise HTTPException(status_code=404, detail="Published song not found")
 
     mode = "normal" if song.is_published else "preview"
+    if song.is_published and payload.practice:
+        # A Practice-section run on a published song is stored for audit only:
+        # see ``finish_session``. An unpublished draft stays a ``preview`` no
+        # matter what the client asked for.
+        mode = "practice"
     if payload.daily:
         # The song of the day is fixed server-side by the weekday schedule; a
         # daily session may only be created for it and only while the official
@@ -116,6 +103,28 @@ def _official_daily_result(db: Session, user_id: UUID, day) -> DailyResult | Non
         select(DailyResult).where(
             DailyResult.challenge_date == day, DailyResult.user_id == user_id
         )
+    )
+
+
+def _unranked_finish_response(score: Score, user: User) -> ScoreFinishResponse:
+    """Finish payload for a stored-but-unranked attempt.
+
+    Used by ``preview`` and ``practice`` sessions: the score row exists for
+    audit/history, the progression block reports the current (unchanged) level
+    and zero XP.
+    """
+    xp_total = int(user.xp_total or 0)
+    return ScoreFinishResponse(
+        **ScoreResponse.model_validate(score).model_dump(),
+        xp_earned=0,
+        xp_total=xp_total,
+        level=progression.level_for_xp(xp_total),
+        level_up=False,
+        xp_to_next=0,
+        xp_remaining=0,
+        personal_best_updated=False,
+        mastery=None,
+        achievements_awarded=[],
     )
 
 
@@ -171,39 +180,47 @@ def finish_session(session_id: UUID, payload: ScoreSubmit, db: Session = Depends
         payload_data.get("notes_played"),
     )
     payload_data["completion_percent"] = completion
+    # Ranked solo rows store the extrapolated score next to the actual one;
+    # ``preview`` and ``practice`` stay unranked and keep ``NULL``.
+    payload_data["normalized_score"] = (
+        None
+        if session.mode in ("preview", "practice")
+        else progression.normalized_score(
+            score_points=payload_data["score_points"],
+            completion_percent=payload_data["completion_percent"],
+            notes_total=payload_data.get("notes_total"),
+            notes_played=payload_data.get("notes_played"),
+        )
+    )
 
     score = Score(session_id=session.id, **payload_data)
     session.status = "finished"
     session.finished_at = datetime.now(timezone.utc)
     db.add(score)
 
-    if session.mode == "preview":
-        # A preview attempt on an unpublished draft is history only: no XP, no
-        # achievements, no daily result, no personal best and no rating row.
-        # ``apply_attempt_progression`` is deliberately skipped — it also
-        # writes ``song_best_scores``, which feeds the per-song best scores.
+    if session.mode in ("preview", "practice"):
+        # History-only attempt: a preview of an unpublished draft and a
+        # Practice-section run both store the score row but award nothing — no
+        # XP, no achievements, no daily result, no personal best (which would
+        # feed best-scores) and no rating row. ``apply_attempt_progression`` is
+        # deliberately skipped: it also writes ``song_best_scores``.
         try:
             db.commit()
         except IntegrityError:
             db.rollback()
             raise HTTPException(status_code=409, detail="Attempt was already submitted")
         db.refresh(score)
-        return ScoreFinishResponse(
-            **ScoreResponse.model_validate(score).model_dump(),
-            xp_earned=0,
-            xp_total=int(user.xp_total or 0),
-            level=progression.level_for_xp(int(user.xp_total or 0)),
-            level_up=False,
-            xp_to_next=0,
-            xp_remaining=0,
-            personal_best_updated=False,
-            mastery=None,
-            achievements_awarded=[],
-        )
+        return _unranked_finish_response(score, user)
 
     outcome = progression.apply_attempt_progression(
         db, user=user, session=session, score=score, song=song, daily_date=daily_date
     )
+    # Ranked solo results feed Guitar Skills. The event insert is idempotent and
+    # only the affected player is recalculated, inside the same transaction.
+    if guitar_skills.record_solo_event(
+        db, session=session, score=score, song=song
+    ):
+        guitar_skills.recalculate_user(db, user.id, reason="solo_finish")
     try:
         db.commit()
     except IntegrityError:
@@ -234,7 +251,12 @@ def game_history(limit: int = Query(default=20, ge=1, le=100), offset: int = Que
         select(GameSession, Song.title, Song.slug, Score.score_points, Score.accuracy_percent, Score.max_combo)
         .join(Song, Song.id == GameSession.song_id)
         .outerjoin(Score, Score.session_id == GameSession.id)
-        .where(GameSession.user_id == user.id)
+        .where(
+            GameSession.user_id == user.id,
+            # Practice-section runs are stored for audit only and must never
+            # appear in the player's competitive history.
+            GameSession.mode != "practice",
+        )
         .order_by(GameSession.started_at.desc())
         .limit(limit).offset(offset)
     ).all()
@@ -336,88 +358,39 @@ def player_best_scores(db: Session = Depends(get_db),
     )
 
 
-@router.get("/leaderboard/global")
+@router.get(
+    "/leaderboard/global",
+    response_model=GuitarSkillsLeaderboardResponse,
+    summary="Global Guitar Skills ranking",
+)
 def global_leaderboard(limit: int = Query(default=10, ge=1, le=100),
                        offset: int = Query(default=0, ge=0),
-                       db: Session = Depends(get_db)):
-    """Global player rating: sum of each player's best score per song.
+                       db: Session = Depends(get_db)) -> GuitarSkillsLeaderboardResponse:
+    """Global Guitar Skills rating.
 
-    Replays and weaker attempts never raise the rating. ``games_played`` counts
-    the songs that contributed a best score, not the raw number of attempts.
-    Hidden songs (unpublished or archived) keep contributing: ``is_published``
-    and ``archived_at`` are intentionally not filters here, so taking a song out
-    of the catalogue can never silently remove anyone's points. Only the Daily
-    Challenge rule still excludes official daily songs.
+    The rating is a weighted blend of accuracy, challenge, score efficiency,
+    duel performance and progression (see ``app.services.guitar_skills``). The
+    legacy ``rating_points`` / ``games_played`` / ``best_accuracy`` fields are
+    still returned for older clients, but no longer drive the order.
     """
-    best_scores = _best_score_per_song_subquery()
-    achievements = (
-        select(
-            UserAchievement.user_id.label("user_id"),
-            func.count(UserAchievement.id).label("achievements_unlocked"),
-        )
-        .group_by(UserAchievement.user_id)
-        .subquery()
+    return GuitarSkillsLeaderboardResponse.model_validate(
+        guitar_skills.leaderboard(db, limit=limit, offset=offset)
     )
-    rating_points = func.coalesce(func.sum(best_scores.c.best_score), 0).label(
-        "rating_points"
-    )
-    songs_counted = func.count(best_scores.c.song_id).label("games_played")
 
-    stmt = (
-        select(
-            User.id.label("user_id"),
-            User.username,
-            User.display_name,
-            User.level,
-            User.xp_total,
-            rating_points,
-            songs_counted,
-            func.max(best_scores.c.best_accuracy).label("best_accuracy"),
-            func.coalesce(achievements.c.achievements_unlocked, 0).label(
-                "achievements_unlocked"
-            ),
-        )
-        .join(best_scores, best_scores.c.user_id == User.id)
-        .outerjoin(achievements, achievements.c.user_id == User.id)
-        .join(Song, Song.id == best_scores.c.song_id)
-        .where(
-            User.is_active.is_(True),
-            Song.daily_weekday.is_(None),
-        )
-        .group_by(
-            User.id,
-            User.username,
-            User.display_name,
-            User.level,
-            User.xp_total,
-            achievements.c.achievements_unlocked,
-        )
-        .order_by(rating_points.desc(),
-                  songs_counted.desc(),
-                  User.username.asc())
-        .limit(limit)
-        .offset(offset)
-    )
-    rows = db.execute(stmt).all()
-    return {
-        "items": [
-            {
-                "rank": offset + index + 1,
-                "user_id": str(row.user_id),
-                "username": row.username,
-                "display_name": row.display_name,
-                "level": int(row.level or 1),
-                "xp_total": int(row.xp_total or 0),
-                "achievements_unlocked": int(row.achievements_unlocked or 0),
-                "rating_points": int(row.rating_points or 0),
-                "games_played": int(row.games_played or 0),
-                "best_accuracy": float(row.best_accuracy or 0),
-            }
-            for index, row in enumerate(rows)
-        ],
-        "limit": limit,
-        "offset": offset,
-    }
+
+@router.get(
+    "/leaderboard/global/{user_id}",
+    response_model=GuitarSkillsPlayerDetail,
+    summary="One player's Guitar Skills detail",
+)
+def global_leaderboard_player(
+    user_id: UUID,
+    db: Session = Depends(get_db),
+) -> GuitarSkillsPlayerDetail:
+    detail = guitar_skills.player_detail(db, user_id)
+    if detail is None:
+        raise HTTPException(status_code=404, detail="Player not found")
+    return GuitarSkillsPlayerDetail.model_validate(detail)
 
 
 @router.get("/leaderboard")
@@ -429,7 +402,7 @@ def leaderboard(song_slug: str | None = None, limit: int = Query(default=20, ge=
             .join(User, User.id == GameSession.user_id)
             .join(Song, Song.id == GameSession.song_id)
             .where(GameSession.status == "finished", User.is_active.is_(True), Song.is_published.is_(True),
-                   Song.archived_at.is_(None)))
+                   Song.archived_at.is_(None), GameSession.mode != "practice"))
     if song_slug:
         stmt = stmt.where(Song.slug == song_slug)
     rows = db.execute(stmt.order_by(Score.score_points.desc(), Score.accuracy_percent.desc(),

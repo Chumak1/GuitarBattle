@@ -23,6 +23,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.user import User
+from app.models.gameplay_visuals import UiCharacter
 from app.schemas.auth import (
     EmailOnlyRequest,
     LoginRequest,
@@ -44,12 +45,18 @@ from app.services.auth_codes import (
     verify_code,
 )
 from app.services.client_ip import client_ip
+from app.services.characters import (
+    grant_character,
+    is_character_owned,
+    starter_characters,
+)
 from app.services.email_service import (
     EmailDeliveryError,
     send_password_reset_email,
     send_verification_email,
 )
 from app.services.geolocation import apply_country
+from app.services.gameplay_media import character_sheet_url
 from app.services.refresh_tokens import (
     find_refresh_session,
     is_expired,
@@ -275,7 +282,7 @@ def register(
     request: Request,
     background: BackgroundTasks,
     db: Session = Depends(get_db),
-) -> User:
+) -> UserResponse:
     # Consent is checked before the duplicate lookup so a request without
     # consent never reveals whether an account already exists.
     if not payload.privacy_consent:
@@ -298,6 +305,16 @@ def register(
             detail="Username or email is already registered",
         )
 
+    # New profiles start on Ray when the visual exists. The lookup is in the
+    # registration path (not a column default) so the feature is independent of
+    # a production UUID, and a renamed/deleted character never blocks sign-up.
+    default_character_id = db.scalar(
+        select(UiCharacter.id)
+        .where(func.lower(UiCharacter.name) == "ray")
+        .order_by(UiCharacter.id.asc())
+        .limit(1)
+    )
+
     user = User(
         username=payload.username,
         email=str(payload.email).lower(),
@@ -309,6 +326,7 @@ def register(
         token_version=0,
         privacy_consent_at=datetime.now(timezone.utc),
         registration_ip=client_ip(request),
+        character_id=default_character_id,
     )
     db.add(user)
     try:
@@ -319,6 +337,13 @@ def register(
             status_code=status.HTTP_409_CONFLICT,
             detail="Username or email is already registered",
         )
+
+    # Every new account explicitly owns the starter characters (Ray + Luna),
+    # so the collection does not depend on a later change of ``is_starter``. The
+    # insert is idempotent; a failed e-mail send rolls the whole registration
+    # back, including these rows.
+    for starter in starter_characters(db):
+        grant_character(db, user, starter)
 
     try:
         _send_verification_code(db, user, force=True)
@@ -340,7 +365,9 @@ def register(
         background.add_task(
             apply_country, user.id, user.registration_ip, only_if_missing=False
         )
-    return user
+    # Resolve the integer public id/name/sheet URL of the default character;
+    # returning the ORM row directly would expose the internal UUID.
+    return _user_response(db, user)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -609,14 +636,47 @@ def reset_password(
     return _issue_tokens(db, user, request, response)
 
 
+def _character_for(db: Session, user: User) -> UiCharacter | None:
+    """The currently selected character, read from the database."""
+    if user.character_id is None:
+        return None
+    return db.get(UiCharacter, user.character_id)
+
+
+def _user_response(db: Session, user: User) -> UserResponse:
+    """Profile payload with the player-facing character fields resolved."""
+    character = _character_for(db, user)
+    return UserResponse(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        display_name=user.display_name,
+        avatar_key=user.avatar_key,
+        email_verified=user.email_verified,
+        created_at=user.created_at,
+        privacy_consent_at=user.privacy_consent_at,
+        is_admin=user.is_admin,
+        character_id=character.public_id if character is not None else None,
+        character_name=character.name if character is not None else None,
+        character_sheet_url=(
+            character_sheet_url(character.sheet_key)
+            if character is not None
+            else None
+        ),
+    )
+
+
 @router.get("/me", response_model=UserResponse)
-def me(current_user: User = Depends(get_current_user)) -> User:
-    return current_user
+def me(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> UserResponse:
+    return _user_response(db, current_user)
 
 
 @router.patch("/me", response_model=UserResponse)
 def update_me(payload: ProfileUpdateRequest, current_user: User = Depends(get_current_user),
-              db: Session = Depends(get_db)) -> User:
+              db: Session = Depends(get_db)) -> UserResponse:
     if payload.username is not None and payload.username != current_user.username:
         taken = db.scalar(
             select(User.id)
@@ -633,6 +693,30 @@ def update_me(payload: ProfileUpdateRequest, current_user: User = Depends(get_cu
     if payload.display_name is not None:
         current_user.display_name = payload.display_name
 
+    if "character_id" in payload.model_fields_set:
+        if payload.character_id is None:
+            current_user.character_id = None
+        else:
+            character = db.scalar(
+                select(UiCharacter).where(
+                    UiCharacter.public_id == payload.character_id
+                )
+            )
+            if character is None:
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Unknown character_id",
+                )
+            # Ownership is enforced server-side: a client cannot select a
+            # character it has not unlocked by completing the tower (or one
+            # granted as a starter / legacy choice).
+            if not is_character_owned(db, current_user, character):
+                raise HTTPException(
+                    status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                    detail="Character is locked",
+                )
+            current_user.character_id = character.id
+
     try:
         db.commit()
     except IntegrityError:
@@ -642,7 +726,7 @@ def update_me(payload: ProfileUpdateRequest, current_user: User = Depends(get_cu
             detail="Username is already taken",
         )
     db.refresh(current_user)
-    return current_user
+    return _user_response(db, current_user)
 
 
 @router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)

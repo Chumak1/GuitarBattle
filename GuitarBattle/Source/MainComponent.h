@@ -1,9 +1,10 @@
-#pragma once
+﻿#pragma once
 
 #include <JuceHeader.h>
 #include "Gameplay/GameplayStats.h"
 #include <array>
 #include <deque>
+#include <functional>
 #include <map>
 #include <memory>
 #include <vector>
@@ -19,6 +20,8 @@
 #include "Tuner/Tuner.h"
 #include "Gameplay/Metronome.h"
 #include "Gameplay/GameSession.h"
+#include "Audio/UiSounds.h"
+#include "Audio/VoiceChat.h"
 #include "Generation/MidiMelodyGenerator.h"
 #include "Network/ApiClient.h"
 #include "Network/DuelClient.h"
@@ -26,6 +29,11 @@
 #include "UI/GameStyle.h"
 #include "UI/GuitarInputMonitor.h"
 #include "UI/DuelLobby.h"
+#include "UI/DuelStageComponent.h"
+#include "UI/SectionSidebar.h"
+#include "UI/CampaignPanel.h"
+#include "UI/VstPanel.h"
+#include "UI/PublicProfilePanel.h"
 #include "Network/SessionStore.h"
 
 class MainComponent;
@@ -72,7 +80,22 @@ public:
         juce::String displayName;
         int rank = 0;
         int level = 1;
+
+        // Legacy rating points. Kept for servers that do not expose Guitar
+        // Skills yet; the table falls back to it when guitarSkills < 0.
         int rating = 0;
+
+        // Guitar Skills (0..100, one decimal) and the numbers behind it.
+        double guitarSkills = -1.0;
+        double accuracyPercent = 0.0;
+        double duelWinRate = 0.0;
+        int duelWins = 0;
+        int duelLosses = 0;
+        int duelDraws = 0;
+        int xpTotal = 0;
+        bool provisional = false;
+        int positionChange = 0;
+        bool hasPositionChange = false;
     };
 
     std::function<void(const juce::String&)> onRowClicked;
@@ -89,27 +112,39 @@ public:
         rows = std::move(newRows);
     }
 
+    // The page shows the top three as a podium and the table below it, so the
+    // table starts after those rows instead of repeating them.
+    void setFirstRow(int firstRowToUse)
+    {
+        firstRow = juce::jmax(0, firstRowToUse);
+    }
+
+    const std::vector<Row>& getRows() const { return rows; }
+
     int getNumRows() override
     {
-        return static_cast<int>(rows.size());
+        return juce::jmax(0, static_cast<int>(rows.size()) - firstRow);
     }
 
     void paintRowBackground(juce::Graphics& g, int rowNumber, int, int, bool) override
     {
-        if (! juce::isPositiveAndBelow(rowNumber,
-                                       static_cast<int>(rows.size())))
+        const int index = rowNumber + firstRow;
+
+        if (! juce::isPositiveAndBelow(rowNumber, getNumRows())
+            || ! juce::isPositiveAndBelow(index,
+                                          static_cast<int>(rows.size())))
         {
             g.fillAll(juce::Colours::transparentBlack);
             return;
         }
 
-        const auto& row = rows[static_cast<size_t>(rowNumber)];
+        const auto& row = rows[static_cast<size_t>(index)];
         const bool isMe = meUsername.isNotEmpty()
             && row.username == meUsername;
 
         g.fillAll(isMe
                       ? UiColors::accent.withAlpha(0.08f)
-                      : (rowNumber % 2 == 0
+                      : (index % 2 == 0
                              ? UiColors::surface.withAlpha(0.35f)
                              : UiColors::surface2.withAlpha(0.25f)));
     }
@@ -117,11 +152,14 @@ public:
     void paintCell(juce::Graphics& g, int rowNumber, int columnId,
                    int width, int height, bool) override
     {
-        if (! juce::isPositiveAndBelow(rowNumber,
-                                       static_cast<int>(rows.size())))
+        const int index = rowNumber + firstRow;
+
+        if (! juce::isPositiveAndBelow(rowNumber, getNumRows())
+            || ! juce::isPositiveAndBelow(index,
+                                          static_cast<int>(rows.size())))
             return;
 
-        const auto& row = rows[static_cast<size_t>(rowNumber)];
+        const auto& row = rows[static_cast<size_t>(index)];
         const bool isMe = meUsername.isNotEmpty()
             && row.username == meUsername;
 
@@ -149,8 +187,37 @@ public:
             colour = UiColors::secondaryText;
             break;
         case 4:
-            text = formatPoints(row.rating);
+            // Guitar Skills is the competitive metric. Older servers send only
+            // rating_points, so fall back to it until the field arrives.
+            text = row.guitarSkills >= 0.0 ? formatSkills(row.guitarSkills)
+                                           : formatPoints(row.rating);
             justification = juce::Justification::centredRight;
+            colour = isMe ? UiColors::accent : UiColors::gold;
+            break;
+        case 5:
+            // Win rate plus the raw duel record in one cell: "75.0% · 12-4".
+            text = row.duelWins + row.duelLosses + row.duelDraws > 0
+                       ? formatPercent(row.duelWinRate) + "  "
+                             + juce::String(row.duelWins) + "-"
+                             + juce::String(row.duelLosses)
+                             + (row.duelDraws > 0
+                                    ? "-" + juce::String(row.duelDraws)
+                                    : juce::String())
+                       : juce::String ("-");
+            justification = juce::Justification::centredRight;
+            colour = UiColors::secondaryText;
+            break;
+        case 6:
+            // No guitar_skills means the server predates the rollout: do not
+            // claim the row is ranked by a metric it did not send.
+            text = row.guitarSkills < 0.0
+                       ? juce::String ("-")
+                       : (row.provisional ? juce::String ("PROV")
+                                          : juce::String ("RANKED"));
+            justification = juce::Justification::centred;
+            colour = row.guitarSkills < 0.0
+                         ? UiColors::muted
+                         : (row.provisional ? UiColors::muted : UiColors::green);
             break;
         default:
             break;
@@ -163,11 +230,22 @@ public:
 
     void cellClicked(int rowNumber, int, const juce::MouseEvent&) override
     {
-        if (! juce::isPositiveAndBelow(rowNumber,
-                                       static_cast<int>(rows.size())))
+        openRow (rowNumber);
+    }
+
+    /** Index of the first row shown (the podium owns the top three). */
+    int getFirstRow() const noexcept { return firstRow; }
+
+    void openRow (int rowNumber)
+    {
+        const int index = rowNumber + firstRow;
+
+        if (! juce::isPositiveAndBelow(rowNumber, getNumRows())
+            || ! juce::isPositiveAndBelow(index,
+                                          static_cast<int>(rows.size())))
             return;
 
-        const auto& row = rows[static_cast<size_t>(rowNumber)];
+        const auto& row = rows[static_cast<size_t>(index)];
 
         if (row.userId.isNotEmpty() && onRowClicked != nullptr)
             onRowClicked(row.userId);
@@ -185,8 +263,19 @@ private:
         return text;
     }
 
+    static juce::String formatSkills(double value)
+    {
+        return juce::String(value, 1);
+    }
+
+    static juce::String formatPercent(double value)
+    {
+        return juce::String(value, 1) + "%";
+    }
+
     std::vector<Row> rows;
     juce::String meUsername;
+    int firstRow = 0;
 };
 
 class MainComponent : public juce::AudioAppComponent,
@@ -227,8 +316,14 @@ public:
     void paint(juce::Graphics& g) override;
     void paintOverlay(juce::Graphics& g);
     void paintModalOverlay(juce::Graphics& g);
+    void mouseUp (const juce::MouseEvent& event) override;
 
     void resized() override;
+
+    // Podium hit areas on HOME, filled by paint() so a click on a medal card
+    // opens that player's profile like a table row does.
+    std::array<juce::Rectangle<int>, 3> podiumHitBounds {};
+    std::array<juce::String, 3> podiumUserIds {};
 
     friend class MainOverlayComponent;
     friend class MainModalOverlayComponent;
@@ -289,6 +384,74 @@ private:
     //==========================================================================
     // Decoded JPEG frame sequence avoids JUCE VideoComponent's native Windows
     // playback window, which would otherwise cover all JUCE controls.
+    // Pixel-art duel backdrop, below the overlay and the tablature.
+    DuelStageComponent duelStage;
+
+    // Hub navigation and section panels. The sidebar is the only persistent
+    // chrome; each section reuses the existing screens/components.
+    std::unique_ptr<SectionSidebar> sectionSidebar;
+    std::unique_ptr<CampaignPanel> campaignPanel;
+    std::unique_ptr<juce::Viewport> profileViewport;
+    std::unique_ptr<juce::Component> profileContent;
+    std::unique_ptr<juce::Viewport> settingsViewport;
+    std::unique_ptr<juce::Component> settingsContent;
+    std::unique_ptr<juce::Viewport> friendsViewport;
+    std::unique_ptr<juce::Component> friendsContent;
+    std::unique_ptr<juce::Viewport> messagesViewport;
+    std::unique_ptr<juce::Component> messagesContent;
+    std::unique_ptr<VstPanel> vstSectionPanel;
+    // Full profile of another player: an overlay above the current section so
+    // BACK can return to exactly where the card was clicked.
+    // Declared before the viewport so the viewport is destroyed first and never
+    // holds a dangling viewed-component pointer.
+    std::unique_ptr<PublicProfilePanel> publicProfilePanel;
+    std::unique_ptr<juce::Viewport> publicProfileViewport;
+    AppSection publicProfileReturnSection = AppSection::Home;
+
+    AppSection currentSection = AppSection::Home;
+    AppSection matchOriginSection = AppSection::Home;
+    bool tunerStandalone = false;
+
+    // Admin-defined campaigns ("tower riffs"): each has a name, one bot level
+    // for the whole run and an ordered list of songs. Progress is persisted per
+    // campaign id; the actual fights reuse the bot duel.
+    int campaignStage = 0;
+    // High-resolution time of the last local write of ``campaignStage``. A
+    // progress sync that was requested before this point carries stale data
+    // (its GET may be answered before the stage-result POST commits), so its
+    // selected-campaign value must not overwrite the newer local one.
+    double campaignStageWriteMs = 0.0;
+    bool campaignFightActive = false;
+    bool campaignStageWon = false;
+    // Set after a campaign victory: the next stage goes straight to the Ready
+    // screen without the pre-flight tuner.
+    bool skipTunerForNextStage = false;
+    std::vector<int> campaignSongIndices;
+    std::vector<CampaignView> serverCampaigns;
+    juce::String selectedCampaignId;
+    bool campaignRefreshInFlight = false;
+    bool campaignLoading = false;
+    // Server-side tower progress, mirrored into ``CampaignBest:<id>`` as a
+    // read-only cache. The stage-result endpoint owns the XP and the cleared
+    // stage count (a defeat resets the run to the first opponent), so the sync
+    // replaces the cache with the server's value and never uploads it.
+    bool campaignProgressSyncInFlight = false;
+    void syncServerCampaignProgress();
+    // Screen 1.8.0: a Battle (tower) run is reported to
+    // POST /campaigns/{id}/stages/{position}/result, which owns the XP. The run
+    // id is generated once per attempt and reused by the transport retry, so
+    // the server stays idempotent.
+    void reportCampaignStageResult (const juce::String& campaignId, int position,
+                                    const juce::String& runId, bool won);
+    juce::String campaignStageRunId;
+    // -1 = not reported yet, -2 = report failed (no fake XP), >= 0 = server XP.
+    int campaignStageServerXp = -1;
+    // -1 = no normalized value returned, >= 0 = server normalized score.
+    int campaignStageNormalizedScore = -1;
+    bool campaignStageReportPending = false;
+    bool campaignStageReportFailed = false;
+    void notifyCharacterUnlocked (const juce::String& name);
+
     MainOverlayComponent overlayComponent{ *this };
     MainModalOverlayComponent modalOverlayComponent{ *this };
 
@@ -299,6 +462,9 @@ private:
 
     juce::TextButton songPridumayButton{ "START SONG" };
     juce::TextButton onlineCatalogButton{ "REFRESH CATALOG" };
+    // A catalogue request is in flight. Prevents duplicate fetches when several
+    // sections ask for the list at the same time (Battle FIGHT, song select).
+    bool onlineCatalogInFlight = false;
     juce::Label onlineCatalogStatusLabel;
 
     // Song asset download feedback. The ApiClient worker publishes the overall
@@ -319,6 +485,22 @@ private:
     int progressionAchievementsTotal = 0;
     int progressionXpForNext = 0;
     int progressionXpRemaining = 0;
+
+    // Account summary shown on HOME above the global leaderboard (moved out of
+    // the personal account page). Filled from /auth/me, /games/best-scores,
+    // /leaderboard/global and /profile/progression.
+    juce::String accountEmail;
+    juce::String accountScoresText { "-" };
+    juce::String accountRankText { "-" };
+    juce::String accountRankNote { "not in the top 50" };
+    juce::String accountSongsText { "-" };
+    juce::String accountAttemptsText { "-" };
+    juce::String accountLevelText { "-" };
+    juce::String accountXpText { "-" };
+    juce::String accountXpNote { "total experience" };
+    juce::String accountAccuracyText { "-" };
+    juce::String accountTimingText { "-" };
+    void refreshHomeAccountRank();
     float levelBarShown = 0.0f;
     juce::TextButton dailyChallengeButton{ "DAILY CHALLENGE" };
     juce::Label dailyChallengeStatusLabel;
@@ -332,6 +514,11 @@ private:
     bool onlineIsAdmin = false;
     bool adminPreviewMode = false;
     bool currentSessionIsPreview = false;
+    // Practice-section run: the server stores the score for audit only and
+    // awards no XP/rating/personal best. Set when a solo run starts (not a
+    // campaign stage, duel, online match or official daily attempt) and kept
+    // until the results screen is left.
+    bool currentSessionIsPractice = false;
     juce::TextButton adminPreviewButton{ "ADMIN" };
     void setAdminPreviewMode(bool enabled);
     // True when the catalogue/detail requests may ask for drafts.
@@ -345,6 +532,15 @@ private:
     int ratingPoints = 0;
     void refreshProgressionSummary();
     void openPublicProfile(const juce::String& userId);
+    void closePublicProfile();
+    void openNotifications();
+    void refreshSocialNotifications();
+    void refreshMessageUnread();
+    void openMessagesFor (const juce::String& userId,
+                          const juce::String& displayName = {});
+    int socialUnreadNotifications = 0;
+    int notificationPollTicks = 0;
+    juce::uint32 lastNotificationPollMs = 0;
     juce::TextButton refreshLeaderboardButton{ "REFRESH RATING" };
     juce::TextButton accountLoginButton{ "LOGIN" };
     juce::TextButton accountRegisterButton{ "REGISTER" };
@@ -355,8 +551,30 @@ private:
     juce::Label currentUserLabel;
     juce::TextButton logoutButton{ "LOG OUT" };
     juce::TextButton quitButton{ "EXIT" };
+    juce::TextButton fullScreenButton{ "FULLSCREEN" };
     bool showAuthScreen = true;
     juce::String currentUsername;
+
+    // Profile character selection (admin-managed UI levels). The chosen 4x2
+    // spritesheet replaces the built-in rocker in every duel mode.
+    int selectedCharacterId = 0;
+    juce::String selectedCharacterName;
+    juce::String selectedCharacterSheetUrl;
+    void setSelectedCharacter (int id, const juce::String& name,
+                               const juce::String& sheetUrl,
+                               bool persistToServer = true);
+    void restoreSelectedCharacter();
+    // New profiles start with Ray selected: when nothing is stored locally (and
+    // the account has no character), pick the admin-uploaded character named
+    // Ray from GET /characters and persist it.
+    void applyDefaultCharacterIfNeeded (bool force = false);
+    void applyCharacterFromServer (int id, const juce::String& name,
+                                   const juce::String& sheetUrl);
+    bool defaultCharacterRequestInFlight = false;
+    void applyPlayerCharacterSheet();
+    // Same, for an explicit sheet URL (the server's authoritative copy of this
+    // player's character in an online duel).
+    void applyPlayerCharacterSheetFromUrl(const juce::String& sheetUrl);
     juce::String onlineAccessToken;
     juce::String onlineSongUuid;
     juce::String onlineGameSessionUuid;
@@ -414,6 +632,11 @@ private:
     // All server communication is asynchronous: requests run on this client's
     // worker threads and their results arrive on the message thread.
     ApiClient apiClient;
+    // Central UI sound system: registry + manifest + realtime-safe mixer. It
+    // never touches the guitar/note path; its voices are added at the end of
+    // the audio callback.
+    UiSounds uiSounds;
+    void loadUiSoundPreferences();
     // REST client for /api/v1/duels. It shares ApiClient's worker pool, so no
     // HTTP call can ever touch the message thread.
     DuelClient duelClient{ apiClient };
@@ -506,34 +729,19 @@ private:
         // servers and for rows that have not been downloaded yet.
         int timeSignatureNumerator = 0;
         int timeSignatureDenominator = 0;
+
+        // Stage/opponent visuals assigned to this song in the admin panel.
+        // The client downloads them from the server like the song assets, so
+        // no duel artwork is bundled into the executable.
+        juce::String characterName;
+        juce::String characterSheetUrl;  // origin-relative /media/characters/<uuid>.png
+        juce::String stageName;
+        juce::String stageBackgroundUrl; // origin-relative /media/stages/<uuid>.png
     };
 
-    // A song unlocks by its published difficulty. Levels 1-4 are always open,
-    // 5-7 need the player to reach level 5 (851 XP) and 8-10 need level 8
-    // (3071 XP), which keeps the first tier playable immediately and paces the
-    // rest against the XP curve rather than the calendar.
-    static int requiredPlayerLevelForSong(int songDifficulty)
-    {
-        if (songDifficulty >= 8)
-            return 8;
-
-        if (songDifficulty >= 5)
-            return 5;
-
-        return 1;
-    }
-
-    bool isSongUnlocked(const CatalogSong& song) const
-    {
-        // The ADMIN toggle is the testing mode: an administrator sees and can
-        // start every song regardless of their own level, so a level-1 test
-        // account is enough to review the level-10 charts.
-        if (isAdminPreviewActive())
-            return true;
-
-        return progressionLevel >= requiredPlayerLevelForSong(song.difficulty);
-    }
-
+    // Every catalogue song is playable: access no longer depends on the
+    // player level. The row is only dimmed when it is not selected.
+    //
     // List model for the song list. Lives in this header so no new compile
     // unit has to be registered in GuitarBattle.jucer.
     struct SongListModel : public juce::ListBoxModel
@@ -573,12 +781,13 @@ private:
     void refreshOnlineBestScores();    void rebuildCatalogRows(const juce::var& serverItems);
     void updateCatalogRows();
     void selectCatalogSong(int index);
-    // Keeps the START button in sync with the selected song's unlock state.
-    void refreshSongUnlockState();
+    // Keeps the START button in sync with the catalogue selection.
+    void updateStartButtonState();
     void startSelectedSong();
     void downloadOnlineSong(const juce::String& slug,
                             const juce::String& serverId,
-                            bool startAfterDownload);
+                            bool startAfterDownload,
+                            bool forDuel = false);
     SongEntry* findOnlineLibraryEntry(const juce::String& slug);
     int getBestScoreForSong(const juce::String& slug, const juce::String& title);
 
@@ -593,6 +802,8 @@ private:
     juce::Label barBeatLabel;
 
     juce::Label bpmLabel;
+
+    juce::Label tempoLabel;
 
     juce::Label scoreLabel;
 
@@ -615,6 +826,27 @@ private:
     juce::TextButton tunerStartButton{ "START GAME" };
 
     juce::TextButton tunerSkipButton{ "SKIP TUNING" };
+
+    // Shown only when the tuner was opened from an Online room, so the player
+    // can return to the room without closing and reopening it.
+    juce::TextButton tunerReturnButton{ "BACK TO LOBBY" };
+    bool tunerReturnToLobby = false;
+    // Preserved while the room dialog is hidden for the tuner; if the dialog
+    // was torn down, this lets us reopen the same server lobby.
+    juce::String tunerLobbyId;
+
+    // Geometry of the two full-width tuner blocks (STRINGS above LIVE INPUT),
+    // shared by paint() and resized() so the drawing and the widgets can never
+    // drift apart.
+    struct TunerGeometry
+    {
+        juce::Rectangle<float> stringsPanel, inputPanel;
+        float tileTop = 0.0f, tileH = 0.0f, tileW = 0.0f, tileGap = 12.0f;
+        int columns = 1, rows = 1, stringSlots = 0;
+        float rightColX = 0.0f, rightColW = 0.0f;
+        float dialX = 0.0f, dialY = 0.0f, dialRadius = 0.0f;
+    };
+    TunerGeometry computeTunerGeometry() const;
 
     // Open-string tuning selected on the tuner screen. The same value is used
     // by GuitarTuner (targets) and MidiParser (tab positions), so the tuner
@@ -757,6 +989,18 @@ private:
     // A non-negative value is a hardware input-channel index, which stays stable
     // even if other channels are enabled or disabled later.
     std::atomic<int> preferredInputChannel{ -1 };
+    //: Hardware input channel used by voice chat on the current audio device.
+    //: -1 = same channel as the guitar input.
+    std::atomic<int> preferredMicChannel{ -1 };
+
+    // Device latency in milliseconds, refreshed on the message thread when the
+    // device, its buffer or its sample rate changes. The scoring path subtracts
+    // the output latency (what the player hears after the chart position) plus
+    // the manual timing offset from every detected onset, so a large buffer or
+    // a different sample rate does not turn on-time hits into late misses.
+    std::atomic<double> deviceInputLatencyMs{ 0.0 };
+    std::atomic<double> deviceOutputLatencyMs{ 0.0 };
+    std::atomic<int> timingOffsetMs{ 0 };
     std::atomic<int> activeInputChannels{ 0 };
     std::array<int, 32> activeInputHardwareChannels{};
     int currentInputChannel = -1;
@@ -764,6 +1008,11 @@ private:
     // Sample rate cached in prepareToPlay(); the audio callback must not query
     // the device manager from the realtime thread.
     std::atomic<double> cachedSampleRate{ 0.0 };
+
+    // Lobby voice chat. The manager is declared after the engine so it is
+    // destroyed first and can never call a dangling audio callback.
+    std::unique_ptr<VoiceChat> voiceChat;
+    juce::String activeVoiceLobbyId;
 
     //==========================================================================
     // Input monitor
@@ -847,6 +1096,20 @@ private:
     void restoreMusicSettings();
 
     void setPreferredInputChannel(int channel);
+    void setPreferredMicChannel(int channel);
+    juce::String getVoiceStatusText();
+
+    // Timing compensation. refreshDeviceLatency() runs outside the audio
+    // callback (prepareToPlay and device-change notifications); the scoring
+    // thread only reads the atomics.
+    void refreshDeviceLatency();
+    void setTimingOffsetMs(int offsetMs);
+    int getTimingOffsetMs() const noexcept
+    {
+        return timingOffsetMs.load(std::memory_order_relaxed);
+    }
+    juce::String getLatencyDiagnosticsText() const;
+    uint64_t getScoringLatencySamples(double sampleRate) const;
     bool ensureInputChannelEnabled(int hardwareChannel);
     void rebuildGuitarInputChoices();
     void refreshGuitarInputCombo();
@@ -855,6 +1118,12 @@ private:
     std::atomic<uint64_t> audioSampleCounter{ 0 };
 
     std::atomic<double> currentPlayheadBeat{ 0.0 };
+
+    // Beat the player actually hears right now: currentPlayheadBeat is the
+    // render position, which reaches the speakers one output latency later.
+    // The tablature uses this value so the notes and the music stay aligned
+    // with a large buffer.
+    std::atomic<double> audiblePlayheadBeat{ 0.0 };
 
     juce::AudioBuffer<float> pitchAnalysisBuffer;
 
@@ -965,6 +1234,11 @@ private:
     void applyPendingClientAssetsReload();
     void reloadClientAssets();
     void startAudioDevice(const juce::XmlElement* savedState);
+    void setLobbyVoiceChat (bool shouldBeEnabled);
+    void setLobbyMicrophoneEnabled (bool shouldBeEnabled);
+    void stopLobbyVoiceChat();
+    void openLobbyTuner();
+    void closeLobbyTuner();
 
     // Song stems are decoded before playback; the real-time callback only reads and mixes samples.
     struct ExternalAudioTrack
@@ -990,7 +1264,14 @@ private:
     juce::AudioBuffer<float> metronomeNormalBuffer;
 
 
-    static constexpr int pitchAnalysisSize = 4096;
+    // Pitch analysis window. It is sized from the device sample rate in
+    // prepareToPlay() so 44.1, 48, 88.2 and 96 kHz analyse the same ~93 ms of
+    // signal (a fixed 4096-sample window shrank to 42 ms at 96 kHz and made
+    // low notes unstable). The buffers are allocated once at the maximum size;
+    // the active window is published atomically for the audio callback and the
+    // analysis thread.
+    static constexpr int maxPitchAnalysisSize = 16384;
+    std::atomic<int> pitchAnalysisWindow{ 4096 };
 
     // Accepted pitch window for a detected guitar note. The 21st fret on the
     // high E string is ~1109 Hz and the 24th fret is ~1319 Hz, so the old
@@ -1043,7 +1324,8 @@ private:
         Waiting,     // in the queue / waiting for the opponent to become ready
         Playing,
         Finishing,   // chart ended locally, waiting for the server result
-        Finished
+        Finished,
+        Preparing    // downloading / preloading the song before `ready`
     };
 
     DuelOnlinePhase duelOnlinePhase = DuelOnlinePhase::None;
@@ -1051,7 +1333,27 @@ private:
     juce::String duelOnlineMatchId;
     juce::String duelOnlineSongId;
     juce::String duelOnlineSongSlug;
+    // Room (lobby) the match belongs to; empty for the quick queue and bots.
+    // When known, the client never shows the post-download "Start the duel?"
+    // prompt (the room already asked) and an abort returns to the room.
+    juce::String duelOnlineLobbyId;
+    // True when this match was confirmed inside the room window. It is the
+    // authoritative "already confirmed" marker: the queue-style ready prompt
+    // must never appear for a room match even when the lobby id is lost during
+    // the handoff (a state reset, a join snapshot without lobby_id). Set by the
+    // room start callback and as soon as the server reports a lobby id.
+    bool duelOnlineConfirmedInRoom = false;
+    // Last match that already reached its result card on this side. A new start
+    // must never reuse it: a stale room snapshot from the previous round used
+    // to rejoin the finished match instead of the fresh one.
+    juce::String duelOnlineFinishedMatchId;
+    // Slug of the chart actually loaded by preloadOnlineDuelSong(), so a ready
+    // flag from a previous match can never be credited to the new song.
+    juce::String duelOnlinePreloadedSlug;
     juce::String duelOnlineOpponentName;
+    // Sheet URLs currently applied to the stage, so a poll does not restart the
+    // image downloads on every snapshot.
+    juce::String onlineCharactersAppliedKey;
     int duelOnlineExpectedNotes = 0;
     int duelOnlineGeneration = 0;
     int duelOnlinePollFailures = 0;
@@ -1059,9 +1361,20 @@ private:
 
     bool duelOnlinePlaybackPending = false;
     bool duelOnlineChartReady = false;
+    // A room match may arrive with a missing or stale local chart. The first
+    // preload failure triggers one forced re-download (with the progress
+    // dialog) before the match is cancelled.
+    bool duelOnlineChartReloadAttempted = false;
     bool duelOnlineStartAborted = false;
+    bool duelStageResultActive = false;
     bool duelOnlinePollInFlight = false;
     bool duelOnlineReadyInFlight = false;
+    // Both players must explicitly confirm after their stems are ready; the
+    // server countdown only starts when both confirmations arrive.
+    bool duelOnlineReadyConfirmed = false;
+    bool duelOnlineReadyPromptShown = false;
+    bool duelOnlineReadyPromptClosing = false;
+    juce::Component::SafePointer<juce::AlertWindow> duelOnlineReadyDialog;
     bool duelOnlineEventInFlight = false;
     bool duelOnlineFinishRequested = false;
     bool duelOnlineFinishSent = false;
@@ -1069,10 +1382,26 @@ private:
     bool duelOnlineResultInFlight = false;
     bool duelOnlineEventSendingStopped = false;
 
+    // Pre-duel preparation: the stem download and the chart/stem preload run
+    // before POST /ready, so the 3-second server countdown is never spent on
+    // decoding audio or on a network transfer.
+    bool duelOnlineDownloadInProgress = false;
+    bool duelOnlineDownloadJoinAfter = false;
+    bool duelOnlinePreloadInProgress = false;
+    juce::String duelOnlineDownloadMatchId;
+    juce::String duelOnlineDownloadSlug;
+    int duelOnlineDownloadPercentShown = -1;
+
     double duelOnlineNextPollMs = 0.0;
     double duelOnlineNextEventMs = 0.0;
     double duelOnlineNextReadyMs = 0.0;
     double duelOnlineSnapshotAtMs = 0.0;
+    // Half of the smallest measured poll round trip: the server computed
+    // ``starts_in_ms`` one one-way latency before the snapshot arrived, so the
+    // local beat zero must be pulled that much earlier to sit on the server's
+    // timeline. Without it the transport started ~30-100 ms late.
+    double duelOnlineOneWayMs = 0.0;
+    void noteOnlineDuelRoundTrip(double sentMs);
 
     // Read by the pitch-analysis thread (note resolved) and the message thread
     // (auto miss + timer drain). The event queue itself is guarded by duelLock.
@@ -1086,15 +1415,87 @@ private:
     juce::Component::SafePointer<juce::AlertWindow> duelOnlineDialog;
 
     void requestDuelWithBot(int botLevel);
+
+    // Aborts a bot duel that could not prepare its chart (missing assets,
+    // locked song) and keeps the previous result card usable.
+    void abortPendingDuelStart(const juce::String& reason);
     void showDuelModeMenu();
     void paintDuelOverlay(juce::Graphics& g);
+
+    // Bot duel result rendered inside the big session card (Victory / Defeat),
+    // instead of a second small card on top of it.
+    void paintDuelResultInSessionCard (juce::Graphics& g,
+                                       juce::Rectangle<float> card);
+    // Campaign: the character the player faces on the current stage's song
+    // (the sprite assigned to it in the admin catalogue). Empty outside a
+    // campaign or when the song has no character.
+    juce::String campaignOpponentCharacterName() const;
+    // Online duel result: the same campaign-style card, fed by the server's
+    // authoritative participant snapshot.
+    void paintOnlineDuelResultInSessionCard (juce::Graphics& g,
+                                             juce::Rectangle<float> card);
+    bool duelResultCardInSession = false;
     void repaintDuelHud();
     void refreshDuelLobby();
-    void joinOnlineDuelRoom(const juce::String& matchId);
+    void joinOnlineDuelRoom(const juce::String& matchId,
+                            const juce::String& lobbyId = {});
+    // Aborts of a room match go back to the room window instead of dead-ending:
+    // the server rolled the room back to `waiting` (song and chat kept).
+    void returnOnlineDuelToRoom(const juce::String& lobbyId,
+                                const juce::String& matchId);
+    // Result screen of a room match: GO TO LOBBY keeps the room (chat and song
+    // preserved by the server), LEAVE LOBBY drops the room and lands on the
+    // Online section (the lobby list, refreshed).
+    void goToOnlineDuelLobby();
+    void leaveOnlineDuelLobby();
+    bool isOnlineRoomMatch() const
+    {
+        return duelOnlineLobbyId.isNotEmpty() || duelOnlineConfirmedInRoom;
+    }
+
+    // Online duel rooms (create with a password, shared chat, song picker).
+    void openCreateDuelRoomDialog();
+    void openOnlineDuelRoom (const juce::String& lobbyId);
+    void joinDuelLobbyRoom (const juce::String& lobbyId,
+                            const juce::String& password);
+    std::unique_ptr<juce::DialogWindow> duelRoomDialog;
+    std::unique_ptr<juce::DialogWindow> createRoomDialog;
+    juce::Component::SafePointer<juce::DialogWindow> onlineDuelRoomDialog;
+
+    // Hub navigation and sections. Reuse the existing screens/components; the
+    // sidebar only changes which of them is visible.
+    void setSection(AppSection section);
+    AppSection getCurrentSection() const noexcept { return currentSection; }
+    int sectionSidebarWidth() const;
+    void ensureProfileSection();
+    void ensureSettingsSection();
+    void ensureFriendsSection();
+    void ensureMessagesSection();
+    void ensureVstSection();
+    void refreshCampaignSection();
+    // Re-reads /campaigns. ``silent`` keeps the current list interactive while
+    // the request is in flight (used for the periodic background refresh).
+    void refreshServerCampaigns (bool silent = false);
+    // Tower card artwork, downloaded once per URL and kept for the session.
+    std::map<juce::String, juce::Image> campaignCoverCache;
+    std::map<juce::String, bool> campaignCoverInFlight;
+    void requestCampaignCover (const juce::String& campaignId,
+                               const juce::String& url);
+    void applyServerCampaigns();
+    void selectCampaign(const juce::String& campaignId);
+    const CampaignView* findServerCampaign(const juce::String& campaignId) const;
+    juce::String campaignBestKey() const;
+    void startCampaignStage (bool skipTuner = false);
+    void resetCampaignProgress();
+    int campaignStageCount() const noexcept;
+    void openStandaloneTuner();
+    void leaveStandaloneTuner();
+    void returnToHubSection();
 
     std::unique_ptr<DuelLobbyComponent> duelLobby;
     bool duelLobbyInFlight = false;
     int duelLobbyRefreshTicks = 0;
+    int campaignRefreshTicks = 0;
     void paintOnlineDuelOverlay(juce::Graphics& g);
     void beginPendingDuelIfNeeded();
     void onDuelNoteResolved(int noteIndex, int hitQuality);
@@ -1110,6 +1511,13 @@ private:
     void closeOnlineDuelDialog();
     void pollOnlineDuel();
     void sendOnlineDuelReady();
+    // Readiness gate: the song's cached chart AND audio stems must be complete
+    // on this machine before `ready` is reported. The server starts the shared
+    // countdown as soon as both sides confirm, so a client that confirms during
+    // a download makes the song start while the other side (or itself) cannot
+    // play it yet.
+    bool onlineDuelContentComplete(const juce::String& slug);
+    void promptOnlineDuelReady();
     void applyOnlineDuelState(const DuelMatchSnapshot& state);
     void applyOnlineDuelExchangeFeedback(const DuelEventsReply& reply);
     void handleOnlineDuelReplyError(const DuelReply& reply, const juce::String& stage);
@@ -1120,10 +1528,41 @@ private:
     void sendOnlineDuelFinish();
     void requestOnlineDuelResult();
     void finishOnlineDuelFromServer();
+    void enterOnlineDuelResultView();
     void beginOnlineDuelPlayback();
     void startOnlineDuelTimeline();
     void stopOnlineDuelTransport();
     void updateOnlineDuelHud();
+    bool isDuelStageActive() const;
+    juce::Rectangle<int> getDuelHealthStripBounds() const;
+
+    // Downloads the stage background and opponent spritesheet assigned to the
+    // song in the admin panel (the same server media as songs) and applies
+    // them to the pixel-art stage. Images are cached by URL and downloaded on
+    // the worker pool; no duel artwork is embedded in the client.
+    void applySongStageVisuals(const juce::String& songSlug,
+                               const juce::String& opponentSheetUrl = {});
+    // Online: the stage shows each player's own character from the profile
+    // snapshot (the opponent's sprite is the one they picked, not the song's).
+    void applyOnlineDuelCharacters();
+    void requestDuelImage(const juce::String& relativeUrl,
+                          bool background,
+                          int generation);
+    std::map<juce::String, juce::MemoryBlock> duelImageCache;
+    int duelVisualGeneration = 0;
+
+    // Pre-duel preparation (tempo, download, chart/stem preload).
+    bool prepareDuelTempo();
+    bool preloadOnlineDuelSong(const juce::String& slug);
+    void beginOnlineDuelPreload(const juce::String& slug, bool joinAfter);
+    void beginOnlineDuelSongPreparation(const juce::String& slug,
+                                        const juce::String& serverId,
+                                        bool joinAfterDownload,
+                                        const juce::String& joinMatchId);
+    void completeOnlineDuelSongPreparation(bool downloadOk,
+                                           const juce::String& slug);
+    void startOnlineDuelCreate();
+    void updateOnlineDuelPreparationDialog();
 
     int feedbackType = 0; // 1 PERFECT, 2 GREAT, 3 GOOD, 4 MISS, 5 combo milestone
     uint32_t feedbackStartMs = 0;
@@ -1208,7 +1647,7 @@ private:
     bool practiceHoldUiApplied = false;
     bool practiceCompleted = false;
 
-    juce::TextButton practiceModeButton{ "PRACTICE MODE" };
+    juce::TextButton practiceModeButton{ "STUDY" };
 
     // Guitar Duels entry on the song screen.
     juce::TextButton duelModeButton{ "DUEL" };

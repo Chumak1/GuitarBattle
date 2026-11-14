@@ -52,3 +52,10 @@ pytest-out.txt
 
 # Local build artifacts (installers, macOS bundles)
 docs/Output/
+
+# Local macOS build (GuitarBattle/scripts/build-macos.sh)
+/.build/
+GuitarBattle/Builds/MacOSX/build/
+GuitarBattle/Builds/MacOSX/build-universal/
+xcuserdata/
+.DS_Store

@@ -38,6 +38,20 @@
 
 Результат: `GuitarBattle/Builds/VisualStudio2026/x64/Debug/App/GuitarBattle.exe`.
 
+### macOS (локально)
+
+macOS-сборка выполняется на Mac, а не в GitHub Actions:
+
+```bash
+./GuitarBattle/scripts/build-macos.sh
+```
+
+Скрипт проверяет Xcode, клонирует JUCE 9.0.2 в `~/JUCE`, собирает Projucer,
+перегенерирует Xcode-проект, делает universal Release (`arm64 x86_64`),
+ad-hoc подпись и кладёт `FretFight-<version>.dmg` / `.zip` в `docs/Output`.
+Требования, опции и типовые ошибки: `docs/BUILD_MACOS.md`.
+Workflow `.github/workflows/macos.yml` оставлен как справка и не используется.
+
 ### Патч JUCE
 
 После установки или обновления JUCE 9.0.2 выполните

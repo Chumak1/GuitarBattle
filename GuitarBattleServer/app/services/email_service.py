@@ -13,8 +13,10 @@ from __future__ import annotations
 
 import html
 import logging
+import mimetypes
 import smtplib
 import ssl
+from collections.abc import Sequence
 from dataclasses import dataclass
 from email.message import EmailMessage
 from email.utils import formataddr, formatdate, make_msgid
@@ -127,7 +129,15 @@ def _send_via_smtp(message: EmailMessage) -> None:
         raise EmailDeliveryError("SMTP delivery failed") from exc
 
 
-def send_email(*, to: str, subject: str, text: str, html_body: str | None = None) -> None:
+def send_email(
+    *,
+    to: str,
+    subject: str,
+    text: str,
+    html_body: str | None = None,
+    reply_to: str | None = None,
+    attachments: Sequence[tuple[str, bytes]] = (),
+) -> None:
     if settings.app_env == "test":
         _TEST_OUTBOX.append(SentEmail(to=to, subject=subject, text=text, html=html_body))
         return
@@ -150,11 +160,22 @@ def send_email(*, to: str, subject: str, text: str, html_body: str | None = None
     message["Subject"] = subject
     message["From"] = formataddr((settings.smtp_from_name, from_email))
     message["To"] = to
+    if reply_to:
+        message["Reply-To"] = reply_to
     message["Date"] = formatdate(localtime=False)
     message["Message-ID"] = make_msgid(domain=from_email.rsplit("@", 1)[-1])
     message.set_content(text)
     if html_body:
         message.add_alternative(html_body, subtype="html")
+    for filename, content in attachments:
+        guessed = mimetypes.guess_type(filename)[0] or "application/octet-stream"
+        maintype, _, subtype = guessed.partition("/")
+        message.add_attachment(
+            content,
+            maintype=maintype or "application",
+            subtype=subtype or "octet-stream",
+            filename=filename,
+        )
 
     _send_via_smtp(message)
 
@@ -238,3 +259,58 @@ def send_password_reset_email(*, to: str, username: str, code: str) -> None:
         explanation="Введите этот код в приложении и задайте новый пароль. Старые сеансы будут завершены.",
     )
     send_email(to=to, subject=subject, text=text, html_body=html_body)
+
+
+def _subject_fragment(value: str, *, limit: int = 120) -> str:
+    """Flatten a user-supplied string before it goes into a mail header."""
+    return " ".join(value.split())[:limit]
+
+
+def send_feedback_email(
+    *,
+    message: str,
+    username: str | None = None,
+    email: str | None = None,
+    app_version: str | None = None,
+    attachment_name: str | None = None,
+    attachment_data: bytes | None = None,
+    to: str | None = None,
+) -> None:
+    """Deliver a player's feedback to the configured inbox.
+
+    ``email`` is the signed-in player's address resolved from the bearer token;
+    it becomes ``Reply-To`` so the inbox can answer directly. It is never taken
+    from the request body.
+
+    The message body and the attachment are never written to the application
+    log: the endpoint and this function only report that a message was or was
+    not accepted. The recipient defaults to ``FEEDBACK_EMAIL_TO``.
+    """
+    recipient = (to or str(settings.feedback_email_to)).strip()
+    subject = "FretFight feedback"
+    if username:
+        fragment = _subject_fragment(username)
+        if fragment:
+            subject = f"{subject} from {fragment}"
+
+    text = (
+        "New feedback from FretFight\n"
+        "\n"
+        f"{message.strip()}\n"
+        "\n"
+        "---\n"
+        f"Username: {username or '(not provided)'}\n"
+        f"Email: {email or '(not provided)'}\n"
+        f"App version: {app_version or '(not provided)'}\n"
+    )
+    attachments: list[tuple[str, bytes]] = []
+    if attachment_data:
+        attachments.append((attachment_name or "attachment.bin", attachment_data))
+
+    send_email(
+        to=recipient,
+        subject=subject,
+        text=text,
+        reply_to=email,
+        attachments=attachments,
+    )

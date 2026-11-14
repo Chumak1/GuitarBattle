@@ -39,9 +39,11 @@ from app.schemas.duels import (
     DuelMatchState,
     DuelMeResponse,
     DuelProfileResponse,
+    DuelRematchResponse,
     DuelResultResponse,
+    DuelRoomState,
 )
-from app.services import duel_service
+from app.services import duel_lobby_service, duel_service
 from app.services.duel_rooms import (
     duel_create_limiter,
     duel_event_limiter,
@@ -419,6 +421,42 @@ def duel_result(
         )
     except duel_service.DuelError as exc:
         raise _duel_http(exc) from exc
+
+
+@router.post(
+    "/{match_id}/rematch",
+    response_model=DuelRematchResponse,
+    summary="Start a new match with the same players and song",
+)
+def rematch_duel(
+    match_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DuelRematchResponse:
+    try:
+        payload = duel_lobby_service.rematch(db, match_id=match_id, user=user)
+    except duel_service.DuelError as exc:
+        raise _duel_http(exc) from exc
+    return DuelRematchResponse.model_validate(payload)
+
+
+@router.post(
+    "/{match_id}/return-to-lobby",
+    response_model=DuelRoomState,
+    summary="Return both players to the same lobby (chat and song preserved)",
+)
+def return_to_lobby(
+    match_id: UUID,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> DuelRoomState:
+    try:
+        state = duel_lobby_service.return_to_lobby(
+            db, match_id=match_id, user=user
+        )
+    except duel_service.DuelError as exc:
+        raise _duel_http(exc) from exc
+    return DuelRoomState.model_validate(state)
 
 
 # ---------------------------------------------------------------------------

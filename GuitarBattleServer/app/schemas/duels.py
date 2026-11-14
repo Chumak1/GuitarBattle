@@ -88,10 +88,21 @@ class DuelMatchState(BaseModel):
     rules_version: int
     seed: int
     bot_level: DuelBotLevel | None = None
+    #: Lobby the match was started from; ``None`` for bot and quick-queue
+    #: matches. Additive: older clients ignore it.
+    lobby_id: UUID | None = None
     song: DuelSongInfo
     note_count: int
     next_note_index: int
     your_side: Literal["player", "opponent"] | None = None
+    #: Character visuals of both sides, read from the players' current
+    #: ``users.character_id`` at response time (nothing is snapshotted). The
+    #: ``you_*`` pair mirrors ``your_side``; in a viewerless broadcast
+    #: (``your_side == null``) all four fields are ``null``.
+    you_character_name: str | None = None
+    you_character_sheet_url: str | None = None
+    opponent_character_name: str | None = None
+    opponent_character_sheet_url: str | None = None
     #: Milliseconds until ``started_at`` (negative once the timeline started).
     starts_in_ms: int = 0
     #: Server clock relative to ``started_at`` (negative during countdown).
@@ -229,3 +240,133 @@ class DuelProfileResponse(BaseModel):
 
 class DuelMeResponse(DuelProfileResponse):
     active_match: DuelMatchState | None = None
+
+# ---------------------------------------------------------------------------
+# Shared duel lobbies (rooms with chat, song picker and a host-started match)
+# ---------------------------------------------------------------------------
+DuelRoomStatus = Literal["waiting", "playing", "closed"]
+
+
+class DuelRoomCreate(BaseModel):
+    """``POST /duels/lobbies`` body."""
+
+    name: str = Field(min_length=1, max_length=40)
+    #: Optional room password. An empty/blank string means "no password".
+    password: str | None = Field(default=None, max_length=128)
+
+    @model_validator(mode="after")
+    def _clean(self) -> "DuelRoomCreate":
+        self.name = self.name.strip()
+        if not self.name:
+            raise ValueError("name must not be blank")
+        if self.password is not None:
+            self.password = self.password.strip() or None
+        return self
+
+
+class DuelRoomJoin(BaseModel):
+    #: Required only when the room has a password.
+    password: str | None = Field(default=None, max_length=128)
+
+
+class DuelRoomSongSelect(BaseModel):
+    #: UUID of a published catalogue song.
+    song_id: UUID
+
+
+class DuelRoomChatIn(BaseModel):
+    message: str = Field(min_length=1, max_length=500)
+
+
+class DuelRoomPlayer(BaseModel):
+    user_id: UUID
+    username: str
+    display_name: str | None = None
+    is_host: bool = False
+
+
+class DuelRoomStartState(BaseModel):
+    """Pending "start the duel?" request of a room.
+
+    Both players confirm *before* the song is downloaded: the host creates the
+    request, each member sets their own flag, and the match is created only when
+    both flags are ``True``. ``DuelRoomState.start`` is ``None`` when there is
+    no pending request.
+    """
+
+    requested_by: UUID | None = None
+    host_confirmed: bool = False
+    guest_confirmed: bool = False
+
+
+class DuelRoomState(BaseModel):
+    """Authoritative snapshot of a lobby, returned to both members."""
+
+    lobby_id: UUID
+    name: str
+    has_password: bool = False
+    status: DuelRoomStatus
+    host_user_id: UUID
+    guest_user_id: UUID | None = None
+    song: DuelSongInfo | None = None
+    #: Newest match started from this room (``None`` before the first start).
+    match_id: UUID | None = None
+    players: list[DuelRoomPlayer] = Field(default_factory=list)
+    #: Pending start confirmation; ``None`` means nobody asked to start (or the
+    #: request was declined / cleared). Additive: older clients ignore it.
+    start: DuelRoomStartState | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class DuelRoomSummary(BaseModel):
+    """One row of ``GET /duels/lobbies``."""
+
+    lobby_id: UUID
+    name: str
+    has_password: bool = False
+    status: DuelRoomStatus
+    host_user_id: UUID
+    song: DuelSongInfo | None = None
+    match_id: UUID | None = None
+    players: list[DuelRoomPlayer] = Field(default_factory=list)
+    created_at: datetime
+
+
+class DuelRoomListResponse(BaseModel):
+    items: list[DuelRoomSummary]
+    total: int
+    include_full: bool = False
+
+
+class DuelRoomStartResponse(BaseModel):
+    #: ``None`` while the other player has not confirmed yet; the client keeps
+    #: polling the room. Filled as soon as both confirmations arrive.
+    match_id: UUID | None = None
+    lobby: DuelRoomState
+
+
+class DuelChatMessageOut(BaseModel):
+    #: Monotonic id; use it as ``after_id`` on the next poll.
+    id: int
+    user_id: UUID
+    username: str
+    display_name: str | None = None
+    text: str
+    created_at: datetime
+
+
+class DuelChatHistoryResponse(BaseModel):
+    items: list[DuelChatMessageOut] = Field(default_factory=list)
+    #: Highest id in ``items``, or the requested ``after_id`` when empty.
+    latest_id: int = 0
+
+
+class DuelRematchResponse(BaseModel):
+    match_id: UUID
+    previous_match_id: UUID
+    lobby_id: UUID | None = None
+    song: DuelSongInfo
+    #: ``True`` when a fresh match already existed and was returned instead of
+    #: creating a duplicate (double click / retry).
+    already_created: bool = False

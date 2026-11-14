@@ -8,7 +8,7 @@
   <title>GuitarBattle — админ-панель</title>
   <link href="./vendor/bootstrap.min.css" rel="stylesheet">
   <link href="./vendor/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="./admin.css?v=20261103-2" rel="stylesheet">
+  <link href="./admin.css?v=20261115-1" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="/app/logo.svg">
 </head>
 <body>
@@ -109,8 +109,28 @@
           </button>
         </li>
         <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="ui-levels">
+            <i class="bi bi-person-bounding-box me-1"></i>UI LEVELS
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="stage-levels">
+            <i class="bi bi-easel me-1"></i>STAGE LEVELS
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="ui-sounds">
+            <i class="bi bi-volume-up me-1"></i>Звуки интерфейса
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
           <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="daily">
             <i class="bi bi-calendar-check me-1"></i>Daily Challenge
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="campaigns">
+            <i class="bi bi-flag me-1"></i>КАМПАНИИ
           </button>
         </li>
         <li class="nav-item" role="presentation">
@@ -124,11 +144,6 @@
           </button>
         </li>
         <li class="nav-item" role="presentation">
-          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="contacts">
-            <i class="bi bi-person-lines-fill me-1"></i>Контакты
-          </button>
-        </li>
-        <li class="nav-item" role="presentation">
           <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="builds">
             <i class="bi bi-download me-1"></i>Сборка игры
           </button>
@@ -136,6 +151,11 @@
         <li class="nav-item" role="presentation">
           <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="statistics">
             <i class="bi bi-graph-up-arrow me-1"></i>Статистика
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="guitar-skills">
+            <i class="bi bi-trophy me-1"></i>Guitar Skills
           </button>
         </li>
       </ul>
@@ -287,11 +307,12 @@
                   <th scope="col" class="d-none d-lg-table-cell">Размер</th>
                   <th scope="col" class="d-none d-xl-table-cell">Длительность</th>
                   <th scope="col" class="d-none d-xl-table-cell">Обновлена</th>
+                  <th scope="col" class="d-none d-md-table-cell">Визуал</th>
                   <th scope="col" class="text-end">Действия</th>
                 </tr>
               </thead>
               <tbody id="songsBody">
-                <tr><td colspan="9" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                <tr><td colspan="10" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
               </tbody>
             </table>
           </div>
@@ -307,6 +328,184 @@
         </div>
       </section>
 
+      </div>
+
+      <div id="sectionUiLevels" data-admin-panel="ui-levels" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Игровые визуалы</div>
+            <h1 class="page-title">UI LEVELS</h1>
+            <p class="page-subtitle">
+              Персонажи для игровых экранов: уникальное имя и прозрачный PNG-спрайт-лист
+              с восемью позами — 4 колонки × 2 строки. До 16 МБ.
+            </p>
+          </div>
+          <button id="uiLevelsReload" class="btn btn-outline-light" type="button">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+          </button>
+        </div>
+
+        <div id="uiLevelsAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <section class="card content-card mb-4">
+          <div class="card-body">
+            <h2 class="h5 mb-1">Новый персонаж</h2>
+            <p class="page-subtitle mb-3">
+              Спрайт-лист должен быть PNG с прозрачностью: ширина ровно в два раза больше высоты
+              (например, 1024×512 — восемь поз 256×256).
+            </p>
+            <form id="uiLevelForm" class="row g-3" novalidate>
+              <div class="col-12 col-md-4">
+                <label for="uiLevelName" class="form-label">Имя персонажа <span class="text-danger">*</span></label>
+                <input id="uiLevelName" class="form-control" type="text" maxlength="120" required
+                       placeholder="Bard" autocomplete="off">
+                <div class="invalid-feedback">Введите уникальное имя персонажа.</div>
+              </div>
+              <div class="col-12 col-md-5">
+                <label for="uiLevelFile" class="form-label">PNG-спрайт-лист (4×2) <span class="text-danger">*</span></label>
+                <input id="uiLevelFile" class="form-control" type="file" accept=".png,image/png" required>
+                <div class="invalid-feedback">Выберите PNG-файл спрайт-листа.</div>
+              </div>
+              <div class="col-12 col-md-3 d-flex align-items-end">
+                <button id="uiLevelUpload" class="btn btn-warning fw-semibold w-100" type="submit">
+                  <i class="bi bi-cloud-arrow-up me-1"></i>Загрузить
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="card content-card">
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table songs-table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col" style="width: 6rem">Превью</th>
+                    <th scope="col">Персонаж</th>
+                    <th scope="col" class="d-none d-md-table-cell">Размер</th>
+                    <th scope="col" class="d-none d-lg-table-cell">Обновлён</th>
+                    <th scope="col" class="text-end">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="uiLevelsBody">
+                  <tr><td colspan="5" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="sectionStageLevels" data-admin-panel="stage-levels" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Игровые визуалы</div>
+            <h1 class="page-title">STAGE LEVELS</h1>
+            <p class="page-subtitle">
+              Фоны сцен. Уровень сцены — это название сцены и фон; персонаж не нужен.
+              PNG или JPEG, до 16 МБ.
+            </p>
+          </div>
+          <button id="stageLevelsReload" class="btn btn-outline-light" type="button">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+          </button>
+        </div>
+
+        <div id="stageLevelsAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <section class="card content-card mb-4">
+          <div class="card-body">
+            <h2 class="h5 mb-1">Новая сцена</h2>
+            <p class="page-subtitle mb-3">
+              Укажите название сцены и загрузите фон в PNG или JPEG.
+            </p>
+            <form id="stageLevelForm" class="row g-3" novalidate>
+              <div class="col-12 col-md-4">
+                <label for="stageName" class="form-label">Название сцены <span class="text-danger">*</span></label>
+                <input id="stageName" class="form-control" type="text" maxlength="120" required
+                       placeholder="Night Club" autocomplete="off">
+                <div class="invalid-feedback">Введите название сцены.</div>
+              </div>
+              <div class="col-12 col-md-6">
+                <label for="stageFile" class="form-label">Фон сцены <span class="text-danger">*</span></label>
+                <input id="stageFile" class="form-control" type="file" accept=".png,.jpg,.jpeg,image/png,image/jpeg" required>
+                <div class="invalid-feedback">Выберите PNG или JPEG.</div>
+              </div>
+              <div class="col-12 col-md-2 d-flex align-items-end">
+                <button id="stageLevelUpload" class="btn btn-warning fw-semibold w-100" type="submit">
+                  <i class="bi bi-cloud-arrow-up me-1"></i>Загрузить
+                </button>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="card content-card">
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table songs-table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col" style="width: 6rem">Превью</th>
+                    <th scope="col">Сцена</th>
+                    <th scope="col" class="d-none d-md-table-cell">Размер</th>
+                    <th scope="col" class="text-end">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="stageLevelsBody">
+                  <tr><td colspan="4" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <div id="sectionUiSounds" data-admin-panel="ui-sounds" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Звуковой дизайн</div>
+            <h1 class="page-title">Звуки интерфейса</h1>
+            <p class="page-subtitle">
+              Фиксированный список событий клиента. Загрузите короткий MP3, WAV или OGG
+              до 2 МБ: манифест отдаёт клиенту только включённые события с файлом,
+              а версия файла меняется при каждой замене, чтобы кэш не устаревал.
+            </p>
+          </div>
+          <button id="uiSoundsReload" class="btn btn-outline-light" type="button">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+          </button>
+        </div>
+
+        <div id="uiSoundsAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <section class="card content-card">
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table songs-table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Событие</th>
+                    <th scope="col">Категория</th>
+                    <th scope="col">Активно</th>
+                    <th scope="col">Громкость</th>
+                    <th scope="col">Файл</th>
+                    <th scope="col" class="text-end">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="uiSoundsBody">
+                  <tr><td colspan="6" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <p class="page-note small text-secondary">
+          Список ключей фиксирован в сервере и клиенте; добавить событие из панели нельзя.
+          Пустой файл означает, что клиент молчит для этого события.
+        </p>
       </div>
 
       <div id="sectionDaily" data-admin-panel="daily" hidden>
@@ -348,6 +547,203 @@
           на другом дне, слот переносится, а прежняя песня освобождается. Черновик тоже можно
           назначить — игроки увидят его только после публикации.
         </p>
+      </div>
+
+      <div id="sectionCampaigns" data-admin-panel="campaigns" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Игровой режим</div>
+            <h1 class="page-title">КАМПАНИИ / TOWER RIFFS</h1>
+            <p class="page-subtitle">
+              Кампания — это имя, сложность бота по умолчанию и упорядоченный список песен.
+              У каждого этапа своя сложность; количество этапов равно числу добавленных песен.
+            </p>
+          </div>
+          <button id="campaignsReload" class="btn btn-outline-light" type="button">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+          </button>
+        </div>
+
+        <div id="campaignsAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <section class="card content-card mb-4">
+          <div class="card-body p-4">
+            <h2 class="h5 mb-1">Новая кампания</h2>
+            <p class="page-subtitle mb-3">Название придумывает администратор, сложность по умолчанию применяется к новым этапам.</p>
+            <form id="campaignCreateForm" class="row g-3" novalidate>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="campaignName">Название <span class="text-danger">*</span></label>
+                <input id="campaignName" class="form-control" type="text" maxlength="120" required
+                       placeholder="Tower riffs" autocomplete="off">
+                <div class="invalid-feedback">Введите название кампании.</div>
+              </div>
+              <div class="col-12 col-md-3">
+                <label class="form-label" for="campaignBotLevel">Сложность по умолчанию</label>
+                <select id="campaignBotLevel" class="form-select">
+                  <option value="0" selected>EASY</option>
+                  <option value="1">NORMAL</option>
+                  <option value="2">HARD</option>
+                </select>
+                <div class="form-hint">С ней создаются новые этапы.</div>
+              </div>
+              <div class="col-12 col-md-3 d-flex align-items-end">
+                <button id="campaignCreate" class="btn btn-warning fw-semibold w-100" type="submit">
+                  <span id="campaignCreateSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                  <i class="bi bi-plus-lg me-1"></i>Создать
+                </button>
+              </div>
+              <div class="col-12 col-md-5">
+                <label class="form-label" for="campaignCreateRewardCharacter">Персонаж-награда</label>
+                <select id="campaignCreateRewardCharacter" class="form-select">
+                  <option value="">— без награды —</option>
+                </select>
+                <div class="form-hint">Открывается за полное прохождение башни. Можно изменить позже.</div>
+              </div>
+              <div class="col-12 col-md-7">
+                <label class="form-label" for="campaignCreateRewardCondition">Условие разблокировки</label>
+                <input id="campaignCreateRewardCondition" class="form-control" type="text" maxlength="200"
+                       placeholder="Complete Tower riffs" autocomplete="off">
+                <div class="form-hint">Необязательно.</div>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="card content-card mb-4">
+          <div class="card-body p-0">
+            <div class="table-responsive">
+              <table class="table songs-table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Кампания</th>
+                    <th scope="col">Бот</th>
+                    <th scope="col">Песен</th>
+                    <th scope="col" class="d-none d-lg-table-cell">Обновлена</th>
+                    <th scope="col" class="text-end">Действия</th>
+                  </tr>
+                </thead>
+                <tbody id="campaignsBody">
+                  <tr><td colspan="5" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div id="campaignsEmpty" class="empty-state" hidden>
+              <div class="empty-icon"><i class="bi bi-flag"></i></div>
+              <h2>Кампаний пока нет</h2>
+              <p>Создайте первую кампанию выше, затем добавьте в неё песни.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="card content-card" id="campaignEditor" hidden>
+          <div class="card-body p-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+              <div>
+                <div class="eyebrow">Редактор кампании</div>
+                <h2 class="h5 mb-1" id="campaignEditorTitle">Кампания</h2>
+                <p class="form-hint mb-0">Порядок этапов меняется стрелками. У каждого этапа своя сложность бота. SAVE заменяет список целиком.</p>
+              </div>
+              <button id="campaignEditorClose" class="btn btn-outline-light" type="button">
+                <i class="bi bi-x-lg me-1"></i>Закрыть
+              </button>
+            </div>
+
+            <div id="campaignEditorAlert" class="alert alert-danger" role="alert" hidden></div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-12 col-md-7">
+                <label class="form-label" for="campaignEditName">Название</label>
+                <input id="campaignEditName" class="form-control" type="text" maxlength="120" autocomplete="off">
+              </div>
+              <div class="col-12 col-md-5">
+                <label class="form-label" for="campaignEditBotLevel">Сложность по умолчанию</label>
+                <select id="campaignEditBotLevel" class="form-select">
+                  <option value="0">EASY</option>
+                  <option value="1">NORMAL</option>
+                  <option value="2">HARD</option>
+                </select>
+                <div class="form-hint">Применяется к новым этапам; у каждого этапа ниже своя сложность.</div>
+              </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-12">
+                <label class="form-label" for="campaignEditDescription">Описание</label>
+                <textarea id="campaignEditDescription" class="form-control" rows="3" maxlength="400"
+                          placeholder="Коротко о башне: какие песни, для кого и что ждёт в конце"></textarea>
+                <div class="form-hint">До 400 символов. Пусто — описание не показывается. Сохраняется кнопкой SAVE вместе с остальными полями.</div>
+              </div>
+            </div>
+
+            <h3 class="h6 mt-3 mb-2">Обложка</h3>
+            <div class="row g-3 mb-3 align-items-start">
+              <div class="col-12 col-lg-4">
+                <div id="campaignCoverPreview" class="landing-bg-preview campaign-cover-preview">
+                  <span class="text-secondary small">Обложка не задана</span>
+                </div>
+              </div>
+              <div class="col-12 col-lg-8">
+                <label class="form-label" for="campaignCoverFile">Файл обложки</label>
+                <input id="campaignCoverFile" class="form-control" type="file"
+                       accept="image/png,image/jpeg,image/webp">
+                <div class="form-hint">PNG, JPEG или WebP, до 2 МБ. Новая загрузка заменяет прежнюю обложку.</div>
+                <div class="d-flex flex-wrap gap-2 mt-2">
+                  <button id="campaignCoverUpload" class="btn btn-outline-light" type="button">
+                    <span id="campaignCoverSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                    <i class="bi bi-upload me-1"></i>Загрузить обложку
+                  </button>
+                  <button id="campaignCoverRemove" class="btn btn-outline-danger" type="button">
+                    <i class="bi bi-trash me-1"></i>Удалить обложку
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="row g-3 mb-3">
+              <div class="col-12 col-md-5">
+                <label class="form-label" for="campaignRewardCharacter">Персонаж-награда</label>
+                <select id="campaignRewardCharacter" class="form-select">
+                  <option value="">— без награды —</option>
+                </select>
+                <div class="form-hint">Открывается игроку, который прошёл все этапы башни.</div>
+              </div>
+              <div class="col-12 col-md-7">
+                <label class="form-label" for="campaignRewardCondition">Условие разблокировки</label>
+                <input id="campaignRewardCondition" class="form-control" type="text" maxlength="200"
+                       placeholder="Complete Tower riffs" autocomplete="off">
+                <div class="form-hint">Необязательно. Пусто — «Complete &lt;название&gt;».</div>
+              </div>
+            </div>
+
+            <h3 class="h6 mt-3 mb-2">Этапы</h3>
+            <div class="row g-2 align-items-end mb-3">
+              <div class="col-12 col-lg">
+                <label class="form-label" for="campaignSongSelect">Добавить песню</label>
+                <select id="campaignSongSelect" class="form-select"></select>
+              </div>
+              <div class="col-12 col-lg-auto">
+                <button id="campaignSongAdd" class="btn btn-outline-light" type="button">
+                  <i class="bi bi-plus-lg me-1"></i>ADD
+                </button>
+              </div>
+            </div>
+
+            <ol id="campaignSongsList" class="list-unstyled d-flex flex-column gap-2 mb-2"></ol>
+            <p id="campaignSongsEmpty" class="form-hint mb-0" hidden>
+              Этапов пока нет. Выберите песню выше и нажмите ADD; кампания без песен не видна игрокам.
+            </p>
+
+            <div class="d-flex flex-wrap gap-2 mt-3">
+              <button id="campaignSave" class="btn btn-warning fw-semibold" type="button">
+                <span id="campaignSaveSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                <i class="bi bi-check2 me-1"></i>SAVE
+              </button>
+              <button id="campaignDelete" class="btn btn-outline-danger" type="button">
+                <i class="bi bi-trash me-1"></i>Удалить кампанию
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div id="sectionLanding" data-admin-panel="landing" hidden>
@@ -394,6 +790,77 @@
 
         <div id="landingBlocks" class="vstack gap-3"></div>
         <p class="form-hint mt-3 mb-0">Пустое поле означает стандартный текст. Изменения появятся на сайте сразу после сохранения.</p>
+
+        <section class="card content-card mt-4" id="landingContactsCard">
+          <div class="card-body p-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
+              <div>
+                <div class="eyebrow">Публичный сайт</div>
+                <h2 class="h5 mb-1">CONTACTS</h2>
+                <p class="form-hint mb-0">
+                  Блок «Контакты и соцсети» показывается внизу всех публичных страниц
+                  (<code>/</code>, <code>/login</code>, <code>/register</code>, <code>/account</code>, <code>/policy</code>).
+                  Изменения применяются без передеплоя.
+                </p>
+              </div>
+              <div class="d-flex gap-2">
+                <button id="contactsReload" class="btn btn-outline-light" type="button">
+                  <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+                </button>
+                <button id="contactsSave" class="btn btn-warning fw-semibold" type="button">
+                  <span id="contactsSaveSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                  <i class="bi bi-check2 me-1"></i>Сохранить
+                </button>
+              </div>
+            </div>
+
+            <div id="contactsAlert" class="alert alert-danger" role="alert" hidden></div>
+
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsNameRu">Имя (RU)</label>
+                <input id="contactsNameRu" class="form-control" type="text" maxlength="120" placeholder="Чумак Евгений Александрович">
+                <p class="form-hint mb-0">Пустое поле — на сайте останется перевод по умолчанию.</p>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsNameEn">Name (EN)</label>
+                <input id="contactsNameEn" class="form-control" type="text" maxlength="120" placeholder="Evgeniy Aleksandrovich Chumak">
+                <p class="form-hint mb-0">Пустое поле — на сайте останется перевод по умолчанию.</p>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsEmail">Email</label>
+                <input id="contactsEmail" class="form-control" type="email" maxlength="254" placeholder="chumakevgeny@gmail.com" required>
+                <p class="form-hint mb-0">Обязательное поле: из него собирается ссылка <code>mailto:</code>.</p>
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsTelegram">Telegram</label>
+                <input id="contactsTelegram" class="form-control" type="text" maxlength="128" placeholder="@chumakevgene">
+                <p class="form-hint mb-0">Можно <code>@handle</code>, <code>handle</code> или ссылку <code>https://t.me/handle</code>. Пустое поле скрывает строку.</p>
+              </div>
+            </div>
+
+            <h3 class="h6 mt-4 mb-1">Соцсети</h3>
+            <p class="form-hint mt-0 mb-3">Пустое поле — иконка показывается как заглушка «Скоро»; заполненное — становится ссылкой.</p>
+            <div class="row g-3">
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsYoutube">YouTube</label>
+                <input id="contactsYoutube" class="form-control" type="url" maxlength="2048" placeholder="https://www.youtube.com/@channel">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsInstagram">Instagram</label>
+                <input id="contactsInstagram" class="form-control" type="url" maxlength="2048" placeholder="https://www.instagram.com/account">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsTwitter">Twitter / X</label>
+                <input id="contactsTwitter" class="form-control" type="url" maxlength="2048" placeholder="https://x.com/account">
+              </div>
+              <div class="col-12 col-md-6">
+                <label class="form-label" for="contactsVk">VK</label>
+                <input id="contactsVk" class="form-control" type="url" maxlength="2048" placeholder="https://vk.com/account">
+              </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <div id="sectionSupport" data-admin-panel="support" hidden>
@@ -563,80 +1030,6 @@
                     sandbox="" title="Предпросмотр HTML и CSS" srcdoc=""></iframe>
           </div>
         </div>
-      </div>
-
-      <div id="sectionContacts" data-admin-panel="contacts" hidden>
-        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
-          <div>
-            <div class="eyebrow">Публичный сайт</div>
-            <h1 class="page-title">Контакты и соцсети</h1>
-            <p class="page-subtitle">Блок показывается внизу всех публичных страниц (<code>/</code>, <code>/login</code>, <code>/register</code>, <code>/account</code>, <code>/policy</code>). Изменения применяются без передеплоя.</p>
-          </div>
-          <div class="d-flex gap-2">
-            <button id="contactsReload" class="btn btn-outline-light" type="button">
-              <i class="bi bi-arrow-clockwise me-1"></i>Обновить
-            </button>
-            <button id="contactsSave" class="btn btn-warning fw-semibold" type="button">
-              <span id="contactsSaveSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
-              <i class="bi bi-check2 me-1"></i>Сохранить
-            </button>
-          </div>
-        </div>
-
-        <div id="contactsAlert" class="alert alert-danger" role="alert" hidden></div>
-
-        <section class="card content-card mb-4">
-          <div class="card-body p-4">
-            <h2 class="h5 mb-3">Контакты</h2>
-            <div class="row g-3">
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="contactsNameRu">Имя (RU)</label>
-                <input id="contactsNameRu" class="form-control" type="text" maxlength="120" placeholder="Чумак Евгений Александрович">
-                <p class="form-hint mb-0">Пустое поле — на сайте останется перевод по умолчанию.</p>
-              </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="contactsNameEn">Name (EN)</label>
-                <input id="contactsNameEn" class="form-control" type="text" maxlength="120" placeholder="Evgeniy Aleksandrovich Chumak">
-                <p class="form-hint mb-0">Пустое поле — на сайте останется перевод по умолчанию.</p>
-              </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="contactsEmail">Email</label>
-                <input id="contactsEmail" class="form-control" type="email" maxlength="254" placeholder="chumakevgeny@gmail.com" required>
-                <p class="form-hint mb-0">Обязательное поле: из него собирается ссылка <code>mailto:</code>.</p>
-              </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="contactsTelegram">Telegram</label>
-                <input id="contactsTelegram" class="form-control" type="text" maxlength="128" placeholder="@chumakevgene">
-                <p class="form-hint mb-0">Можно <code>@handle</code>, <code>handle</code> или ссылку <code>https://t.me/handle</code>. Пустое поле скрывает строку.</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section class="card content-card mb-4">
-          <div class="card-body p-4">
-            <h2 class="h5 mb-1">Соцсети</h2>
-            <p class="form-hint mt-0 mb-3">Пустое поле — иконка показывается как заглушка «Скоро»; заполненное — становится ссылкой.</p>
-            <div class="row g-3">
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="contactsYoutube">YouTube</label>
-                <input id="contactsYoutube" class="form-control" type="url" maxlength="2048" placeholder="https://www.youtube.com/@channel">
-              </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="contactsInstagram">Instagram</label>
-                <input id="contactsInstagram" class="form-control" type="url" maxlength="2048" placeholder="https://www.instagram.com/account">
-              </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="contactsTwitter">Twitter / X</label>
-                <input id="contactsTwitter" class="form-control" type="url" maxlength="2048" placeholder="https://x.com/account">
-              </div>
-              <div class="col-12 col-md-6">
-                <label class="form-label" for="contactsVk">VK</label>
-                <input id="contactsVk" class="form-control" type="url" maxlength="2048" placeholder="https://vk.com/account">
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
 
       <div id="sectionBuilds" data-admin-panel="builds" hidden>
@@ -902,6 +1295,8 @@
                         Level<i class="bi bi-arrow-down-up stats-sort-icon" aria-hidden="true"></i>
                       </button>
                     </th>
+                    <th scope="col" class="d-none d-lg-table-cell">Online</th>
+                    <th scope="col" class="d-none d-lg-table-cell">Battle</th>
                     <th scope="col" class="d-none d-lg-table-cell">Platforms</th>
                     <th scope="col" class="d-none d-xl-table-cell">Последний запуск</th>
                     <th scope="col" aria-sort="none">
@@ -913,7 +1308,7 @@
                   </tr>
                 </thead>
                 <tbody id="statsUsersBody">
-                  <tr><td colspan="13" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                  <tr><td colspan="15" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
                 </tbody>
               </table>
             </div>
@@ -967,6 +1362,371 @@
             </div>
           </div>
         </section>
+      </div>
+
+      <div id="sectionGuitarSkills" data-admin-panel="guitar-skills" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Соревновательный рейтинг</div>
+            <h1 class="page-title">Guitar Skills</h1>
+            <p class="page-subtitle">
+              Главный рейтинг игрока: взвешенная смесь точности, сложности, качества очков,
+              дуэлей и прогресса. Параметры формулы и пересчёт всех активных игроков.
+            </p>
+          </div>
+          <button id="gsReload" class="btn btn-outline-light" type="button">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+          </button>
+        </div>
+
+        <div id="gsAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <div class="row g-3 stats-row">
+          <div class="col-6 col-xl-4 col-xxl-2">
+            <div class="stat-card">
+              <div class="stat-label">Пересчёт</div>
+              <div class="stat-value stat-value-sm" id="gsStatusRunning">—</div>
+              <div class="stat-sub">состояние задачи</div>
+            </div>
+          </div>
+          <div class="col-6 col-xl-4 col-xxl-2">
+            <div class="stat-card">
+              <div class="stat-label">Рассчитано игроков</div>
+              <div class="stat-value" id="gsStatusUsers">—</div>
+              <div class="stat-sub">активные аккаунты</div>
+            </div>
+          </div>
+          <div class="col-6 col-xl-4 col-xxl-2">
+            <div class="stat-card">
+              <div class="stat-label">Provisional</div>
+              <div class="stat-value" id="gsStatusProvisional">—</div>
+              <div class="stat-sub">низкая уверенность</div>
+            </div>
+          </div>
+          <div class="col-6 col-xl-4 col-xxl-2">
+            <div class="stat-card">
+              <div class="stat-label">Неполная история</div>
+              <div class="stat-value" id="gsStatusIncomplete">—</div>
+              <div class="stat-sub">меньше ожидаемых событий</div>
+            </div>
+          </div>
+          <div class="col-6 col-xl-4 col-xxl-2">
+            <div class="stat-card">
+              <div class="stat-label">Версия расчёта</div>
+              <div class="stat-value" id="gsStatusVersion">—</div>
+              <div class="stat-sub">calculation_version</div>
+            </div>
+          </div>
+          <div class="col-6 col-xl-4 col-xxl-2">
+            <div class="stat-card">
+              <div class="stat-label">Последний расчёт</div>
+              <div class="stat-value stat-value-sm" id="gsStatusCalculatedAt">—</div>
+              <div class="stat-sub">UTC</div>
+            </div>
+          </div>
+        </div>
+
+        <section class="card content-card mb-4">
+          <div class="card-body">
+            <div class="d-flex flex-column flex-md-row justify-content-between gap-2 align-items-md-center mb-3">
+              <div>
+                <h2 class="h6 mb-0">Параметры формулы</h2>
+                <div class="form-hint">Веса заданы в процентах; сервер хранит доли 0..1.</div>
+              </div>
+              <div class="text-secondary small" id="gsConfigVersion">—</div>
+            </div>
+
+            <form id="gsConfigForm" class="row g-3" novalidate>
+              <div class="col-12">
+                <div class="form-label mb-1">Веса компонентов</div>
+                <div class="form-hint mb-2">
+                  Сумма пяти весов должна равняться 100% (±0.01). Guitar Skills =
+                  A·точность + C·сложность + S·очки + D·дуэли + P·прогресс.
+                </div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsAccuracyWeight">A · Точность, %</label>
+                <input id="gsAccuracyWeight" class="form-control" type="number" min="0" max="100" step="0.01"
+                       data-gs-weight autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsChallengeWeight">C · Сложность, %</label>
+                <input id="gsChallengeWeight" class="form-control" type="number" min="0" max="100" step="0.01"
+                       data-gs-weight autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsScoreWeight">S · Очки, %</label>
+                <input id="gsScoreWeight" class="form-control" type="number" min="0" max="100" step="0.01"
+                       data-gs-weight autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsDuelWeight">D · Дуэли, %</label>
+                <input id="gsDuelWeight" class="form-control" type="number" min="0" max="100" step="0.01"
+                       data-gs-weight autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsProgressionWeight">P · Прогресс, %</label>
+                <input id="gsProgressionWeight" class="form-control" type="number" min="0" max="100" step="0.01"
+                       data-gs-weight autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2 d-flex align-items-end">
+                <div id="gsWeightsMessage" class="form-hint w-100">—</div>
+              </div>
+
+              <div class="col-12">
+                <hr class="border-secondary opacity-25 my-1">
+              </div>
+
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsWindowSize">Окно событий</label>
+                <input id="gsWindowSize" class="form-control" type="number" min="1" max="200" step="1" autocomplete="off">
+                <div class="form-hint">Сколько новых результатов учитывается.</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsRecencyDecay">Затухание свежести</label>
+                <input id="gsRecencyDecay" class="form-control" type="number" min="0.1" max="100" step="0.1" autocomplete="off">
+                <div class="form-hint">RecencyWeight(i) = 2^(−i / decay).</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsPerSongAttemptCap">Лимит попыток на песню</label>
+                <input id="gsPerSongAttemptCap" class="form-control" type="number" min="0" max="100" step="0.1" autocomplete="off">
+                <div class="form-hint">Во сколько средних попыток упирается одна песня.</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsMinRankedEvents">Мин. событий для рейтинга</label>
+                <input id="gsMinRankedEvents" class="form-control" type="number" min="0" max="1000" step="1" autocomplete="off">
+                <div class="form-hint">Меньше — игрок provisional.</div>
+              </div>
+
+              <div class="col-12">
+                <hr class="border-secondary opacity-25 my-1">
+                <div class="form-label mb-1">Сложность песни</div>
+                <div class="form-hint mb-2">
+                  Тиры по сложности 1..10: Easy до первого порога, Normal до второго, дальше Hard.
+                </div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsDifficultyEasyMax">Easy: макс. сложность</label>
+                <input id="gsDifficultyEasyMax" class="form-control" type="number" min="1" max="10" step="1" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsDifficultyEasyFactor">Easy: множитель</label>
+                <input id="gsDifficultyEasyFactor" class="form-control" type="number" min="0" max="2" step="0.01" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsDifficultyNormalMax">Normal: макс. сложность</label>
+                <input id="gsDifficultyNormalMax" class="form-control" type="number" min="1" max="10" step="1" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsDifficultyNormalFactor">Normal: множитель</label>
+                <input id="gsDifficultyNormalFactor" class="form-control" type="number" min="0" max="2" step="0.01" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsDifficultyHardFactor">Hard: множитель</label>
+                <input id="gsDifficultyHardFactor" class="form-control" type="number" min="0" max="2" step="0.01" autocomplete="off">
+              </div>
+
+              <div class="col-12">
+                <hr class="border-secondary opacity-25 my-1">
+                <div class="form-label mb-1">Длина песни и прогресс</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsNoteFactorMin">Note factor min</label>
+                <input id="gsNoteFactorMin" class="form-control" type="number" min="0" max="2" step="0.01" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsNoteFactorMax">Note factor max</label>
+                <input id="gsNoteFactorMax" class="form-control" type="number" min="0" max="2" step="0.01" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsMedianNoteCount">Медиана нот (override)</label>
+                <input id="gsMedianNoteCount" class="form-control" type="number" min="1" step="1" placeholder="авто" autocomplete="off">
+                <div class="form-hint">Пусто — вычисляется по каталогу.</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsLevelNormalizationMax">Уровень = 100%</label>
+                <input id="gsLevelNormalizationMax" class="form-control" type="number" min="1" max="1000" step="1" autocomplete="off">
+                <div class="form-hint">Нормировка уровня (по умолчанию 50).</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsXpReference">XP-референс</label>
+                <input id="gsXpReference" class="form-control" type="number" min="1" step="1" autocomplete="off">
+                <div class="form-hint">XP, дающий 100% прогрессии.</div>
+              </div>
+
+              <div class="col-12">
+                <hr class="border-secondary opacity-25 my-1">
+                <div class="form-label mb-1">Дуэли</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsDuelStrengthGuitarWeight">Сила дуэли: Guitar Skills, %</label>
+                <input id="gsDuelStrengthGuitarWeight" class="form-control" type="number" min="0" max="100" step="0.01"
+                       data-gs-strength autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsDuelStrengthLevelWeight">Сила дуэли: уровень, %</label>
+                <input id="gsDuelStrengthLevelWeight" class="form-control" type="number" min="0" max="100" step="0.01"
+                       data-gs-strength autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2 d-flex align-items-end">
+                <div id="gsStrengthMessage" class="form-hint w-100">—</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsExpectedScoreScale">Масштаб ожидаемого счёта</label>
+                <input id="gsExpectedScoreScale" class="form-control" type="number" min="0.1" max="1000" step="0.1" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-2">
+                <label class="form-label" for="gsReliabilityConstant">Константа надёжности</label>
+                <input id="gsReliabilityConstant" class="form-control" type="number" min="0" max="1000" step="0.5" autocomplete="off">
+              </div>
+
+              <div class="col-12">
+                <hr class="border-secondary opacity-25 my-1">
+                <div class="form-label mb-1">Уверенность</div>
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsConfidenceExpectedEvents">Ожидаемых событий</label>
+                <input id="gsConfidenceExpectedEvents" class="form-control" type="number" min="1" max="1000" step="1" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsConfidenceExpectedDuels">Ожидаемых дуэлей</label>
+                <input id="gsConfidenceExpectedDuels" class="form-control" type="number" min="1" max="1000" step="1" autocomplete="off">
+              </div>
+              <div class="col-6 col-md-4 col-xl-3">
+                <label class="form-label" for="gsProvisionalThreshold">Порог provisional</label>
+                <input id="gsProvisionalThreshold" class="form-control" type="number" min="0" max="1" step="0.01" autocomplete="off">
+                <div class="form-hint">Confidence ниже порога — provisional.</div>
+              </div>
+
+              <div class="col-12 d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mt-2">
+                <div class="form-hint mb-0">
+                  Сохранение не пересчитывает рейтинг: после правки запустите пересчёт ниже.
+                </div>
+                <div class="d-flex gap-2">
+                  <button id="gsConfigReload" class="btn btn-outline-secondary" type="button">
+                    <i class="bi bi-arrow-counterclockwise me-1"></i>Сбросить правки
+                  </button>
+                  <button id="gsConfigSave" class="btn btn-warning fw-semibold" type="submit">
+                    <span id="gsConfigSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                    Сохранить параметры
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </section>
+
+        <section class="card content-card mb-4">
+          <div class="card-body">
+            <div class="d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-center">
+              <div>
+                <h2 class="h6 mb-1">Пересчёт глобального рейтинга</h2>
+                <div class="form-hint">
+                  Dry Run ничего не пишет и показывает, как изменятся рейтинг и места.
+                  Боевой пересчёт пересчитывает каждого активного игрока и сохраняет историю.
+                </div>
+              </div>
+              <div class="d-flex flex-wrap gap-2">
+                <button id="gsDryRun" class="btn btn-outline-light" type="button">
+                  <i class="bi bi-clipboard-data me-1"></i>Dry Run
+                </button>
+                <button id="gsRecalculate" class="btn btn-warning fw-semibold" type="button">
+                  <i class="bi bi-arrow-repeat me-1"></i>Пересчитать глобальный рейтинг
+                </button>
+              </div>
+            </div>
+
+            <div class="form-hint mt-2" id="gsRecalcSummary"></div>
+
+            <div class="table-responsive mt-2">
+              <table class="table songs-table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Игрок</th>
+                    <th scope="col" class="text-end">Было</th>
+                    <th scope="col" class="text-end">Стало</th>
+                    <th scope="col" class="text-end">Δ</th>
+                    <th scope="col" class="text-end d-none d-md-table-cell">Место было</th>
+                    <th scope="col" class="text-end">Место стало</th>
+                  </tr>
+                </thead>
+                <tbody id="gsRecalcBody">
+                  <tr><td colspan="6" class="text-secondary text-center py-4">Запустите Dry Run, чтобы увидеть изменения.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <section class="card content-card">
+          <div class="card-body p-0">
+            <div class="toolbar">
+              <div class="d-flex justify-content-between align-items-center gap-2 flex-wrap">
+                <div>
+                  <h2 class="h6 mb-0">История изменений параметров</h2>
+                  <div class="text-secondary small" id="gsHistoryNote">Последние 50 сохранений</div>
+                </div>
+                <button id="gsHistoryReload" class="btn btn-sm btn-outline-light" type="button">
+                  <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+                </button>
+              </div>
+            </div>
+            <div class="table-responsive">
+              <table class="table songs-table align-middle mb-0">
+                <thead>
+                  <tr>
+                    <th scope="col">Когда</th>
+                    <th scope="col" class="text-end">Версия</th>
+                    <th scope="col">Веса A / C / S / D / P</th>
+                    <th scope="col" class="d-none d-md-table-cell text-end">Окно</th>
+                    <th scope="col" class="d-none d-lg-table-cell text-end">Затухание</th>
+                    <th scope="col" class="d-none d-lg-table-cell text-end">XP-реф.</th>
+                  </tr>
+                </thead>
+                <tbody id="gsHistoryBody">
+                  <tr><td colspan="6" class="table-loading"><span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        <p class="page-note small text-secondary">
+          Пересчёт не меняет XP, уровни, достижения и награды — только снимок Guitar Skills
+          и записи истории рейтинга. Повторный запуск идемпотентен.
+        </p>
+      </div>
+
+      <div class="modal fade" id="gsRecalcModal" tabindex="-1" aria-labelledby="gsRecalcModalTitle" aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h2 class="modal-title fs-5" id="gsRecalcModalTitle">Пересчитать всех игроков?</h2>
+              <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+            </div>
+            <div class="modal-body">
+              <p class="mb-2">
+                Будет пересчитан <strong>Guitar Skills каждого активного игрока</strong> по текущим
+                параметрам формулы. Изменения запишутся в историю рейтинга.
+              </p>
+              <ul class="form-hint mb-2">
+                <li>XP, уровни, достижения и награды не меняются.</li>
+                <li>Старые записи не удаляются, повторный запуск идемпотентен.</li>
+                <li>Пока идёт пересчёт, второй запуск вернёт конфликт.</li>
+              </ul>
+              <p class="form-hint mb-0">
+                Сначала выполните Dry Run: он покажет старые и новые значения и места без записи.
+              </p>
+            </div>
+            <div class="modal-footer">
+              <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Отмена</button>
+              <button id="gsRecalcConfirm" type="button" class="btn btn-warning fw-semibold">
+                <span id="gsRecalcSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                Да, пересчитать всех
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       <footer class="app-footer">
@@ -1078,6 +1838,20 @@
                   <option value="6">Воскресенье</option>
                 </select>
                 <div class="form-hint">Песня уйдёт из обычного каталога и займёт слот этого дня.</div>
+              </div>
+              <div class="col-12 col-md-4">
+                <label for="songCharacter" class="form-label">Персонаж (UI LEVEL)</label>
+                <select id="songCharacter" class="form-select">
+                  <option value="">Не задано</option>
+                </select>
+                <div class="form-hint">Спрайт-лист попадёт в публичный каталог как character_*.</div>
+              </div>
+              <div class="col-12 col-md-4">
+                <label for="songStage" class="form-label">Сцена / фон (STAGE LEVEL)</label>
+                <select id="songStage" class="form-select">
+                  <option value="">Не задано</option>
+                </select>
+                <div class="form-hint">Сцена не зависит от персонажа: можно выбрать любой фон.</div>
               </div>
               <div class="col-12">
                 <label for="songDescription" class="form-label">Описание</label>
@@ -1234,17 +2008,49 @@
 
   <div id="toastContainer" class="toast-container position-fixed bottom-0 end-0 p-3" aria-live="polite"></div>
 
+  <!-- One account card: basics, online duels, Battle towers and the character
+       collection. The body is rendered by admin-statistics.js from
+       GET /admin/users/{id}/overview; this markup only fixes the shell. -->
+  <div class="modal fade" id="statsUserModal" tabindex="-1" aria-labelledby="statsUserModalTitle" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h2 class="modal-title fs-5" id="statsUserModalTitle">Игрок</h2>
+            <div class="text-secondary small" id="statsUserModalSubtitle">Загрузка…</div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Закрыть"></button>
+        </div>
+        <div class="modal-body">
+          <div id="statsUserAlert" class="alert alert-danger py-2 small" role="alert" hidden></div>
+          <div id="statsUserBody">
+            <div class="table-loading">
+              <span class="spinner-border spinner-border-sm me-2"></span>Загрузка…
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Закрыть</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <noscript>
     <div class="noscript-warning">Для работы админ-панели требуется JavaScript.</div>
   </noscript>
 
   <script src="./vendor/bootstrap.bundle.min.js"></script>
-  <script src="./admin.js?v=20261103-3"></script>
+  <script src="./admin.js?v=20261115-1"></script>
   <script src="/app/i18n.js"></script>
   <script src="/app/landing-i18n.js"></script>
-  <script src="./admin-statistics.js?v=20261103-2"></script>
+  <script src="./admin-statistics.js?v=20261110-1"></script>
   <script src="./admin-daily.js?v=20261027-1"></script>
-  <script src="./admin-site.js?v=20261103-1"></script>
+  <script src="./admin-campaigns.js?v=20261114-1"></script>
+  <script src="./admin-site.js?v=20261115-1"></script>
+  <script src="./admin-gameplay.js?v=20261110-1"></script>
+  <script src="./admin-ui-sounds.js?v=20261111-1"></script>
+  <script src="./admin-guitar-skills.js?v=20261115-1"></script>
   <script src="/app/support-render.js"></script>
   <script src="./admin-support.js?v=20261030-1"></script>
 </body>

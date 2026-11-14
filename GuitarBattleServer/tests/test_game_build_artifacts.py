@@ -480,6 +480,7 @@ def test_only_one_active_portable_build_per_platform(db_client, admin_user):
         admin_user,
         filename="GuitarBattle-1.0.0-win64-portable.zip",
         platform="windows",
+        artifact="portable",
         version="1.0.0",
     )
     second = _upload_ok(
@@ -487,6 +488,7 @@ def test_only_one_active_portable_build_per_platform(db_client, admin_user):
         admin_user,
         filename="GuitarBattle-1.1.0-win64-portable.zip",
         platform="windows",
+        artifact="portable",
         version="1.1.0",
     )
     installer = _upload_ok(

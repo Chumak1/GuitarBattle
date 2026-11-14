@@ -124,6 +124,17 @@ void VstPanel::paint (juce::Graphics& g)
                 juce::Justification::centredLeft, false);
 }
 
+void VstPanel::setEmbedded (bool shouldBeEmbedded)
+{
+    if (embedded == shouldBeEmbedded)
+        return;
+
+    embedded = shouldBeEmbedded;
+    closeButton.setVisible (! embedded);
+    resized();
+    repaint();
+}
+
 void VstPanel::resized()
 {
     const int margin = 30;
@@ -141,7 +152,8 @@ void VstPanel::resized()
     const int gap = 10;
     const int buttonH = 40;
     const int buttonY = getHeight() - 152;
-    const int buttonW = (width - gap * 5) / 6;
+    const int buttonCount = embedded ? 5 : 6;
+    const int buttonW = (width - gap * (buttonCount - 1)) / buttonCount;
 
     scanButton.setBounds (margin, buttonY, buttonW, buttonH);
     loadButton.setBounds (margin + (buttonW + gap), buttonY, buttonW, buttonH);
@@ -151,6 +163,7 @@ void VstPanel::resized()
                             buttonW, buttonH);
     removeButton.setBounds (margin + (buttonW + gap) * 4, buttonY,
                             buttonW, buttonH);
+    closeButton.setVisible (! embedded);
     closeButton.setBounds (margin + (buttonW + gap) * 5, buttonY,
                            buttonW, buttonH);
 }

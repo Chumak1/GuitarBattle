@@ -23,6 +23,13 @@ namespace UiColors
     const juce::Colour green = juce::Colour::fromString("FF6EE7A8");
     const juce::Colour red = juce::Colour::fromString("FFFF7A7A");
     const juce::Colour info = juce::Colour::fromString("FF6DB7FF");
+    // Design system v2 tokens: the accent stays the FretFight gold; the extra
+    // neon ramp is available for secondary highlights only.
+    const juce::Colour violet = juce::Colour::fromString("FF8B5CF6");
+    const juce::Colour violetSoft = juce::Colour::fromString("FFA78BFA");
+    const juce::Colour electric = juce::Colour::fromString("FF38BDF8");
+    const juce::Colour teal = juce::Colour::fromString("FF2DD4BF");
+    const juce::Colour gold = juce::Colour::fromString("FFF3C451");
     const juce::Colour accent = juce::Colour::fromString("FFF3C451");
     const juce::Colour accentStrong = juce::Colour::fromString("FFFFB703");
     const juce::Colour onAccent = juce::Colour::fromString("FF0B1119");
@@ -59,6 +66,30 @@ namespace GameUi
         return font(height, true, textTracking);
     }
 
+    void drawNeonGlow(juce::Graphics& g,
+                      juce::Rectangle<float> area,
+                      juce::Colour colour,
+                      float radius,
+                      float strength)
+    {
+        if (area.isEmpty() || strength <= 0.0f)
+            return;
+
+        // Three soft expanding layers: a wide faint halo, a mid ring and a
+        // tight rim. Rounded rectangles keep the glow hugging the card.
+        const float layers[3] = { 7.0f, 4.0f, 2.0f };
+        const float alphas[3] = { 0.045f, 0.075f, 0.11f };
+
+        for (int i = 0; i < 3; ++i)
+        {
+            g.setColour (colour.withAlpha (alphas[i] * strength));
+            juce::Path path;
+            path.addRoundedRectangle (area.expanded (layers[i]),
+                                      radius + layers[i]);
+            g.fillPath (path);
+        }
+    }
+
     void drawCard(juce::Graphics& g,
                   juce::Rectangle<float> area,
                   float radius,
@@ -68,10 +99,7 @@ namespace GameUi
             return;
 
         if (glow)
-        {
-            g.setColour(UiColors::accent.withAlpha(0.035f));
-            g.fillRoundedRectangle(area.expanded(3.0f), radius + 3.0f);
-        }
+            drawNeonGlow (g, area, UiColors::accent, radius, 0.9f);
 
         g.setColour(juce::Colours::black.withAlpha(0.28f));
         g.fillRoundedRectangle(area.translated(0.0f, 3.0f), radius);
@@ -94,6 +122,31 @@ namespace GameUi
                    area.getRight() - radius,
                    area.getY() + 1.0f,
                    1.0f);
+    }
+
+    void drawGlassCard(juce::Graphics& g,
+                       juce::Rectangle<float> area,
+                       float radius,
+                       bool glow)
+    {
+        if (area.isEmpty())
+            return;
+
+        if (glow)
+            drawNeonGlow (g, area, UiColors::accent, radius, 0.5f);
+
+        g.setColour(juce::Colours::black.withAlpha(0.14f));
+        g.fillRoundedRectangle(area.translated(0.0f, 2.0f), radius);
+
+        juce::ColourGradient fill(
+            UiColors::surface.withAlpha(0.56f), area.getX(), area.getY(),
+            UiColors::background.withAlpha(0.34f), area.getX(), area.getBottom(),
+            false);
+        g.setGradientFill(fill);
+        g.fillRoundedRectangle(area, radius);
+
+        g.setColour(UiColors::border.withAlpha(0.70f));
+        g.drawRoundedRectangle(area, radius, 1.0f);
     }
 
     void drawPill(juce::Graphics& g,
@@ -265,13 +318,62 @@ void GameLookAndFeel::drawButtonBackground(juce::Graphics& g,
         ? button.findColour(juce::TextButton::buttonOnColourId)
         : backgroundColour;
 
+    // Admin-panel button language: primary actions are a warm gold gradient
+    // with dark ink (hover #ffd875, pressed #eab742, disabled #8d793f), while
+    // secondary actions are a transparent outline over the dark surface.
+    auto colourDistance = [] (juce::Colour a, juce::Colour b)
+    {
+        return std::abs (static_cast<int> (a.getRed())
+                         - static_cast<int> (b.getRed()))
+               + std::abs (static_cast<int> (a.getGreen())
+                           - static_cast<int> (b.getGreen()))
+               + std::abs (static_cast<int> (a.getBlue())
+                           - static_cast<int> (b.getBlue()));
+    };
+
+    const bool primary = colourDistance (fill, UiColors::accent) < 90
+                         || (button.getToggleState()
+                             && colourDistance (
+                                    button.findColour (juce::TextButton::buttonOnColourId),
+                                    UiColors::accentStrong) < 90);
+
+    if (primary)
+    {
+        const juce::Colour base (0xFFF3C451);
+        const juce::Colour hover (0xFFFFD875);
+        const juce::Colour down (0xFFEAB742);
+        const juce::Colour disabled (0xFF8D793F);
+
+        const juce::Colour fillColour = ! button.isEnabled()
+                                            ? disabled
+                                            : (shouldDrawButtonAsDown
+                                                   ? down
+                                                   : (shouldDrawButtonAsHighlighted
+                                                          ? hover
+                                                          : base));
+
+        g.setColour (fillColour.withAlpha (0.10f));
+        g.fillRoundedRectangle (bounds.expanded (2.0f), corner + 2.0f);
+
+        juce::ColourGradient gradient (fillColour.brighter (0.04f),
+                                       bounds.getX(), bounds.getY(),
+                                       fillColour.darker (0.06f),
+                                       bounds.getX(), bounds.getBottom(), false);
+        g.setGradientFill (gradient);
+        g.fillRoundedRectangle (bounds, corner);
+
+        g.setColour (fillColour.darker (0.20f));
+        g.drawRoundedRectangle (bounds, corner, 1.0f);
+        return;
+    }
+
     if (fill.getAlpha() < 8)
         fill = UiColors::surface2;
 
     if (shouldDrawButtonAsDown)
-        fill = fill.darker(0.16f);
+        fill = fill.brighter (0.12f);
     else if (shouldDrawButtonAsHighlighted)
-        fill = fill.brighter(0.07f);
+        fill = fill.brighter (0.08f);
 
     if (!button.isEnabled())
         fill = fill.withMultipliedAlpha(0.55f);
@@ -279,10 +381,10 @@ void GameLookAndFeel::drawButtonBackground(juce::Graphics& g,
     if (ghost && !shouldDrawButtonAsHighlighted && !shouldDrawButtonAsDown)
     {
         // Ghost buttons keep a faint outline so secondary actions stay visible.
-        g.setColour(UiColors::surface2.withAlpha(0.18f));
-        g.fillRoundedRectangle(bounds, corner);
-        g.setColour(UiColors::border.withAlpha(0.68f));
-        g.drawRoundedRectangle(bounds, corner, 1.0f);
+        g.setColour (juce::Colours::white.withAlpha (0.03f));
+        g.fillRoundedRectangle (bounds, corner);
+        g.setColour (UiColors::borderStrong);
+        g.drawRoundedRectangle (bounds, corner, 1.0f);
         return;
     }
 

@@ -84,6 +84,15 @@ class SongSummaryResponse(BaseModel):
     #: or ``None`` when the song has no preview. Additive field: the catalogue
     #: and gameplay keep working without it.
     preview_url: str | None = None
+    #: Optional gameplay visuals selected in the admin panel. The sheet is the
+    #: character's transparent 8-pose spritesheet (4x2 grid); the background is
+    #: the stage image. Both URLs are origin-relative
+    #: (``/media/characters/...``, ``/media/stages/...``) and every field is
+    #: ``None`` when the song has no selection, so older clients are unaffected.
+    character_name: str | None = None
+    character_sheet_url: str | None = None
+    stage_name: str | None = None
+    stage_background_url: str | None = None
     readiness: SongReadinessResponse = Field(default_factory=SongReadinessResponse)
 
 

@@ -67,6 +67,8 @@ _TEST_URL_IS_DEFAULT = _RAW_TEST_URL is None
 SONG_STORAGE = Path(tempfile.mkdtemp(prefix="guitarbattle-test-files-"))
 APP_AUDIO_STORAGE = Path(tempfile.mkdtemp(prefix="guitarbattle-test-app-audio-"))
 GAME_BUILDS_STORAGE = Path(tempfile.mkdtemp(prefix="guitarbattle-test-game-builds-"))
+GAMEPLAY_STORAGE = Path(tempfile.mkdtemp(prefix="guitarbattle-test-gameplay-"))
+CAMPAIGN_STORAGE = Path(tempfile.mkdtemp(prefix="guitarbattle-test-campaigns-"))
 
 # Configure the application through the environment *before* importing it, so
 # settings.database_url and the SQLAlchemy engine point at the test database.
@@ -77,6 +79,8 @@ os.environ["ACCESS_TOKEN_EXPIRE_MINUTES"] = "60"
 os.environ["SONG_FILES_DIR"] = str(SONG_STORAGE)
 os.environ["APP_AUDIO_DIR"] = str(APP_AUDIO_STORAGE)
 os.environ["GAME_BUILDS_DIR"] = str(GAME_BUILDS_STORAGE)
+os.environ["GAMEPLAY_MEDIA_DIR"] = str(GAMEPLAY_STORAGE)
+os.environ["CAMPAIGN_MEDIA_DIR"] = str(CAMPAIGN_STORAGE)
 os.environ["POSTGRES_USER"] = TEST_DATABASE_URL.username or ""
 os.environ["POSTGRES_PASSWORD"] = TEST_DATABASE_URL.password or ""
 os.environ["POSTGRES_HOST"] = TEST_DATABASE_URL.host or "127.0.0.1"
@@ -223,7 +227,10 @@ def _prepare_schema() -> None:
 def _truncate_all() -> None:
     # ``achievements`` is a reference catalog seeded by migration 0008 and kept
     # in sync at startup; it is not per-test data and must survive truncation.
-    preserved = {"achievements"}
+    # ``ui_sound_events`` is the fixed UI sound registry seeded by migration
+    # 0032 — the admin panel and the manifest both read it, so it is reference
+    # data as well.
+    preserved = {"achievements", "ui_sound_events"}
     table_names = ", ".join(
         f'"{table.name}"'
         for table in Base.metadata.sorted_tables
@@ -305,6 +312,22 @@ def game_builds_storage():
     shutil.rmtree(GAME_BUILDS_STORAGE, ignore_errors=True)
 
 
+@pytest.fixture(scope="session", autouse=True)
+def gameplay_storage():
+    """Gameplay visuals uploaded by the tests; removed when the session ends."""
+    GAMEPLAY_STORAGE.mkdir(parents=True, exist_ok=True)
+    yield GAMEPLAY_STORAGE
+    shutil.rmtree(GAMEPLAY_STORAGE, ignore_errors=True)
+
+
+@pytest.fixture(scope="session", autouse=True)
+def campaign_storage():
+    """Campaign covers uploaded by the tests; removed when the session ends."""
+    CAMPAIGN_STORAGE.mkdir(parents=True, exist_ok=True)
+    yield CAMPAIGN_STORAGE
+    shutil.rmtree(CAMPAIGN_STORAGE, ignore_errors=True)
+
+
 # ---------------------------------------------------------------------------
 # Domain fixtures
 # ---------------------------------------------------------------------------
@@ -329,6 +352,11 @@ def admin_user(db_client, db_session) -> dict[str, Any]:
 
 @pytest.fixture()
 def second_user(db_client) -> dict[str, Any]:
+    return helpers.register_user(db_client, username=helpers.unique("user"))
+
+
+@pytest.fixture()
+def third_user(db_client) -> dict[str, Any]:
     return helpers.register_user(db_client, username=helpers.unique("user"))
 
 

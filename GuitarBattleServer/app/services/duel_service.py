@@ -10,8 +10,10 @@ points lock the ``duel_matches`` row first, which serialises ``ready``,
 """
 from __future__ import annotations
 
+import logging
+import math
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, time, timedelta, timezone
 from typing import Any, Iterable, Sequence
 from uuid import UUID, uuid4
 
@@ -19,12 +21,28 @@ from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session, aliased
 
-from app.models.duel import DuelEvent, DuelMatch, DuelParticipant
+from app.config import settings
+from app.models.duel import (
+    DuelEvent,
+    DuelLobby,
+    DuelMatch,
+    DuelParticipant,
+    DuelSongBest,
+)
+from app.models.gameplay_visuals import UiCharacter
 from app.models.song import Song, SongFile
 from app.models.song_midi import SongMidiAnalysis, SongMidiNote
 from app.models.user import User
-from app.services import duel_rules
-from app.services.progression import level_for_xp
+from app.services import duel_rules, guitar_skills, reward_config
+from app.services.gameplay_media import character_sheet_url
+from app.services.midi_parser import MidiParseError, parse_midi
+from app.services.progression import (
+    difficulty_factor,
+    level_for_xp,
+    normalized_score,
+)
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # Tuning
@@ -121,12 +139,93 @@ def song_info(song: Song) -> dict[str, Any]:
 # ---------------------------------------------------------------------------
 # Chart snapshot
 # ---------------------------------------------------------------------------
+def _song_fallback_bpm(song: Song) -> float | None:
+    """Tempo of the recorded stems, or ``None`` when the song row is unusable.
+
+    It is only a fallback for MIDI files exported without a ``set_tempo``
+    event; an explicit tempo event in the file always wins.
+    """
+    try:
+        bpm = float(song.bpm or 0)
+    except (TypeError, ValueError):
+        return None
+    return bpm if bpm > 0 else None
+
+
+def _analysis_note_times(db: Session, song_file_id: UUID) -> list[int]:
+    """Note offsets (ms) of the saved MIDI analysis, in chart order."""
+    starts = db.scalars(
+        select(SongMidiNote.start_seconds)
+        .where(SongMidiNote.song_file_id == song_file_id)
+        .order_by(
+            SongMidiNote.start_tick,
+            SongMidiNote.track_index,
+            SongMidiNote.channel,
+            SongMidiNote.midi_note,
+            SongMidiNote.id,
+        )
+    ).all()
+    return [
+        max(0, int(round(float(value) * 1000.0)))
+        for value in starts[:MAX_NOTE_COUNT]
+    ]
+
+
+def _reparsed_note_times(
+    song_file: SongFile, fallback_bpm: float
+) -> list[int] | None:
+    """Note offsets (ms) of the stored MIDI, parsed with ``fallback_bpm``.
+
+    The saved analysis is not enough here: it cannot say whether the file
+    contained a ``set_tempo`` event, because the parser silently applies the
+    MIDI default of 120 BPM otherwise. Re-reading the file lets an explicit
+    tempo event keep winning while a tempo-less export follows the song BPM.
+
+    Returns ``None`` when the file is missing, unreadable, unparseable or
+    contains no notes, so the caller keeps the saved analysis. A broken file
+    must not break match creation.
+    """
+    storage_root = settings.song_files_dir.resolve()
+    try:
+        target = (storage_root / song_file.object_key).resolve()
+    except (OSError, ValueError):  # pragma: no cover - defensive
+        return None
+    if not target.is_relative_to(storage_root) or not target.is_file():
+        logger.debug(
+            "MIDI file of song file %s is not readable; using saved analysis",
+            song_file.id,
+        )
+        return None
+    try:
+        parsed = parse_midi(target.read_bytes(), fallback_bpm=fallback_bpm)
+    except (MidiParseError, OSError):
+        logger.debug(
+            "MIDI file of song file %s could not be parsed; using saved analysis",
+            song_file.id,
+            exc_info=True,
+        )
+        return None
+    times = [
+        max(0, int(round(float(note["start_seconds"]) * 1000.0)))
+        for note in parsed["notes"][:MAX_NOTE_COUNT]
+    ]
+    return times or None
+
+
 def load_chart(db: Session, song: Song) -> tuple[int, list[int] | None]:
     """Freeze the chart of a song into ``(note_count, note_times_ms)``.
 
     The active MIDI analysis is the authoritative chart. Its note offsets are
     copied into the match, so re-uploading or re-analysing the song later can
     never move the notes of a match that is already running.
+
+    The analysis stores seconds computed at parse time. A MIDI exported
+    without a ``set_tempo`` meta event is parsed at the MIDI default of 120
+    BPM, which can be far from the tempo the stems were recorded at (the
+    ``blue-river`` case: 120 BPM instead of the song's 70 BPM, so every note
+    reached the client late and was rejected). When the analysed tempo differs
+    from ``Song.bpm``, the file is parsed again with the song tempo as the
+    fallback; an explicit tempo event in the file still wins.
 
     A song without an analysed MIDI (legacy catalogue entries) gets a synthetic
     chart derived from its duration; ``None`` tells the validator to use the
@@ -149,22 +248,17 @@ def load_chart(db: Session, song: Song) -> tuple[int, list[int] | None]:
             )
         )
         if analysis is not None and int(analysis.note_count or 0) > 0:
-            starts = db.scalars(
-                select(SongMidiNote.start_seconds)
-                .where(SongMidiNote.song_file_id == midi_file.id)
-                .order_by(
-                    SongMidiNote.start_tick,
-                    SongMidiNote.track_index,
-                    SongMidiNote.channel,
-                    SongMidiNote.midi_note,
-                    SongMidiNote.id,
-                )
-            ).all()
-            if starts:
-                times = [
-                    max(0, int(round(float(value) * 1000.0)))
-                    for value in starts[:MAX_NOTE_COUNT]
-                ]
+            times = _analysis_note_times(db, midi_file.id)
+            fallback_bpm = _song_fallback_bpm(song)
+            if (
+                fallback_bpm is not None
+                and times
+                and abs(float(analysis.bpm) - fallback_bpm) >= 0.01
+            ):
+                reparsed = _reparsed_note_times(midi_file, fallback_bpm)
+                if reparsed is not None:
+                    times = reparsed
+            if times:
                 return len(times), times
 
     duration = max(15, min(600, int(song.duration_seconds or 60)))
@@ -391,6 +485,10 @@ def _participant_payload(
         "damage_dealt": round(float(participant.damage_dealt), 2),
         "damage_taken": round(float(participant.damage_taken), 2),
         "xp_awarded": int(participant.xp_awarded or 0),
+        # Additive: actual quality-points total and its full-chart
+        # extrapolation (``NULL`` when the match ended too early).
+        "score_points": participant.score_points,
+        "normalized_score": participant.normalized_score,
         "rating_before": before,
         "rating_after": after,
         "rating_delta": delta,
@@ -433,6 +531,31 @@ def snapshot(
                 your_side = row.side
                 break
 
+    # Character visuals: current selection, not a snapshot. At most two rows
+    # are loaded and each character is fetched once per symbol.
+    characters: dict[UUID, UiCharacter | None] = {}
+
+    def character_for(side: str | None) -> UiCharacter | None:
+        if side is None:
+            return None
+        row = participants.get(side)
+        if row is None or row.user_id is None:
+            return None
+        if row.user_id not in characters:
+            user = users.get(row.user_id)
+            characters[row.user_id] = (
+                db.get(UiCharacter, user.character_id)
+                if user is not None and user.character_id is not None
+                else None
+            )
+        return characters[row.user_id]
+
+    your_character = character_for(your_side)
+    opponent_side = (
+        duel_rules.other_side(your_side) if your_side is not None else None
+    )
+    opponent_character = character_for(opponent_side)
+
     winner_side = None
     for row in ordered:
         if row.result == "win":
@@ -456,15 +579,35 @@ def snapshot(
         "rules_version": int(match.rules_version),
         "seed": int(match.seed),
         "bot_level": match.bot_level,
+        "lobby_id": match.lobby_id,
         "song": song_info(song),
         "note_count": int(match.note_count),
         "next_note_index": int(match.next_note_index),
         "your_side": your_side,
+        "you_character_name": (
+            your_character.name if your_character is not None else None
+        ),
+        "you_character_sheet_url": (
+            character_sheet_url(your_character.sheet_key)
+            if your_character is not None
+            else None
+        ),
+        "opponent_character_name": (
+            opponent_character.name if opponent_character is not None else None
+        ),
+        "opponent_character_sheet_url": (
+            character_sheet_url(opponent_character.sheet_key)
+            if opponent_character is not None
+            else None
+        ),
         "starts_in_ms": starts_in_ms,
         "server_time_ms": _ms_since(match.started_at, now),
         "waiting_seconds": waiting_seconds,
         "waiting_expired": (
             match.mode == "online"
+            # A room match waits as long as its two players download the song;
+            # the queue timeout only applies to a real quick-queue match.
+            and match.lobby_id is None
             and match.status == "waiting"
             and waiting_seconds >= QUEUE_TIMEOUT_SECONDS
         ),
@@ -505,6 +648,8 @@ def _find_waiting_opponent(
         .where(
             DuelMatch.status == "waiting",
             DuelMatch.mode == "online",
+            # Room matches are never offered to the public quick queue.
+            DuelMatch.lobby_id.is_(None),
             DuelMatch.song_id == song.id,
             DuelMatch.created_at >= cutoff,
             DuelParticipant.side == "player",
@@ -874,6 +1019,15 @@ def _resolve_notes(
     )
     bot = opponent if opponent.is_bot else (player if player.is_bot else None)
     server_time_ms = _ms_since(match.started_at, now)
+
+    # rules_version 3 scales damage by the frozen chart length. Older matches
+    # keep the damage they were created with (their version is frozen), so the
+    # same code path serves both.
+    if int(match.rules_version) >= 3:
+        damage_scale = duel_rules.damage_scale_for_note_count(int(match.note_count))
+    else:
+        damage_scale = 1.0
+
     exchanges: list[dict[str, Any]] = []
 
     index = int(match.next_note_index)
@@ -912,7 +1066,11 @@ def _resolve_notes(
 
         player_quality = player_quality or "miss"
         opponent_quality = opponent_quality or "miss"
-        result = duel_rules.resolve_note(player_quality, opponent_quality)
+        result = duel_rules.resolve_note(
+            player_quality,
+            opponent_quality,
+            damage_scale=damage_scale,
+        )
 
         player.hp_final = duel_rules.apply_damage(
             float(player.hp_final), result.damage_to_player
@@ -1272,18 +1430,176 @@ def _winner_side(
     return "player" if player_hp > opponent_hp else "opponent"
 
 
-def _apply_xp(db: Session, participant: DuelParticipant, result: str | None) -> int:
+def _online_attempts_today(
+    db: Session, *, user_id: UUID, song_id: UUID, exclude_match_id: UUID, now: datetime
+) -> int:
+    """Finished online duels of this player on this song today (UTC)."""
+    start = datetime.combine(
+        now.astimezone(timezone.utc).date(), time.min, tzinfo=timezone.utc
+    )
+    end = start + timedelta(days=1)
+    return int(
+        db.scalar(
+            select(func.count(DuelParticipant.id))
+            .join(DuelMatch, DuelMatch.id == DuelParticipant.match_id)
+            .where(
+                DuelParticipant.user_id == user_id,
+                DuelParticipant.is_bot.is_(False),
+                DuelMatch.mode == "online",
+                DuelMatch.status == "finished",
+                DuelMatch.song_id == song_id,
+                DuelMatch.id != exclude_match_id,
+                DuelMatch.finished_at >= start,
+                DuelMatch.finished_at < end,
+            )
+        )
+        or 0
+    )
+
+
+def _apply_xp(
+    db: Session,
+    participant: DuelParticipant,
+    result: str | None,
+    *,
+    match: DuelMatch,
+) -> int:
+    """Award online-duel XP once, with the anti-farm multipliers.
+
+    The rating (Elo) is untouched here — ``_apply_rating`` keeps its exact
+    behaviour. The base is still ``duel_rules.xp_for_duel`` (the same formula the
+    client shows); the server then applies:
+
+    * ``progression.difficulty_factor(song.difficulty)`` (quality already
+      matters through the base formula, difficulty now does too);
+    * the online repeat slot of this player for this song today
+      (``reward_config.ONLINE_REPEAT_FACTORS``, then floor);
+    * a PB bonus (``reward_config.PB_BONUS_FACTOR`` × base) only when this
+      match's quality accuracy strictly improves ``duel_song_bests``.
+
+    The participant also stores the actual quality-points total and the
+    normalized one. ``xp_applied_at`` makes a second call a no-op even if the
+    match finalisation were ever retried.
+    """
     if participant.is_bot or participant.user_id is None:
         participant.xp_awarded = 0
         return 0
+    if participant.xp_applied_at is not None:
+        # Already awarded; the match finish is idempotent and this is the
+        # second line of defence.
+        return 0
 
-    xp = duel_rules.xp_for_duel(
-        perfect=int(participant.perfect_count or 0),
-        great=int(participant.great_count or 0),
-        good=int(participant.good_count or 0),
+    notes = int(participant.notes_played or 0)
+    perfect = int(participant.perfect_count or 0)
+    great = int(participant.great_count or 0)
+    good = int(participant.good_count or 0)
+
+    # Actual quality-points total (the same weights as accuracy_factor).
+    score_points = (
+        perfect * int(duel_rules.QUALITY_POINTS["perfect"])
+        + great * int(duel_rules.QUALITY_POINTS["great"])
+        + good * int(duel_rules.QUALITY_POINTS["good"])
+    )
+    participant.score_points = score_points
+    # ``notes_processed / note_count`` at finish; NULL when too early.
+    note_count = int(match.note_count or 0)
+    played_completion = (
+        100.0 * min(notes, note_count) / note_count if note_count > 0 else 0.0
+    )
+    participant.normalized_score = normalized_score(
+        score_points=score_points,
+        completion_percent=played_completion,
+        notes_total=note_count,
+        notes_played=notes,
+    )
+
+    base = duel_rules.xp_for_duel(
+        perfect=perfect,
+        great=great,
+        good=good,
         result=result,
     )
-    if xp <= 0:
+
+    song = db.get(Song, match.song_id)
+    now = _now()
+    online_match = match.mode == "online"
+
+    if online_match:
+        attempts_today = _online_attempts_today(
+            db,
+            user_id=participant.user_id,
+            song_id=match.song_id,
+            exclude_match_id=match.id,
+            now=now,
+        )
+        repeat = reward_config.online_repeat_factor(attempts_today)
+        diff = difficulty_factor(int(song.difficulty)) if song is not None else 1.0
+    else:
+        # Bot duels keep the pre-1.8.0 reward (the client result card shows the
+        # same formula); only online duels carry the anti-farm multipliers.
+        attempts_today = 0
+        repeat = 1.0
+        diff = 1.0
+    xp = int(math.floor(base * diff * repeat + 0.5)) if base > 0 else 0
+
+    # Personal best: strict improvement only, one bonus per match (online only).
+    accuracy_percent = (
+        duel_rules.accuracy_factor(perfect, great, good, notes) * 100.0
+    )
+    pb_improved = False
+    pb_bonus = 0
+    best = (
+        db.scalar(
+            select(DuelSongBest)
+            .where(
+                DuelSongBest.user_id == participant.user_id,
+                DuelSongBest.song_id == match.song_id,
+            )
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if online_match
+        else None
+    )
+    if online_match and best is None:
+        db.add(
+            DuelSongBest(
+                user_id=participant.user_id,
+                song_id=match.song_id,
+                best_accuracy=accuracy_percent,
+                best_score=score_points,
+            )
+        )
+        db.flush()
+    elif online_match and accuracy_percent > float(best.best_accuracy) + 1e-9:
+        pb_improved = True
+        pb_bonus = (
+            int(math.floor(base * reward_config.PB_BONUS_FACTOR + 0.5))
+            if base > 0
+            else 0
+        )
+        best.best_accuracy = accuracy_percent
+        best.best_score = max(int(best.best_score or 0), score_points)
+
+    awarded = xp + pb_bonus
+    participant.xp_breakdown = {
+        "reward_kind": "online_duel" if online_match else "bot_duel",
+        "mode": match.mode,
+        "base_xp": base,
+        "difficulty_factor": round(diff, 4),
+        "repeat_factor": round(repeat, 4),
+        "repeat_attempts_today": attempts_today,
+        "pb_bonus": pb_bonus,
+        "pb_improved": pb_improved,
+        "accuracy_percent": round(accuracy_percent, 3),
+        "score_points": score_points,
+        "normalized_score": participant.normalized_score,
+        "note_count": int(match.note_count or 0),
+        "notes_played": notes,
+    }
+    participant.xp_applied_at = now
+
+    if awarded <= 0:
         participant.xp_awarded = 0
         return 0
 
@@ -1297,11 +1613,11 @@ def _apply_xp(db: Session, participant: DuelParticipant, result: str | None) -> 
         participant.xp_awarded = 0
         return 0
 
-    total = int(user.xp_total or 0) + xp
+    total = int(user.xp_total or 0) + awarded
     user.xp_total = total
     user.level = level_for_xp(total)
-    participant.xp_awarded = xp
-    return xp
+    participant.xp_awarded = awarded
+    return awarded
 
 
 def _apply_rating(
@@ -1400,13 +1716,18 @@ def finalize_match(
         if technical_winner is not None and int(participant.notes_played or 0) == 0:
             participant.xp_awarded = 0
             continue
-        _apply_xp(db, participant, participant.result)
+        _apply_xp(db, participant, participant.result, match=match)
 
     _apply_rating(db, match, participants, winner_side)
 
     match.status = "finished"
     match.finished_at = now
     db.flush()
+    # Freeze both pre-match Guitar Skills, store both duel events and
+    # recalculate the two affected players in this transaction.
+    guitar_skills.on_duel_finalized(
+        db, match, participants, now=now
+    )
     return True
 
 
@@ -1500,6 +1821,36 @@ def finish_match(
     return state, False, finished_now, exchanges
 
 
+def _rollback_cancelled_lobby(db: Session, match: DuelMatch) -> None:
+    """Put the room of a cancelled lobby match back to ``waiting``.
+
+    A client that aborts during the download (or leaves right after the
+    confirmation) cancels the fresh match; both players must end up in the same
+    room again with the song and the chat preserved. Non-lobby (queue and bot)
+    matches are untouched.
+    """
+    if match.lobby_id is None:
+        return
+
+    lobby = db.scalar(
+        select(DuelLobby)
+        .where(DuelLobby.id == match.lobby_id)
+        .with_for_update()
+        .execution_options(populate_existing=True)
+    )
+    if lobby is None:  # pragma: no cover - FK keeps the row while the match lives
+        return
+
+    if lobby.status == "playing":
+        lobby.status = "waiting"
+        lobby.updated_at = _now()
+    # The start handshake is over either way; the host can request a new one.
+    lobby.start_requested_by = None
+    lobby.start_host_confirmed = False
+    lobby.start_guest_confirmed = False
+    db.flush()
+
+
 def leave_match(
     db: Session, *, match_id: UUID, user: User
 ) -> tuple[dict[str, Any], bool, bool, list[dict[str, Any]]]:
@@ -1532,6 +1883,7 @@ def leave_match(
         participant.left_at = now
         match.status = "cancelled"
         match.finished_at = now
+        _rollback_cancelled_lobby(db, match)
         state = snapshot(db, match, your_user_id=user.id)
         db.commit()
         return state, False, True, [{"type": "cancelled", "match_id": match.id}]

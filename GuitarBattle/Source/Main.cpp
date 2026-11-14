@@ -137,6 +137,52 @@ public:
     }
 
     //==============================================================================
+    // Applies the 16:9 ratio to the *content* area rather than to the whole
+    // window. With a native title bar the two differ by the frame, so a plain
+    // setFixedAspectRatio() leaves the client area slightly short.
+    class ContentAspectConstrainer final : public juce::ComponentBoundsConstrainer
+    {
+    public:
+        void setFrameSize (int width, int height) noexcept
+        {
+            frameW = width;
+            frameH = height;
+        }
+
+        void checkBounds (juce::Rectangle<int>& bounds,
+                          const juce::Rectangle<int>& previousBounds,
+                          const juce::Rectangle<int>& limits,
+                          bool isStretchingTop,
+                          bool isStretchingLeft,
+                          bool isStretchingBottom,
+                          bool isStretchingRight) override
+        {
+            juce::ComponentBoundsConstrainer::checkBounds (bounds, previousBounds, limits,
+                                                           isStretchingTop, isStretchingLeft,
+                                                           isStretchingBottom, isStretchingRight);
+
+            if (frameW <= 0 || frameH <= 0)
+                return;
+
+            int contentW = bounds.getWidth() - frameW;
+            int contentH = bounds.getHeight() - frameH;
+
+            if (contentW <= 0 || contentH <= 0)
+                return;
+
+            if (contentW * 9 > contentH * 16)
+                contentW = contentH * 16 / 9;
+            else
+                contentH = contentW * 9 / 16;
+
+            bounds.setSize (contentW + frameW, contentH + frameH);
+        }
+
+    private:
+        int frameW = 0;
+        int frameH = 0;
+    };
+
     /*
         This class implements the desktop window that contains an instance of
         our MainComponent class.
@@ -148,65 +194,62 @@ public:
             : DocumentWindow (name,
                               juce::Desktop::getInstance().getDefaultLookAndFeel()
                                                           .findColour (juce::ResizableWindow::backgroundColourId),
-                              DocumentWindow::allButtons)
+                              DocumentWindow::minimiseButton
+                                  | DocumentWindow::closeButton)
         {
             setUsingNativeTitleBar (true);
             setContentOwned (new MainComponent(), true);
             setBackgroundColour (UiColors::background);
             setIcon (BrandAssets::createLogoImage (256));
 
-            // Allow the window to cover the whole desktop, including displays
-            // larger than 1920x1200, while keeping the original minimum size.
+            // FretFight runs in a normal 16:9 window, never full-screen/kiosk.
+            // The window can be resized, but the constrainer keeps the content
+            // area at 16:9 so the gameplay field matches the artwork.
             auto* display = juce::Desktop::getInstance()
                                 .getDisplays().getPrimaryDisplay();
-            const int maxWidth = display != nullptr
-                ? juce::jmax (1920, juce::roundToInt (display->logicalBounds.getWidth()))
-                : 1920;
-            const int maxHeight = display != nullptr
-                ? juce::jmax (1200, juce::roundToInt (display->logicalBounds.getHeight()))
-                : 1200;
-            setResizeLimits (900, 800, maxWidth, maxHeight);
+            const auto userArea = display != nullptr
+                ? display->userBounds.toNearestInt()
+                : juce::Rectangle<int> (0, 0, 1920, 1080);
+
+            const int maxWidth = juce::jmax (1280, userArea.getWidth());
+            const int maxHeight = juce::jmax (720, userArea.getHeight());
+            setResizeLimits (1280, 720, maxWidth, maxHeight);
+
+            setConstrainer (&constrainer);
             setResizable (true, true);
 
-           #if JUCE_IOS || JUCE_ANDROID
-            setVisible (true);
-            setFullScreen (true);
-           #else
-            // Size the window to the display before its peer is created so the
-            // first frame is already full-screen, then let the peer take over.
-            if (display != nullptr)
-                setBounds (display->logicalBounds.toNearestInt());
+            int windowW = juce::jmin (1600, userArea.getWidth());
+            int windowH = juce::roundToInt (static_cast<double> (windowW) * 9.0 / 16.0);
 
-            setVisible (true);
-
-            // JUCE maps setFullScreen() to a maximised window on Windows, which
-            // leaves the native title bar and taskbar visible. Kiosk mode
-            // removes the title bar and stretches the window over the whole
-            // display so the app really opens full-screen.
-            //
-            // Applied on the next message-loop iteration and only when the
-            // window already owns a peer and sits on a display: Desktop::
-            // setKioskModeComponent() asserts (and stops the app in a Debug
-            // build) when either is not true yet, which happens when the window
-            // is created while the session is locked, the display list is still
-            // empty, or the app is started from an installer.
-            juce::Component::SafePointer<MainWindow> safeWindow (this);
-
-            juce::MessageManager::callAsync ([safeWindow]
+            if (windowH > userArea.getHeight())
             {
-                auto* window = safeWindow.getComponent();
+                windowH = userArea.getHeight();
+                windowW = juce::roundToInt (static_cast<double> (windowH) * 16.0 / 9.0);
+            }
 
-                if (window == nullptr || window->getPeer() == nullptr)
-                    return;
+            setBounds (userArea.getCentreX() - windowW / 2,
+                       userArea.getCentreY() - windowH / 2,
+                       windowW, windowH);
 
-                auto& desktop = juce::Desktop::getInstance();
-
-                if (desktop.getDisplays().getDisplayForRect (window->getScreenBounds()) == nullptr)
-                    return;
-
-                desktop.setKioskModeComponent (window, false);
-            });
+           #if JUCE_IOS || JUCE_ANDROID
+            setFullScreen (true);
            #endif
+
+            setVisible (true);
+
+            // The native frame is only measurable once the peer exists. Measure
+            // it, then size the whole window so the content is exactly 16:9.
+            if (auto* content = getContentComponent())
+            {
+                const int frameW = juce::jmax (0, getWidth() - content->getWidth());
+                const int frameH = juce::jmax (0, getHeight() - content->getHeight());
+
+                constrainer.setFrameSize (frameW, frameH);
+
+                setBounds (userArea.getCentreX() - (windowW + frameW) / 2,
+                           userArea.getCentreY() - (windowH + frameH) / 2,
+                           windowW + frameW, windowH + frameH);
+            }
         }
 
         void closeButtonPressed() override
@@ -225,6 +268,8 @@ public:
         */
 
     private:
+        ContentAspectConstrainer constrainer;
+
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (MainWindow)
     };
 

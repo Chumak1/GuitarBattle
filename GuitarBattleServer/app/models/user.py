@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import BigInteger, Boolean, DateTime, Integer, String, func
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Integer, String, func
 from sqlalchemy.dialects.postgresql import INET, UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import TypeDecorator
@@ -63,6 +63,16 @@ class User(Base):
     country_name: Mapped[str | None] = mapped_column(String(64), nullable=True)
     country_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+    #: Character the player picked for gameplay visuals. ``ON DELETE SET NULL``:
+    #: removing a character in the admin panel only clears the choice, it never
+    #: touches the account. The API exposes the integer ``UiCharacter.public_id``
+    #: as ``character_id``; the FK itself keeps the internal UUID.
+    character_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ui_characters.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
     )
     # Incremented when the password changes so older JWTs stop working.
     token_version: Mapped[int] = mapped_column(

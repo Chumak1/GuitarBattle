@@ -9,17 +9,17 @@
 #include <windows.h>
 
 VS_VERSION_INFO VERSIONINFO
-FILEVERSION  1,2,2,0
-PRODUCTVERSION  1,2,2,0
+FILEVERSION  2,0,0,0
+PRODUCTVERSION  2,0,0,0
 BEGIN
   BLOCK "StringFileInfo"
   BEGIN
     BLOCK "040904E4"
     BEGIN
       VALUE "FileDescription",  "GuitarBattle\0"
-      VALUE "FileVersion",  "1.2.2\0"
+      VALUE "FileVersion",  "2.0.0\0"
       VALUE "ProductName",  "GuitarBattle\0"
-      VALUE "ProductVersion",  "1.2.2\0"
+      VALUE "ProductVersion",  "2.0.0\0"
     END
   END
 

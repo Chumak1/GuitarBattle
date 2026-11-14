@@ -207,7 +207,7 @@ def test_admin_songs_page_has_meter_column_and_form_fields():
     assert '<option value="8">' in html
     # Songs table gained the meter column: nine cells in the loading row.
     assert 'colspan="9"' in html
-    assert "admin.js?v=20261103-3" in html
+    assert "admin.js?v=20261115-1" in html
 
 
 def test_admin_script_sends_meter_in_payload():

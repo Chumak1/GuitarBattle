@@ -26,9 +26,18 @@ namespace UiColors
     extern const juce::Colour green;
     extern const juce::Colour red;
     extern const juce::Colour info;        // cool blue for "good" judgements
-    extern const juce::Colour accent;       // #f3c451
-    extern const juce::Colour accentStrong; // #ffb703
-    extern const juce::Colour onAccent;     // dark ink on gold
+    extern const juce::Colour accent;       // #8B5CF6 neon violet
+    extern const juce::Colour accentStrong; // #A78BFA
+    extern const juce::Colour onAccent;     // dark ink on accent
+
+    // Design system v2: neon accent ramp. Electric blue is the secondary
+    // accent, teal marks connected/positive states and gold is kept for
+    // rewards and competitive ratings only.
+    extern const juce::Colour violet;
+    extern const juce::Colour violetSoft;
+    extern const juce::Colour electric;
+    extern const juce::Colour teal;
+    extern const juce::Colour gold;
 }
 
 namespace GameUi
@@ -52,6 +61,36 @@ namespace GameUi
     constexpr float cardGap = Metrics::cardGap;
     constexpr float cardPadding = Metrics::cardPadding;
 
+    // One typography scale for every screen. Sizes are the design-system
+    // values; GameUi::font() applies the global font scale to all of them.
+    namespace Type
+    {
+        constexpr float display = 34.0f;   // screen hero titles
+        constexpr float pageTitle = 26.0f; // section headers
+        constexpr float section = 19.0f;   // card headers
+        constexpr float cardTitle = 16.0f; // list rows / small cards
+        constexpr float body = 12.0f;      // default reading size
+        constexpr float caption = 10.0f;   // secondary lines
+        constexpr float eyebrow = 9.0f;    // ALL-CAPS captions
+        constexpr float metric = 24.0f;    // numbers, levels, ratings
+    }
+
+    // Motion durations (ms): short enough to feel instant, long enough to read.
+    namespace Motion
+    {
+        constexpr int hover = 120;
+        constexpr int screen = 180;
+        constexpr int modal = 160;
+    }
+
+    // Soft, layered neon halo behind a rounded surface. Three expanding strokes
+    // with low alpha read as a real glow instead of a flat outline.
+    void drawNeonGlow(juce::Graphics& g,
+                      juce::Rectangle<float> area,
+                      juce::Colour colour,
+                      float radius,
+                      float strength = 1.0f);
+
     juce::Font font(float height, bool bold = false, float tracking = 0.0f);
     juce::Font heading(float height);
     juce::Font eyebrow(float height = 11.0f);
@@ -61,6 +100,13 @@ namespace GameUi
                   juce::Rectangle<float> area,
                   float radius = Metrics::radiusCard,
                   bool glow = false);
+
+    // Gameplay variant: the same rounded surface with a much lower opacity so
+    // the stage artwork behind the HUD stays visible.
+    void drawGlassCard(juce::Graphics& g,
+                       juce::Rectangle<float> area,
+                       float radius = Metrics::radiusCard,
+                       bool glow = false);
 
     void drawPill(juce::Graphics& g,
                   juce::Rectangle<float> area,

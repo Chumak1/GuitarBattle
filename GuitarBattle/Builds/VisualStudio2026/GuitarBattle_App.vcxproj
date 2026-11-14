@@ -68,7 +68,7 @@
       <Optimization>Disabled</Optimization>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalIncludeDirectories>D:\juce-9.0.2-windows\JUCE\modules\juce_audio_processors_headless\format_types\VST3_SDK;..\..\JuceLibraryCode;D:\juce-9.0.2-windows\JUCE\modules;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90002;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_dsp=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_ASIO=1;JUCE_WASAPI=1;JUCE_DIRECTSOUND=1;JUCE_PLUGINHOST_VST3=1;JUCE_STRICT_REFCOUNTEDPOINTER=1;JUCE_STANDALONE_APPLICATION=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.2.2;JUCE_APP_VERSION_HEX=0x10202;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90002;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_dsp=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_ASIO=1;JUCE_WASAPI=1;JUCE_DIRECTSOUND=1;JUCE_PLUGINHOST_VST3=1;JUCE_STRICT_REFCOUNTEDPOINTER=1;JUCE_STANDALONE_APPLICATION=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=2.0.0;JUCE_APP_VERSION_HEX=0x20000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -82,7 +82,7 @@
     </ClCompile>
     <ResourceCompile>
       <AdditionalIncludeDirectories>D:\juce-9.0.2-windows\JUCE\modules\juce_audio_processors_headless\format_types\VST3_SDK;..\..\JuceLibraryCode;D:\juce-9.0.2-windows\JUCE\modules;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90002;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_dsp=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=\&quot;1.0.0\&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_ASIO=1;JUCE_WASAPI=1;JUCE_DIRECTSOUND=1;JUCE_PLUGINHOST_VST3=1;JUCE_STRICT_REFCOUNTEDPOINTER=1;JUCE_STANDALONE_APPLICATION=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.2.2;JUCE_APP_VERSION_HEX=0x10202;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;DEBUG;_DEBUG;JUCE_PROJUCER_VERSION=0x90002;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_dsp=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=\&quot;1.0.0\&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_ASIO=1;JUCE_WASAPI=1;JUCE_DIRECTSOUND=1;JUCE_PLUGINHOST_VST3=1;JUCE_STRICT_REFCOUNTEDPOINTER=1;JUCE_STANDALONE_APPLICATION=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=2.0.0;JUCE_APP_VERSION_HEX=0x20000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <Link>
       <OutputFile>$(OutDir)\GuitarBattle.exe</OutputFile>
@@ -111,7 +111,7 @@
       <Optimization>Full</Optimization>
       <DebugInformationFormat>ProgramDatabase</DebugInformationFormat>
       <AdditionalIncludeDirectories>D:\juce-9.0.2-windows\JUCE\modules\juce_audio_processors_headless\format_types\VST3_SDK;..\..\JuceLibraryCode;D:\juce-9.0.2-windows\JUCE\modules;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90002;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_dsp=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_ASIO=1;JUCE_WASAPI=1;JUCE_DIRECTSOUND=1;JUCE_PLUGINHOST_VST3=1;JUCE_STRICT_REFCOUNTEDPOINTER=1;JUCE_STANDALONE_APPLICATION=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.2.2;JUCE_APP_VERSION_HEX=0x10202;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90002;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_dsp=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=&quot;1.0.0&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_ASIO=1;JUCE_WASAPI=1;JUCE_DIRECTSOUND=1;JUCE_PLUGINHOST_VST3=1;JUCE_STRICT_REFCOUNTEDPOINTER=1;JUCE_STANDALONE_APPLICATION=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=2.0.0;JUCE_APP_VERSION_HEX=0x20000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
       <RuntimeTypeInfo>true</RuntimeTypeInfo>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
@@ -125,7 +125,7 @@
     </ClCompile>
     <ResourceCompile>
       <AdditionalIncludeDirectories>D:\juce-9.0.2-windows\JUCE\modules\juce_audio_processors_headless\format_types\VST3_SDK;..\..\JuceLibraryCode;D:\juce-9.0.2-windows\JUCE\modules;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90002;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_dsp=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=\&quot;1.0.0\&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_ASIO=1;JUCE_WASAPI=1;JUCE_DIRECTSOUND=1;JUCE_PLUGINHOST_VST3=1;JUCE_STRICT_REFCOUNTEDPOINTER=1;JUCE_STANDALONE_APPLICATION=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=1.2.2;JUCE_APP_VERSION_HEX=0x10202;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_CRT_SECURE_NO_WARNINGS;WIN32;_WINDOWS;NDEBUG;JUCE_PROJUCER_VERSION=0x90002;JUCE_MODULE_AVAILABLE_juce_audio_basics=1;JUCE_MODULE_AVAILABLE_juce_audio_devices=1;JUCE_MODULE_AVAILABLE_juce_audio_formats=1;JUCE_MODULE_AVAILABLE_juce_audio_processors=1;JUCE_MODULE_AVAILABLE_juce_audio_processors_headless=1;JUCE_MODULE_AVAILABLE_juce_audio_utils=1;JUCE_MODULE_AVAILABLE_juce_core=1;JUCE_MODULE_AVAILABLE_juce_data_structures=1;JUCE_MODULE_AVAILABLE_juce_dsp=1;JUCE_MODULE_AVAILABLE_juce_events=1;JUCE_MODULE_AVAILABLE_juce_graphics=1;JUCE_MODULE_AVAILABLE_juce_gui_basics=1;JUCE_MODULE_AVAILABLE_juce_gui_extra=1;JUCE_WEBVIEW_INTEROP_LIBRARY_VERSION=\&quot;1.0.0\&quot;;JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1;JUCE_ASIO=1;JUCE_WASAPI=1;JUCE_DIRECTSOUND=1;JUCE_PLUGINHOST_VST3=1;JUCE_STRICT_REFCOUNTEDPOINTER=1;JUCE_STANDALONE_APPLICATION=1;JUCE_USE_MP3AUDIOFORMAT=1;JUCER_VS2026_78A5042=1;JUCE_APP_VERSION=2.0.0;JUCE_APP_VERSION_HEX=0x20000;JucePlugin_Build_VST=0;JucePlugin_Build_VST3=0;JucePlugin_Build_AU=0;JucePlugin_Build_AUv3=0;JucePlugin_Build_AAX=0;JucePlugin_Build_Standalone=0;JucePlugin_Build_Unity=0;JucePlugin_Build_LV2=0;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ResourceCompile>
     <Link>
       <OutputFile>$(OutDir)\GuitarBattle.exe</OutputFile>
@@ -157,17 +157,28 @@
     <ClCompile Include="..\..\Source\Gameplay\MainComponentPractice.cpp"/>
     <ClCompile Include="..\..\Source\UI\GameStyle.cpp"/>
     <ClCompile Include="..\..\Source\UI\DuelLobby.cpp"/>
+    <ClCompile Include="..\..\Source\UI\OnlineDuelRoom.cpp"/>
     <ClCompile Include="..\..\Source\UI\SelectComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\TunerComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\MainComponentUI.cpp"/>
     <ClCompile Include="..\..\Source\UI\GuitarInputMonitor.cpp"/>
     <ClCompile Include="..\..\Source\UI\VstPanel.cpp"/>
     <ClCompile Include="..\..\Source\UI\BrandAssets.cpp"/>
+    <ClCompile Include="..\..\Source\UI\DuelStageComponent.cpp"/>
+    <ClCompile Include="..\..\Source\UI\SectionSidebar.cpp"/>
+    <ClCompile Include="..\..\Source\UI\CampaignPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\PlayerCard.cpp"/>
+    <ClCompile Include="..\..\Source\UI\FriendsPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\MessagesPanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\PublicProfilePanel.cpp"/>
+    <ClCompile Include="..\..\Source\UI\MainComponentSections.cpp"/>
     <ClCompile Include="..\..\Source\Midi\MidiParser.cpp"/>
     <ClCompile Include="..\..\Source\Midi\TablatureComponent.cpp"/>
     <ClCompile Include="..\..\Source\Audio\AudioEngine.cpp"/>
     <ClCompile Include="..\..\Source\Audio\PitchDetector.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\UiSounds.cpp"/>
     <ClCompile Include="..\..\Source\Audio\MainComponentAudio.cpp"/>
+    <ClCompile Include="..\..\Source\Audio\VoiceChat.cpp"/>
     <ClCompile Include="..\..\Source\Audio\MainComponentMusic.cpp"/>
     <ClCompile Include="..\..\Source\Audio\MusicTrackPlayer.cpp"/>
     <ClCompile Include="..\..\Source\Audio\VstHost.cpp"/>
@@ -3236,18 +3247,28 @@
     <ClInclude Include="..\..\Source\Gameplay\DuelMatch.h"/>
     <ClInclude Include="..\..\Source\UI\GameStyle.h"/>
     <ClInclude Include="..\..\Source\UI\DuelLobby.h"/>
+    <ClInclude Include="..\..\Source\UI\OnlineDuelRoom.h"/>
     <ClInclude Include="..\..\Source\UI\SelectComponent.h"/>
     <ClInclude Include="..\..\Source\UI\TunerComponent.h"/>
     <ClInclude Include="..\..\Source\UI\GuitarInputMonitor.h"/>
     <ClInclude Include="..\..\Source\UI\VstPanel.h"/>
     <ClInclude Include="..\..\Source\UI\BrandAssets.h"/>
+    <ClInclude Include="..\..\Source\UI\DuelStageComponent.h"/>
+    <ClInclude Include="..\..\Source\UI\SectionSidebar.h"/>
+    <ClInclude Include="..\..\Source\UI\CampaignPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\PlayerCard.h"/>
+    <ClInclude Include="..\..\Source\UI\FriendsPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\MessagesPanel.h"/>
+    <ClInclude Include="..\..\Source\UI\PublicProfilePanel.h"/>
     <ClInclude Include="..\..\Source\Midi\MidiParser.h"/>
     <ClInclude Include="..\..\Source\Midi\TablatureComponent.h"/>
     <ClInclude Include="..\..\Source\Midi\TabMapper.h"/>
     <ClInclude Include="..\..\Source\Midi\TabNote.h"/>
     <ClInclude Include="..\..\Source\Audio\AudioEngine.h"/>
     <ClInclude Include="..\..\Source\Audio\PitchDetector.h"/>
+    <ClInclude Include="..\..\Source\Audio\UiSounds.h"/>
     <ClInclude Include="..\..\Source\Audio\InstrumentGate.h"/>
+    <ClInclude Include="..\..\Source\Audio\VoiceChat.h"/>
     <ClInclude Include="..\..\Source\Audio\MusicTrackPlayer.h"/>
     <ClInclude Include="..\..\Source\Audio\VstHost.h"/>
     <ClInclude Include="..\..\Source\Audio\Vst3ScanWorker.h"/>

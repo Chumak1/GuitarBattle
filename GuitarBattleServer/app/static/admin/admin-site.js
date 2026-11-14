@@ -1116,8 +1116,16 @@
       button.setAttribute("aria-selected", active ? "true" : "false");
     });
 
-    if (name === "landing" && !state.loaded) loadLanding();
-    if (name === "contacts" && !state.contactsLoaded) loadContacts();
+    if (name === "landing") {
+      if (!state.loaded) loadLanding();
+      // Contacts live in the same panel/card now; load them with the landing
+      // section instead of a separate tab.
+      if (!state.contactsLoaded) loadContacts();
+    }
+    if (name === "campaigns") {
+      const campaigns = window.FFAdminCampaigns;
+      if (campaigns) campaigns.show();
+    }
     if (name === "builds" && !state.buildsLoaded) loadBuilds();
     if (name === "support") {
       const support = window.FFAdminSupport;
@@ -1126,6 +1134,18 @@
     if (name === "daily") {
       const daily = window.FFAdminDaily;
       if (daily) daily.show();
+    }
+    if (name === "ui-levels" || name === "stage-levels") {
+      const gameplay = window.FFAdminGameplay;
+      if (gameplay) gameplay.show();
+    }
+    if (name === "ui-sounds") {
+      const uiSounds = window.FFAdminUiSounds;
+      if (uiSounds) uiSounds.show();
+    }
+    if (name === "guitar-skills") {
+      const guitarSkills = window.FFAdminGuitarSkills;
+      if (guitarSkills) guitarSkills.show();
     }
     if (name === "statistics") {
       // Lazy first load, refresh on every later visit. The statistics module
@@ -1136,9 +1156,13 @@
   }
 
   function refreshCurrent() {
-    if (state.section === "landing") loadLanding();
-    else if (state.section === "contacts") loadContacts();
-    else if (state.section === "builds") loadBuilds();
+    if (state.section === "landing") {
+      loadLanding();
+      loadContacts();
+    } else if (state.section === "campaigns") {
+      const campaigns = window.FFAdminCampaigns;
+      if (campaigns) campaigns.refresh();
+    } else if (state.section === "builds") loadBuilds();
     else if (state.section === "support") {
       const support = window.FFAdminSupport;
       if (support) support.refresh();
@@ -1148,6 +1172,15 @@
     } else if (state.section === "statistics") {
       const statistics = window.FFAdminStatistics;
       if (statistics) statistics.refresh();
+    } else if (state.section === "ui-levels" || state.section === "stage-levels") {
+      const gameplay = window.FFAdminGameplay;
+      if (gameplay) gameplay.refresh();
+    } else if (state.section === "ui-sounds") {
+      const uiSounds = window.FFAdminUiSounds;
+      if (uiSounds) uiSounds.refresh();
+    } else if (state.section === "guitar-skills") {
+      const guitarSkills = window.FFAdminGuitarSkills;
+      if (guitarSkills) guitarSkills.refresh();
     }
   }
 

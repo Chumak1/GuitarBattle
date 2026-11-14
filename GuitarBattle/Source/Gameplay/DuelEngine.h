@@ -12,6 +12,11 @@
 // turns the pair into an exchange. That keeps the duel rules testable and
 // identical for bots and for online matches (where the server runs the same
 // rules).
+//
+// Damage is also scaled by the chart length: charts longer than
+// duelDamageReferenceNotes deal proportionally less damage per note, so a
+// 3x longer song does not end the match 3x faster. Short/simple charts keep
+// the full damage.
 
 // Hit quality as the duel sees it. The mapping from HitQuality is done by the
 // caller; Great is the existing intermediate category of the game.
@@ -57,9 +62,37 @@ struct DuelConfig
     double minDamage = 1.0;
     double maxDamage = 10.0;
 
+    // Charts longer than the reference deal proportionally less damage per
+    // note, so a 2-3x longer song does not end the duel 2-3x faster. Set by
+    // duelConfigForNoteCount() when a match is created.
+    double damageScale = 1.0;
+
     // Health gained back on a block, if the design wants chip healing later.
     double blockHeal = 0.0;
 };
+
+//: Charts at or below this length keep the full damage. Longer charts scale
+//: down so the total possible damage stays roughly comparable across songs.
+inline constexpr int duelDamageReferenceNotes = 48;
+
+//: Longest charts get at most this fraction of the base damage per note.
+inline constexpr double duelDamageMinScale = 0.20;
+
+inline double duelDamageScaleForNoteCount (int noteCount) noexcept
+{
+    if (noteCount <= duelDamageReferenceNotes)
+        return 1.0;
+
+    return std::clamp (static_cast<double> (duelDamageReferenceNotes)
+                           / static_cast<double> (noteCount),
+                       duelDamageMinScale, 1.0);
+}
+
+inline DuelConfig duelConfigForNoteCount (DuelConfig config, int noteCount) noexcept
+{
+    config.damageScale = duelDamageScaleForNoteCount (noteCount);
+    return config;
+}
 
 struct DuelNoteResult
 {
@@ -115,9 +148,11 @@ public:
             return result;
         }
 
-        const double damage = std::clamp (std::abs (difference) * config.damagePerPoint,
-                                          config.minDamage,
-                                          config.maxDamage);
+        const double damage =
+            std::clamp (std::abs (difference) * config.damagePerPoint,
+                        config.minDamage,
+                        config.maxDamage)
+            * config.damageScale;
 
         if (difference > 0.0)
         {
@@ -156,9 +191,9 @@ inline const DuelBotProfile& duelBotProfile (DuelBotLevel level) noexcept
     static const DuelBotProfile easy { DuelBotLevel::Easy, "RUSTY", "bot-easy",
                                        0.25, 0.20, 0.30 };
     static const DuelBotProfile normal { DuelBotLevel::Normal, "MIDNIGHT", "bot-normal",
-                                         0.65, 0.35, 0.35 };
+                                         0.56, 0.30, 0.36 };
     static const DuelBotProfile hard { DuelBotLevel::Hard, "VOLT", "bot-hard",
-                                       0.90, 0.55, 0.30 };
+                                       0.76, 0.40, 0.36 };
 
     switch (level)
     {
@@ -168,6 +203,20 @@ inline const DuelBotProfile& duelBotProfile (DuelBotLevel level) noexcept
     }
 
     return easy;
+}
+
+//: The bot's accuracy follows the published song difficulty: it hits more on
+//: easy charts and less on hard ones. 1.0 at difficulty 1..3, dropping about
+//: 3.5% per step down to ~0.69 at difficulty 10.
+inline double duelBotDifficultyFactor (int songDifficulty) noexcept
+{
+    const int difficulty = std::clamp (songDifficulty, 1, 10);
+
+    if (difficulty <= 3)
+        return 1.0;
+
+    return std::clamp (1.0 - 0.035 * static_cast<double> (difficulty - 3),
+                       0.65, 1.0);
 }
 
 // Deterministic per-note quality. The same seed and chart always produce the
@@ -185,26 +234,35 @@ inline std::uint32_t duelBotHash (std::uint32_t seed, int noteIndex) noexcept
 }
 
 inline DuelQuality duelBotQuality (DuelBotLevel level,
+                                   int songDifficulty,
                                    std::uint32_t seed,
                                    int noteIndex) noexcept
 {
     const auto& profile = duelBotProfile (level);
     const std::uint32_t hash = duelBotHash (seed, noteIndex);
 
+    const double difficultyFactor = duelBotDifficultyFactor (songDifficulty);
+    const double hitRate = std::clamp (profile.hitRate * difficultyFactor,
+                                       0.05, 0.97);
+    const double perfectShare = std::clamp (profile.perfectShare * difficultyFactor,
+                                            0.05, 0.85);
+    const double greatShare = std::clamp (profile.greatShare,
+                                          0.0, 0.95 - perfectShare);
+
     // Use independent slices of the hash for the hit and the quality so the
     // two decisions do not correlate.
     const double hitRoll = static_cast<double> (hash & 0xFFFFu) / 65535.0;
 
-    if (hitRoll >= profile.hitRate)
+    if (hitRoll >= hitRate)
         return DuelQuality::Miss;
 
     const double qualityRoll =
         static_cast<double> ((hash >> 16) & 0xFFFFu) / 65535.0;
 
-    if (qualityRoll < profile.perfectShare)
+    if (qualityRoll < perfectShare)
         return DuelQuality::Perfect;
 
-    if (qualityRoll < profile.perfectShare + profile.greatShare)
+    if (qualityRoll < perfectShare + greatShare)
         return DuelQuality::Great;
 
     return DuelQuality::Good;

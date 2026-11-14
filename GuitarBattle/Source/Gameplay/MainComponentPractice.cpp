@@ -19,8 +19,8 @@ void MainComponent::setPracticeMode(bool enabled)
         return;
 
     practiceMode = enabled;
-    practiceModeButton.setButtonText(practiceMode ? "PRACTICE: ON"
-                                                  : "PRACTICE: OFF");
+    practiceModeButton.setButtonText(practiceMode ? "STUDY: ON"
+                                                  : "STUDY: OFF");
     practiceModeButton.setColour(juce::TextButton::buttonColourId,
                                  practiceMode ? UiColors::accentStrong
                                               : UiColors::surface2);
@@ -175,8 +175,11 @@ void MainComponent::evaluatePracticeNote()
     // another. Requiring the pitch window to reach the end of the onset
     // window keeps a tick that lands between the two stores from judging the
     // new attack with the previous pitch.
+    const auto analysisWindow =
+        static_cast<uint64_t>(pitchAnalysisWindow.load(std::memory_order_relaxed));
+
     if (pitchSample
-        < onsetSample + static_cast<uint64_t>(pitchAnalysisSize))
+        < onsetSample + analysisWindow)
         return;
 
     const double pitch = practiceLastPitch.load(std::memory_order_relaxed);
@@ -285,7 +288,10 @@ void MainComponent::updatePracticeMode()
         // the held target. A strum during the count-in, or a note played long
         // before the target, must not skip it.
         const bool nearHold =
-            onsetSample + static_cast<uint64_t>(pitchAnalysisSize) >= holdStart;
+            onsetSample
+                + static_cast<uint64_t>(
+                    pitchAnalysisWindow.load(std::memory_order_relaxed))
+            >= holdStart;
 
         if (nearHold)
         {
@@ -374,7 +380,7 @@ void MainComponent::finishPracticeSession()
     gameplayStats.reset();
     gameSession.setTargetHit(false);
 
-    hitLabel.setText("PRACTICE COMPLETE", juce::dontSendNotification);
+    hitLabel.setText("STUDY COMPLETE", juce::dontSendNotification);
 
     juce::Component::SafePointer<MainComponent> safeThis(this);
 
@@ -389,7 +395,7 @@ void MainComponent::finishPracticeSession()
 
         juce::AlertWindow::showMessageBoxAsync(
             juce::MessageBoxIconType::NoIcon,
-            "Practice complete",
+            "Study complete",
             "You played every note. No score was saved and your rating is unchanged.",
             "OK",
             self);

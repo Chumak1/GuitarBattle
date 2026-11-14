@@ -35,8 +35,14 @@ services:
       SONG_FILES_DIR: /data/song_files
       CLIENT_ASSETS_DIR: /data/client_assets
       LANDING_MEDIA_DIR: /data/landing_media
+      # Battle tower covers live in a subdirectory of the landing media volume.
+      CAMPAIGN_MEDIA_DIR: ${CAMPAIGN_MEDIA_DIR:-/data/landing_media/campaigns}
+      MAX_CAMPAIGN_COVER_BYTES: ${MAX_CAMPAIGN_COVER_BYTES:-2097152}
       GAME_BUILDS_DIR: /data/game_builds
       APP_AUDIO_DIR: /data/app_audio
+      GAMEPLAY_MEDIA_DIR: /data/gameplay_media
+      MAX_GAMEPLAY_MEDIA_BYTES: ${MAX_GAMEPLAY_MEDIA_BYTES:-16777216}
+      MAX_UI_SOUND_BYTES: ${MAX_UI_SOUND_BYTES:-2097152}
       GEOIP_DB_PATH: /data/geoip/dbip-country-lite.mmdb
       GEOIP_ENABLED: ${GEOIP_ENABLED:-true}
       GEOIP_URL: ${GEOIP_URL:-https://ipwho.is}
@@ -52,6 +58,8 @@ services:
       SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-noreply@fretfight.online}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-GuitarBattle}
       SMTP_TIMEOUT_SECONDS: ${SMTP_TIMEOUT_SECONDS:-10}
+      # Inbox for POST /api/v1/feedback (public feedback dialog in the client).
+      FEEDBACK_EMAIL_TO: ${FEEDBACK_EMAIL_TO:-chumakevgeny@gmail.com}
       EMAIL_CODE_EXPIRE_MINUTES: ${EMAIL_CODE_EXPIRE_MINUTES:-15}
       EMAIL_CODE_RESEND_SECONDS: ${EMAIL_CODE_RESEND_SECONDS:-60}
       EMAIL_CODE_MAX_ATTEMPTS: ${EMAIL_CODE_MAX_ATTEMPTS:-5}
@@ -61,6 +69,7 @@ services:
       - landing_media_data:/data/landing_media
       - game_builds_data:/data/game_builds
       - app_audio_data:/data/app_audio
+      - gameplay_media_data:/data/gameplay_media
       - geoip_data:/data/geoip
     ports:
       - "${API_BIND_HOST:-127.0.0.1}:8000:8000"
@@ -74,4 +83,5 @@ volumes:
   landing_media_data:
   game_builds_data:
   app_audio_data:
+  gameplay_media_data:
   geoip_data:

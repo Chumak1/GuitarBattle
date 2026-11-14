@@ -904,6 +904,9 @@
     <ClCompile Include="..\..\Source\UI\DuelLobby.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\UI\OnlineDuelRoom.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\UI\SelectComponent.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
@@ -922,6 +925,30 @@
     <ClCompile Include="..\..\Source\UI\BrandAssets.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\UI\DuelStageComponent.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\SectionSidebar.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\CampaignPanel.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\PlayerCard.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\FriendsPanel.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\MessagesPanel.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\PublicProfilePanel.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\MainComponentSections.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\Midi\MidiParser.cpp">
       <Filter>GuitarBattle\Source\Midi</Filter>
     </ClCompile>
@@ -934,7 +961,13 @@
     <ClCompile Include="..\..\Source\Audio\PitchDetector.cpp">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\Audio\UiSounds.cpp">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\Audio\MainComponentAudio.cpp">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Audio\VoiceChat.cpp">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Audio\MainComponentMusic.cpp">
@@ -4248,6 +4281,9 @@
     <ClInclude Include="..\..\Source\UI\DuelLobby.h">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\UI\OnlineDuelRoom.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\UI\SelectComponent.h">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
@@ -4261,6 +4297,27 @@
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\BrandAssets.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\DuelStageComponent.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\SectionSidebar.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\CampaignPanel.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\PlayerCard.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\FriendsPanel.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\MessagesPanel.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\PublicProfilePanel.h">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Midi\MidiParser.h">
@@ -4281,7 +4338,13 @@
     <ClInclude Include="..\..\Source\Audio\PitchDetector.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
+    <ClInclude Include="..\..\Source\Audio\UiSounds.h">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\Source\Audio\InstrumentGate.h">
+      <Filter>GuitarBattle\Source\Audio</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\Audio\VoiceChat.h">
       <Filter>GuitarBattle\Source\Audio</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\Audio\MusicTrackPlayer.h">

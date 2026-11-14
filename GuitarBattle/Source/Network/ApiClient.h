@@ -226,41 +226,54 @@ public:
     //==========================================================================
     // Asynchronous helpers - safe to call from the message thread.
 
-    /** GET @p apiPath on the pool; @p onResult runs on the message thread. */
+    /** GET @p apiPath on the metadata pool; @p onResult runs on the message thread. */
     void getJson (const juce::String& apiPath,
                   const juce::String& bearerToken,
                   int timeoutMs,
                   ResponseCallback onResult)
     {
-        enqueue ([apiPath, bearerToken, timeoutMs, onResult]
+        enqueueMetadata ([apiPath, bearerToken, timeoutMs, onResult]
         {
             deliver (onResult, get (apiPath, bearerToken, timeoutMs));
         });
     }
 
-    /** POST @p jsonBody to @p apiPath on the pool; @p onResult runs on the message thread. */
+    /** POST @p jsonBody to @p apiPath on the metadata pool; @p onResult runs on the message thread. */
     void postJson (const juce::String& apiPath,
                    const juce::var& jsonBody,
                    const juce::String& bearerToken,
                    int timeoutMs,
                    ResponseCallback onResult)
     {
-        enqueue ([apiPath, jsonBody, bearerToken, timeoutMs, onResult]
+        enqueueMetadata ([apiPath, jsonBody, bearerToken, timeoutMs, onResult]
         {
             deliver (onResult, post (apiPath, jsonBody, bearerToken, timeoutMs));
         });
     }
 
-    /** PATCH @p jsonBody to @p apiPath on the pool; @p onResult runs on the message thread. */
+    /** PATCH @p jsonBody to @p apiPath on the metadata pool; @p onResult runs on the message thread. */
     void patchJson (const juce::String& apiPath,
                     const juce::var& jsonBody,
                     const juce::String& bearerToken,
                     int timeoutMs,
                     ResponseCallback onResult)
     {
-        enqueue ([apiPath, jsonBody, bearerToken, timeoutMs, onResult]
+        enqueueMetadata ([apiPath, jsonBody, bearerToken, timeoutMs, onResult]
         {
             deliver (onResult, patch (apiPath, jsonBody, bearerToken, timeoutMs));
+        });
+    }
+
+    /** DELETE @p apiPath on the metadata pool; @p onResult runs on the message thread. */
+    void deleteJson (const juce::String& apiPath,
+                     const juce::String& bearerToken,
+                     int timeoutMs,
+                     ResponseCallback onResult)
+    {
+        enqueueMetadata ([apiPath, bearerToken, timeoutMs, onResult]
+        {
+            deliver (onResult, perform ("DELETE", apiPath, nullptr, bearerToken,
+                                        timeoutMs));
         });
     }
 
@@ -283,8 +296,14 @@ public:
 
 private:
     //==========================================================================
-    juce::ThreadPool pool { 2 };
+    // Two pools on purpose: small JSON requests (campaign list, profile, lobby
+    // polls) must never wait behind a multi-megabyte song or sound-pack
+    // download. With a single pool of two threads a download made the Battle
+    // list take seconds to appear.
+    juce::ThreadPool metaPool { 4 };
+    juce::ThreadPool pool { 6 };
 
+    void enqueueMetadata (std::function<void()> job) { metaPool.addJob (std::move (job)); }
     void enqueue (std::function<void()> job) { pool.addJob (std::move (job)); }
 
     static void deliver (const ResponseCallback& callback, Response response)

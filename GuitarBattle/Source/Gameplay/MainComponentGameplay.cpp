@@ -87,6 +87,47 @@ uint64_t MainComponent::getSongSampleForBeat(double beat) const
 
 void MainComponent::applyTempoPercent(double percent)
 {
+    // The tempo selector is a radio group, but programmatic changes (a forced
+    // 100% for duels, a queued request, a restored tempo) do not clear the
+    // other buttons on their own: setting one button on left the previous one
+    // lit too. Reflect the value on the whole selector instead.
+    const auto reflectTempoSelector = [this] (double value)
+    {
+        const auto matches = [value] (double target)
+        {
+            return std::abs (value - target) <= 0.01;
+        };
+
+        speed50Button.setToggleState (matches (50.0), juce::dontSendNotification);
+        speed75Button.setToggleState (matches (75.0), juce::dontSendNotification);
+        speed100Button.setToggleState (matches (100.0), juce::dontSendNotification);
+        speed120Button.setToggleState (matches (120.0), juce::dontSendNotification);
+    };
+
+    // Every duel is locked to the analysed 100% tempo: the server freezes the
+    // online chart at that tempo and the bot's note timeline is derived from
+    // the same chart. Ignore any other value while a duel is being prepared or
+    // played, and keep the 100% button as the visible state.
+    const bool duelTempoLocked =
+        duelActive.load (std::memory_order_relaxed)
+        || duelOnlineActive.load (std::memory_order_relaxed)
+        || duelPending
+        || duelOnlinePhase == DuelOnlinePhase::Preparing
+        || duelOnlinePhase == DuelOnlinePhase::Searching
+        || duelOnlinePhase == DuelOnlinePhase::Waiting
+        || duelOnlinePhase == DuelOnlinePhase::Playing
+        || duelOnlinePhase == DuelOnlinePhase::Finishing;
+
+    if (duelTempoLocked && std::abs (percent - 100.0) > 0.01)
+    {
+        reflectTempoSelector (100.0);
+        return;
+    }
+
+    // Reflect the accepted (or queued) target right away: exactly one tempo
+    // button stays lit.
+    reflectTempoSelector (percent);
+
     if (tempoChangeInProgress.load(std::memory_order_relaxed))
     {
         // A change is already being prepared: remember the latest request
@@ -280,6 +321,12 @@ void MainComponent::beginGameplayCountIn()
     if (gameState != GameState::Ready)
         return;
 
+    // A normal run must never inherit the pixel-art stage flag from a previous
+    // bot result card. A real duel keeps it (duelActive / duelOnlineActive).
+    if (! duelActive.load (std::memory_order_relaxed)
+        && ! duelOnlineActive.load (std::memory_order_relaxed))
+        duelStageResultActive = false;
+
     // A replay after an online duel reuses the loaded chart. Drop the finished
     // online snapshot so its result card cannot leak into the new run; the
     // online path itself sets duelOnlineActive before calling this.
@@ -309,9 +356,13 @@ void MainComponent::beginGameplayCountIn()
     }
 
     // The launch is counted and the server session is opened only now: the
-    // Ready screen itself is not gameplay. A training run never opens one, and
-    // an online duel is scored by /duels (no regular game session).
-    if (! practiceMode && ! duelOnlineActive.load (std::memory_order_relaxed))
+    // Ready screen itself is not gameplay. A training run never opens one, an
+    // online duel is scored by /duels and a Battle ("tower") stage is scored by
+    // POST /campaigns/{id}/stages/{position}/result — a regular game session
+    // would award the same run twice.
+    if (! practiceMode
+        && ! duelOnlineActive.load (std::memory_order_relaxed)
+        && ! campaignFightActive)
         startOnlineGameSession();
 
     const auto currentSample =
@@ -348,6 +399,7 @@ void MainComponent::beginGameplayCountIn()
                             std::memory_order_relaxed);
 
     currentPlayheadBeat.store(0.0, std::memory_order_relaxed);
+    audiblePlayheadBeat.store(0.0, std::memory_order_relaxed);
     tablatureComponent.setPlayheadBeat(0.0);
 
     metronome.resetScheduler(currentSample, 0);
@@ -378,7 +430,7 @@ void MainComponent::beginGameplayCountIn()
     menuButton.setButtonText("MAIN MENU");
     tunerStartButton.setEnabled(false);
     pauseButton.setButtonText("PAUSE");
-    hitLabel.setText(practiceMode ? "PRACTICE - PLAY THE HIGHLIGHTED NOTE"
+    hitLabel.setText(practiceMode ? "STUDY - PLAY THE HIGHLIGHTED NOTE"
                                   : "COUNT-IN 3",
                      juce::dontSendNotification);
 
@@ -570,6 +622,16 @@ void MainComponent::returnToSongSelect()
     practiceHoldUiApplied = false;
     practiceCompleted = false;
 
+    // The unranked notice belongs to the attempt that just ended. A new run or
+    // the next selection decides its own session kind.
+    currentSessionIsPractice = false;
+
+    // A pending campaign/duel start must not resume after the player leaves
+    // the result screen (the chart may still be downloading in the background).
+    duelPending = false;
+    duelOnlinePlaybackPending = false;
+    skipTunerForNextStage = false;
+
     // A duel ends with the song: its state must not leak into the next game.
     resetDuelState();
 
@@ -588,6 +650,16 @@ void MainComponent::returnToSongSelect()
 
     gameState =
         GameState::SongSelect;
+
+    currentSection = matchOriginSection;
+    tunerStandalone = false;
+    campaignFightActive = false;
+
+    if (sectionSidebar != nullptr)
+        sectionSidebar->setActiveSection (currentSection);
+
+    if (currentSection == AppSection::Campaign)
+        refreshCampaignSection();
 
     gameStartButton.setButtonText("START");
     menuButton.setButtonText("MAIN MENU");
@@ -616,6 +688,10 @@ void MainComponent::returnToSongSelect()
         std::memory_order_relaxed);
 
     currentPlayheadBeat.store(
+        0.0,
+        std::memory_order_relaxed);
+
+    audiblePlayheadBeat.store(
         0.0,
         std::memory_order_relaxed);
 
@@ -660,6 +736,32 @@ int MainComponent::getBestScoreForSong(const juce::String& slug, const juce::Str
 
 void MainComponent::startSelectedSong()
 {
+    appendAudioDebugLog("startSelectedSong entry index="
+                        + juce::String(selectedCatalogIndex)
+                        + " catalog="
+                        + juce::String(static_cast<int>(catalogSongs.size()))
+                        + " stage="
+                        + juce::String(campaignStage)
+                        + " campaign="
+                        + juce::String(campaignFightActive ? 1 : 0)
+                        + " skipTuner="
+                        + juce::String(skipTunerForNextStage ? 1 : 0));
+
+    if (songDownloadProgressState != nullptr)
+    {
+        appendAudioDebugLog("startSelectedSong deferred: download in progress");
+        return;
+    }
+
+    // An online match owns the transport while it is preparing/joining: a
+    // stale local START SONG must not load another chart under it.
+    if (duelOnlinePhase != DuelOnlinePhase::None
+        && duelOnlinePhase != DuelOnlinePhase::Finished)
+    {
+        appendAudioDebugLog("startSelectedSong blocked: online duel preparing");
+        return;
+    }
+
     // A new round starts from silence: the preview and the background track are
     // stopped before any game audio is scheduled.
     stopPreviewPlayback();
@@ -674,11 +776,18 @@ void MainComponent::startSelectedSong()
     // A catalog pick is always a normal session, never an official daily one.
     currentSessionIsDaily = false;
 
+    // A solo run from the Practice section is non-competitive: the server
+    // stores the score for audit only. A campaign stage, a duel and an online
+    // match keep their competitive path.
+    currentSessionIsPractice = ! campaignFightActive
+                               && ! duelPending
+                               && ! duelOnlinePlaybackPending;
+
     if (catalogSongs.empty())
     {
-        onlineCatalogStatusLabel.setText(
-            "No songs loaded. Press REFRESH CATALOG to fetch the server catalogue.",
-            juce::dontSendNotification);
+        appendAudioDebugLog("startSelectedSong aborted: empty catalogue");
+        abortPendingDuelStart(
+            "No songs loaded. Press REFRESH CATALOG to fetch the server catalogue.");
         return;
     }
 
@@ -686,18 +795,8 @@ void MainComponent::startSelectedSong()
                                         selectedCatalogIndex);
     const auto& song = catalogSongs[static_cast<size_t>(selectedCatalogIndex)];
 
-    // Locked tiers cannot be started: the row already says which player level
-    // is required, this is the second guard for the START button and the
-    // Enter key.
-    if (! isSongUnlocked(song))
-    {
-        onlineCatalogStatusLabel.setText(
-            song.title + " unlocks at level "
-                + juce::String(requiredPlayerLevelForSong(song.difficulty))
-                + " (you are level " + juce::String(progressionLevel) + ").",
-            juce::dontSendNotification);
-        return;
-    }
+    // Every catalogue song is playable regardless of the player level, so a
+    // chart is never refused here.
 
     // The published difficulty drives the per-note points multiplier.
     songLevel.store(juce::jlimit(1, 10, song.difficulty), std::memory_order_relaxed);
@@ -711,11 +810,21 @@ void MainComponent::startSelectedSong()
     if (auto* entry = findOnlineLibraryEntry(song.slug))
     {
         onlineSongUuid = song.serverId;
-        if (loadSongMidi(entry->title))
+        const bool midiOk = loadSongMidi(entry->title);
+        appendAudioDebugLog("startSelectedSong cached title="
+                            + song.title + " slug=" + song.slug
+                            + " midiOk=" + juce::String(midiOk ? 1 : 0));
+
+        if (midiOk)
         {
             beginTuningForSelectedSong();
             return;
         }
+    }
+    else
+    {
+        appendAudioDebugLog("startSelectedSong download title="
+                            + song.title + " slug=" + song.slug);
     }
 
     // Assets are downloaded on demand, never for the whole catalogue at once.
@@ -1128,6 +1237,21 @@ void MainComponent::beginTuningForSelectedSong()
     // the note data is ready, so the bot plays exactly this song.
     beginPendingDuelIfNeeded();
 
+    // Campaign: after a victory the next opponent opens the Ready screen right
+    // away, without asking the player to tune again.
+    if (skipTunerForNextStage)
+    {
+        skipTunerForNextStage = false;
+        tuner.markAllStringsTuned();
+        tunerActive.store(false, std::memory_order_relaxed);
+
+        if (tunerStartButton.onClick != nullptr)
+        {
+            tunerStartButton.onClick();
+            return;
+        }
+    }
+
     // Online duel: the chart was validated against the server's frozen
     // note_count. Skip the tuner and Ready screens (the server countdown is
     // already running) and start the aligned transport.
@@ -1424,6 +1548,15 @@ void MainComponent::advanceTarget()
             + " -> "
             + juce::String(nextIndex));
 
+        appendAudioDebugLog("PLAYBACK: chart end next="
+                            + juce::String(nextIndex)
+                            + " duelActive="
+                            + juce::String(duelActive.load(std::memory_order_relaxed) ? 1 : 0)
+                            + " campaign="
+                            + juce::String(campaignFightActive ? 1 : 0)
+                            + " stage="
+                            + juce::String(campaignStage));
+
         gameState =
             GameState::Finished;
 
@@ -1434,7 +1567,12 @@ void MainComponent::advanceTarget()
         juce::MessageManager::callAsync(
             [this]
             {
-                saveBestScoreForSelectedSong(gameplayStats.getScore());
+                // A Study run and a Practice-section run are non-competitive:
+                // the local personal best stays untouched, only the stats of
+                // this attempt are displayed.
+                if (! practiceMode && ! currentSessionIsPractice)
+                    saveBestScoreForSelectedSong(gameplayStats.getScore());
+
                 submitOnlineGameResult();
                 gameStartButton.setButtonText("PLAY AGAIN");
                 menuButton.setButtonText("MAIN MENU");

@@ -36,11 +36,24 @@ class Settings(BaseSettings):
     max_audio_upload_bytes: int = 100 * 1024 * 1024
     # Landing page CMS: hero image/video uploads, served at /media/landing/<name>.
     landing_media_dir: Path = Path("/data/landing_media")
+    # Battle tower covers uploaded in the admin panel, served at
+    # /media/campaigns/<name>. The default lives inside the landing media root,
+    # so the existing landing_media_data volume backs it without a new mount.
+    campaign_media_dir: Path = Path("/data/landing_media/campaigns")
+    max_campaign_cover_bytes: int = 2 * 1024 * 1024
     # Desktop game installers offered at /api/v1/downloads/game.
     game_builds_dir: Path = Path("/data/game_builds")
     # Global non-gameplay audio (background music), served at
     # /api/v1/app/background-music. Backed by the app_audio_data volume.
     app_audio_dir: Path = Path("/data/app_audio")
+    # Gameplay visuals managed in the admin panel: UI-level character
+    # spritesheets (``characters/``) and stage backgrounds (``stages/``).
+    # Served at /media/characters/<file> and /media/stages/<file>.
+    gameplay_media_dir: Path = Path("/data/gameplay_media")
+    max_gameplay_media_bytes: int = 16 * 1024 * 1024
+    # Admin-uploaded UI sounds (short MP3/WAV/OGG clips) stored under
+    # ``gameplay_media_dir/ui_sounds`` and served by /api/v1/ui-sounds.
+    max_ui_sound_bytes: int = 2 * 1024 * 1024
     # DB-IP Lite country database used for IP-based language detection.
     geoip_db_path: Path = Path("/data/geoip/dbip-country-lite.mmdb")
     # Country of registration/sign-in for the admin statistics. This is a
@@ -65,6 +78,10 @@ class Settings(BaseSettings):
     smtp_from_email: EmailStr = "noreply@fretfight.online"
     smtp_from_name: str = "FretFight"
     smtp_timeout_seconds: int = Field(default=10, ge=1)
+
+    # Inbox for the public ``POST /feedback`` endpoint. Overridable so the
+    # destination is not baked into the image.
+    feedback_email_to: EmailStr = "chumakevgeny@gmail.com"
 
     # One-time codes for email verification and password recovery.
     email_code_expire_minutes: int = 15

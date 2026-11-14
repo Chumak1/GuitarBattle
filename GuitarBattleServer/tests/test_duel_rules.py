@@ -34,11 +34,85 @@ def test_quality_points_match_the_client():
 
 def test_damage_constants_match_the_client_build():
     # Keep in sync with GuitarBattle/Source/Gameplay/DuelEngine.h (DuelConfig).
-    assert duel_rules.RULES_VERSION == 2
+    assert duel_rules.RULES_VERSION == 3
     assert duel_rules.MAX_HEALTH == 100.0
     assert duel_rules.DAMAGE_PER_POINT == 0.10
     assert duel_rules.MIN_DAMAGE == 1.0
     assert duel_rules.MAX_DAMAGE == 10.0
+    assert duel_rules.DAMAGE_REFERENCE_NOTES == 48
+    assert duel_rules.DAMAGE_MIN_SCALE == 0.20
+
+
+@pytest.mark.parametrize(
+    "note_count,expected",
+    [
+        (0, 1.0),
+        (36, 1.0),
+        (48, 1.0),
+        (96, 0.5),
+        (144, 1.0 / 3.0),
+        (1000, 0.20),
+        (10_000, 0.20),
+    ],
+)
+def test_damage_scale_follows_the_chart_length(note_count, expected):
+    # Port of duelDamageScaleForNoteCount from DuelEngine.h.
+    assert duel_rules.damage_scale_for_note_count(note_count) == pytest.approx(
+        expected
+    )
+
+
+def test_damage_scale_defaults_to_the_full_damage_for_unusable_counts():
+    assert duel_rules.damage_scale_for_note_count(None) == 1.0  # type: ignore[arg-type]
+    assert duel_rules.damage_scale_for_note_count(-5) == 1.0
+
+
+def test_damage_scale_multiplies_the_clamped_base_damage():
+    # Perfect vs Miss: base 100 * 0.10 = 10.0, scaled by 0.5.
+    scaled = duel_rules.resolve_note(
+        DuelQuality.PERFECT, DuelQuality.MISS, damage_scale=0.5
+    )
+    assert scaled.exchange is DuelExchange.PLAYER_HIT
+    assert scaled.damage_to_opponent == pytest.approx(5.0)
+    assert scaled.damage_to_player == 0.0
+
+    # The default keeps every existing caller unchanged.
+    unscaled = duel_rules.resolve_note(DuelQuality.PERFECT, DuelQuality.MISS)
+    assert unscaled.damage_to_opponent == pytest.approx(10.0)
+
+    # Perfect vs Good: base 30 * 0.10 = 3.0, scaled by 0.5.
+    good = duel_rules.resolve_note(
+        DuelQuality.PERFECT, DuelQuality.GOOD, damage_scale=0.5
+    )
+    assert good.damage_to_opponent == pytest.approx(1.5)
+
+    # Scaled damage is not re-clamped to [1.0, 10.0]: a long chart can deal
+    # well under one HP per note.
+    tiny = duel_rules.resolve_note(
+        DuelQuality.GREAT, DuelQuality.GOOD, damage_scale=0.2
+    )
+    assert tiny.damage_to_opponent == pytest.approx(0.3)
+
+
+def test_damage_scale_is_symmetric_and_sanitised():
+    forward = duel_rules.resolve_note(
+        DuelQuality.PERFECT, DuelQuality.MISS, damage_scale=1.0 / 3.0
+    )
+    backward = duel_rules.resolve_note(
+        DuelQuality.MISS, DuelQuality.PERFECT, damage_scale=1.0 / 3.0
+    )
+    assert forward.damage_to_opponent == pytest.approx(10.0 / 3.0)
+    assert backward.damage_to_player == pytest.approx(10.0 / 3.0)
+
+    # A negative or non-finite factor never boosts damage.
+    negative = duel_rules.resolve_note(
+        DuelQuality.PERFECT, DuelQuality.MISS, damage_scale=-2.0
+    )
+    assert negative.damage_to_opponent == 0.0
+    nan = duel_rules.resolve_note(
+        DuelQuality.PERFECT, DuelQuality.MISS, damage_scale=float("nan")
+    )
+    assert nan.damage_to_opponent == pytest.approx(10.0)
 
 
 def test_both_miss_is_a_no_damage_exchange():

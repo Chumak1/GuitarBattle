@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.api.v1.auth import get_current_user
 from app.config import settings
 from app.database import get_db
+from app.models.gameplay_visuals import StageLevel, UiCharacter
 from app.models.song import Song, SongFile
 from app.models.user import User
 from app.schemas.admin_songs import (
@@ -30,6 +31,7 @@ from app.schemas.admin_songs import (
 )
 from app.services.daily_slots import apply_song_weekday
 from app.services.mp3_upload import has_mp3_extension, looks_like_mp3
+from app.services.gameplay_media import character_sheet_url, stage_background_url
 from app.services.song_archive import SongUsage, archive_song, restore_song, song_usage
 from app.services.song_assets import (
     PREVIEW_ROLE,
@@ -54,9 +56,51 @@ def _admin_file_response(song_id: UUID, stored_file: SongFile) -> AdminSongFileR
     return result
 
 
+def _apply_admin_visuals(song: Song, result: AdminSongResponse) -> None:
+    """Fill the optional character/stage fields from the relationships."""
+    character = song.character
+    stage = song.stage
+    result.character_id = song.character_id
+    result.character_name = character.name if character is not None else None
+    result.character_sheet_url = (
+        character_sheet_url(character.sheet_key) if character is not None else None
+    )
+    result.stage_id = song.stage_id
+    result.stage_name = stage.name if stage is not None else None
+    result.stage_background_url = (
+        stage_background_url(stage.background_key) if stage is not None else None
+    )
+
+
+def _validate_song_visuals(
+    db: Session,
+    character_id: UUID | None,
+    stage_id: UUID | None,
+) -> None:
+    """Reject unknown character and stage IDs with a clear 422.
+
+    ``character_id``/``stage_id`` come straight from the admin form and are
+    independent selections: since migration ``0025`` a stage is a standalone
+    background and no longer belongs to a character, so any pair is valid.
+    """
+    character = db.get(UiCharacter, character_id) if character_id is not None else None
+    if character_id is not None and character is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Selected character does not exist",
+        )
+    stage = db.get(StageLevel, stage_id) if stage_id is not None else None
+    if stage_id is not None and stage is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Selected stage does not exist",
+        )
+
+
 def _admin_song_response(song: Song, files_by_role: dict[str, SongFile]) -> AdminSongResponse:
     result = AdminSongResponse.model_validate(song)
     result.readiness = build_readiness(files_by_role)
+    _apply_admin_visuals(song, result)
     preview = files_by_role.get(PREVIEW_ROLE)
     # Additive field for the web admin player. The URL is the admin-only
     # download route, so it never exposes the preview outside ``/admin``.
@@ -84,6 +128,7 @@ def _admin_song_detail(
 ) -> AdminSongDetailResponse:
     result = AdminSongDetailResponse.model_validate(song)
     result.readiness = build_readiness(files_by_role)
+    _apply_admin_visuals(song, result)
 
     def optional(role: str) -> AdminSongFileResponse | None:
         stored_file = files_by_role.get(role)
@@ -115,7 +160,7 @@ def list_all_songs(
         default=None,
         description="Filter by archive state: true = only archived, false = only active",
     ),
-    limit: int = Query(default=20, ge=1, le=100),
+    limit: int = Query(default=20, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
@@ -138,6 +183,7 @@ def list_all_songs(
 
 @router.post("", response_model=AdminSongResponse, status_code=status.HTTP_201_CREATED, summary="Create a song draft")
 def create_song(payload: AdminSongCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> AdminSongResponse:
+    _validate_song_visuals(db, payload.character_id, payload.stage_id)
     song = Song(**payload.model_dump(), is_published=False, version=1)
     db.add(song)
     try:
@@ -191,6 +237,16 @@ def update_song(song_id: UUID, payload: AdminSongUpdate, db: Session = Depends(g
             status_code=status.HTTP_409_CONFLICT,
             detail="Archived songs cannot be scheduled for the Daily Challenge",
         )
+    if "character_id" in changes or "stage_id" in changes:
+        effective_character = (
+            changes["character_id"]
+            if "character_id" in changes
+            else song.character_id
+        )
+        effective_stage = (
+            changes["stage_id"] if "stage_id" in changes else song.stage_id
+        )
+        _validate_song_visuals(db, effective_character, effective_stage)
     for key, value in changes.items():
         setattr(song, key, value)
     song.version += 1
@@ -721,13 +777,20 @@ def analyze_song_midi(
     if record is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="MIDI file not found")
 
+    song = db.get(Song, song_id)
     storage_root = settings.song_files_dir.resolve()
     target = (storage_root / record.object_key).resolve()
     if not target.is_relative_to(storage_root) or not target.is_file():
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Stored MIDI file not found")
 
     try:
-        parsed = parse_midi(target.read_bytes())
+        # Many exports omit set_tempo; fall back to the song tempo so the saved
+        # seconds match the stems instead of the MIDI default of 120 BPM. An
+        # explicit tempo event in the file still wins.
+        parsed = parse_midi(
+            target.read_bytes(),
+            fallback_bpm=float(song.bpm) if song is not None and song.bpm else None,
+        )
     except MidiParseError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     except OSError as exc:

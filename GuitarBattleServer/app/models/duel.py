@@ -58,6 +58,7 @@ class DuelMatch(Base):
         # History and period leaderboards.
         Index("ix_duel_matches_finished_at", "finished_at"),
         Index("ix_duel_matches_song_id", "song_id"),
+        Index("ix_duel_matches_lobby_id", "lobby_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -69,6 +70,14 @@ class DuelMatch(Base):
         # Songs are archived in this project, not hard-deleted.
         ForeignKey("songs.id", ondelete="RESTRICT"),
         nullable=False,
+    )
+    #: Lobby this match was started from (``NULL`` for the legacy quick queue
+    #: and for bot matches). ``SET NULL`` keeps the match history when a lobby
+    #: row is removed; rematch/return-to-lobby refuse a match without it.
+    lobby_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("duel_lobbies.id", ondelete="SET NULL"),
+        nullable=True,
     )
     mode: Mapped[str] = mapped_column(String(16), nullable=False)
     #: ``easy``/``normal``/``hard`` for a bot match, ``NULL`` for online.
@@ -206,11 +215,31 @@ class DuelParticipant(Base):
     xp_awarded: Mapped[int] = mapped_column(
         Integer, nullable=False, default=0, server_default="0"
     )
+    #: Quality-points total of this side (``perfect*100 + great*85 + good*70``),
+    #: the same weights :func:`app.services.duel_rules.accuracy_factor` uses.
+    #: Stored at finish; ``NULL`` for rows written before migration 0030.
+    score_points: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: ``score_points`` extrapolated to the full chart (``notes_played`` /
+    #: ``note_count``). ``NULL`` when the early end is too short to extrapolate.
+    normalized_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Audit snapshot of the XP calculation (factors, repeat slot, PB bonus).
+    xp_breakdown: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    #: Set exactly once when XP was applied; a second call is a no-op.
+    xp_applied_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     #: Elo snapshots. ``NULL`` for bots and for matches that never changed the
     #: rating. ``rating_before`` is also written at queue time (online) so the
     #: matchmaking window can be checked without recomputing the rating.
     rating_before: Mapped[int | None] = mapped_column(Integer, nullable=True)
     rating_after: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    #: Frozen Guitar Skills of this side right before the match was finalised
+    #: (migration 0035). ``NULL`` for bot sides and for matches finished before
+    #: the rating existed; the duel component then falls back to the rating
+    #: proxy and lowers its confidence instead of inventing a value.
+    guitar_skills_before: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
     result: Mapped[str | None] = mapped_column(String(8), nullable=True)
 
 
@@ -257,6 +286,167 @@ class DuelEvent(Base):
     client_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     #: Server clock relative to ``duel_matches.started_at`` at receipt time.
     server_time_ms: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class DuelSongBest(Base):
+    """Per-player online-duel personal best on one song.
+
+    Anti-farm: the PB bonus (``reward_config.PB_BONUS_FACTOR`` × base XP) is
+    granted only when a finished online duel *strictly* improves the stored
+    accuracy (quality/notes, the same formula as
+    :func:`app.services.duel_rules.accuracy_factor`). Equal or lower results get
+    no bonus. ``best_score`` keeps the quality-points total for the audit trail.
+    """
+
+    __tablename__ = "duel_song_bests"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    song_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("songs.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    best_accuracy: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0, server_default="0"
+    )
+    best_score: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class DuelLobby(Base):
+    """A shared room of two players with chat and a host-chosen song.
+
+    The room exists before a song is picked: the host creates it with a name and
+    an optional password, a guest joins, chat works in both directions, and only
+    the host selects the published song and starts the match. ``duel_matches``
+    rows remember ``lobby_id`` so *rematch* and *return-to-lobby* can find the
+    room again after the match is over.
+
+    ``status`` is ``waiting`` (joinable / chatting), ``playing`` (a match was
+    started from this room) or ``closed`` (host left; the chat stays readable
+    for the two members).
+
+    Starting a match is a two-step handshake: the host creates a pending
+    ``start_requested_by`` request, both players confirm with
+    ``start_host_confirmed`` / ``start_guest_confirmed``, and only then is the
+    ``duel_matches`` row created. The legacy ``/start`` endpoint keeps working
+    without the request for older clients.
+    """
+
+    __tablename__ = "duel_lobbies"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('waiting', 'playing', 'closed')",
+            name="ck_duel_lobbies_status",
+        ),
+        CheckConstraint(
+            "char_length(name) >= 1 AND char_length(name) <= 40",
+            name="ck_duel_lobbies_name",
+        ),
+        CheckConstraint(
+            "guest_user_id IS NULL OR guest_user_id <> host_user_id",
+            name="ck_duel_lobbies_guest_not_host",
+        ),
+        Index("ix_duel_lobbies_status_created", "status", "created_at"),
+        Index("ix_duel_lobbies_host_user_id", "host_user_id"),
+        Index("ix_duel_lobbies_guest_user_id", "guest_user_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    name: Mapped[str] = mapped_column(String(40), nullable=False)
+    #: Argon2 hash of the optional room password. Plaintext is never stored.
+    password_hash: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    host_user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    #: ``NULL`` while the room is still waiting for a second player.
+    guest_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    #: Chosen by the host; ``NULL`` until then.
+    song_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("songs.id", ondelete="RESTRICT"),
+        nullable=True,
+    )
+    status: Mapped[str] = mapped_column(
+        String(16), nullable=False, default="waiting", server_default="waiting"
+    )
+    #: Pending "start the duel?" request (``NULL`` = no request). Both players
+    #: confirm before the match is created; a decline or a room reset clears
+    #: the whole triple. The room itself stays ``waiting`` meanwhile.
+    start_requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    start_host_confirmed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    start_guest_confirmed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+
+class DuelLobbyMessage(Base):
+    """One chat message of a duel lobby.
+
+    ``id`` is a monotonic identity column, so the client polls incrementally
+    with ``?after_id=`` instead of re-reading the whole history.
+    """
+
+    __tablename__ = "duel_lobby_messages"
+    __table_args__ = (
+        CheckConstraint(
+            "char_length(text) >= 1 AND char_length(text) <= 500",
+            name="ck_duel_lobby_messages_text",
+        ),
+        Index("ix_duel_lobby_messages_lobby_id_id", "lobby_id", "id"),
+    )
+
+    id: Mapped[int] = mapped_column(
+        BigInteger, primary_key=True, autoincrement=True
+    )
+    lobby_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("duel_lobbies.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    text: Mapped[str] = mapped_column(String(500), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )

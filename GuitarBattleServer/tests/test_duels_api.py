@@ -13,6 +13,7 @@ import pytest
 from sqlalchemy import update
 
 from app.models.duel import DuelMatch
+from app.services import duel_rules
 
 pytestmark = pytest.mark.db
 
@@ -71,7 +72,7 @@ def test_bot_match_is_server_authoritative_and_idempotent(
     match = _create(db_client, user_account["headers"], published_song["id"])
     match_id = match["match_id"]
     assert match["mode"] == "bot"
-    assert match["rules_version"] == 2
+    assert match["rules_version"] == 3
     assert match["note_count"] > 0
     assert 0 <= match["seed"] <= 0xFFFFFFFF
     assert len(match["participants"]) == 2
@@ -219,7 +220,12 @@ def test_online_queue_pairing_elo_and_leaderboard(
     player = next(p for p in state["participants"] if p["side"] == "player")
     opponent = next(p for p in state["participants"] if p["side"] == "opponent")
     assert player["hp"] == pytest.approx(100.0)
-    assert opponent["hp"] < 100.0
+    # rules_version 3 scales damage by the frozen chart length: the synthetic
+    # chart of the 90 s test song has 180 notes, so the factor is 48/180 and
+    # four perfect-vs-miss exchanges deal 4 * 10.0 * 48/180 HP.
+    assert opponent["hp"] == pytest.approx(
+        100.0 - 4 * 10.0 * duel_rules.DAMAGE_REFERENCE_NOTES / 180, abs=0.01
+    )
 
     waiting = db_client.post(
         f"{API}/duels/{match_id}/finish", headers=second_user["headers"]
@@ -271,6 +277,50 @@ def test_online_queue_pairing_elo_and_leaderboard(
     me = db_client.get(f"{API}/duels/me", headers=user_account["headers"])
     assert me.status_code == 200, me.text
     assert me.json()["active_match"] is None
+
+
+def test_rules_version_2_match_keeps_unscaled_damage(
+    db_client, user_account, second_user, published_song, db_session
+):
+    """Matches created before the v3 rollout keep the old damage.
+
+    The chart length is the same 180-note synthetic chart as above, but a
+    frozen ``rules_version = 2`` must ignore the scaling factor entirely.
+    """
+    match = _create(
+        db_client, user_account["headers"], published_song["id"], mode="online"
+    )
+    match_id = match["match_id"]
+    _create(db_client, second_user["headers"], published_song["id"], mode="online")
+
+    db_session.execute(
+        update(DuelMatch)
+        .where(DuelMatch.id == UUID(match_id))
+        .values(rules_version=2)
+    )
+    db_session.commit()
+
+    db_client.post(f"{API}/duels/{match_id}/ready", headers=user_account["headers"])
+    db_client.post(f"{API}/duels/{match_id}/ready", headers=second_user["headers"])
+    _rewind_start(db_session, match_id, seconds=10)
+
+    db_client.post(
+        f"{API}/duels/{match_id}/events",
+        json={"events": [{"note_index": i, "quality": "perfect"} for i in range(4)]},
+        headers=user_account["headers"],
+    )
+    body = db_client.post(
+        f"{API}/duels/{match_id}/events",
+        json={"events": [{"note_index": i, "quality": "miss"} for i in range(4)]},
+        headers=second_user["headers"],
+    )
+    assert body.status_code == 200, body.text
+    state = body.json()["match"]
+    assert state["rules_version"] == 2
+
+    opponent = next(p for p in state["participants"] if p["side"] == "opponent")
+    # Unscaled: four perfect-vs-miss exchanges at the full 10.0 each.
+    assert opponent["hp"] == pytest.approx(60.0)
 
 
 def test_no_opponent_after_timeout_cancels_the_queue(

@@ -37,8 +37,27 @@ public:
 
     void paint(juce::Graphics& g) override;
 
+    void resized() override;
+
 private:
     std::vector<TabNote> notes;
+
+    // The card background, header and finger legend never change while the
+    // playhead runs; drawing them into an image once per resize keeps the
+    // 60 Hz repaint focused on the notes and the playhead.
+    juce::Image staticLayer;
+    bool staticLayerDirty = true;
+
+    // Pre-rendered fret digits: laying out text for every visible note on every
+    // frame was the dominant cost on dense, fast charts.
+    std::array<juce::Image, 32> fretGlyphs;
+    float fretGlyphRadius = 0.0f;
+
+    // Adaptive repaint rate: 120 Hz halves the scroll step on fast charts when
+    // a frame is cheap enough, 60 Hz keeps slow machines responsive.
+    std::atomic<double> maxPaintMs { 0.0 };
+    int timerHz = 60;
+    int rateCheckTicks = 0;
 
     double playheadBeat = 0.0;
     bool playheadRunning = false;

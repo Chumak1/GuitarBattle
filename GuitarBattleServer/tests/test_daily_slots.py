@@ -320,7 +320,7 @@ def test_catalog_excludes_daily_song_but_assets_stay_reachable(
 
 
 @pytest.mark.db
-def test_global_rating_and_best_scores_ignore_daily_songs(
+def test_best_scores_ignore_daily_songs_while_the_ranked_event_stays(
     db_client, admin_user, user_account, second_user, published_song
 ):
     headers = admin_user["headers"]
@@ -338,7 +338,14 @@ def test_global_rating_and_best_scores_ignore_daily_songs(
 
     rating = db_client.get(f"{helpers.API}/leaderboard/global")
     assert rating.status_code == 200
-    assert rating.json()["items"] == []
+    # The ranked event was created while the song was still an ordinary
+    # catalogue entry. Guitar Skills stores events as immutable history, so
+    # scheduling the song as the Daily Challenge afterwards neither deletes nor
+    # rewrites the result the player already earned; best-scores above (which
+    # are read live from the catalogue) still hide the daily song.
+    assert [item["username"] for item in rating.json()["items"]] == [
+        user_account["username"]
+    ]
 
 
 @pytest.mark.db

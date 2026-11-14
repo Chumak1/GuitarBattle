@@ -198,11 +198,14 @@ def test_archive_keeps_best_score_mastery_xp_and_daily_results(
     assert after_profile["mastery_by_song"][0]["song_id"] == song["id"]
     assert after_profile["personal_bests"][0]["best_score"] == DAILY_SCORE["score_points"]
 
-    # The rating is identical — the official daily attempt still does not feed
-    # the ordinary rating, and nothing was duplicated.
+    # The rating is identical — archiving a song never rewrites the ranked
+    # history that was already earned, and nothing was duplicated. The official
+    # daily attempt is a ranked solo event, so the player keeps a Guitar Skills
+    # entry.
     after_rating = _global_rating(db_client, user_account["username"])
     assert after_rating == before_rating
-    assert after_rating is None
+    assert after_rating is not None
+    assert after_rating["events_counted"] >= 1
 
     # Daily history stays readable after the song left the catalogue.
     after_history = db_client.get(f"{helpers.API}/daily/history", headers=headers)

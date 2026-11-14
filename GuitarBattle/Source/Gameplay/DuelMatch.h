@@ -43,10 +43,11 @@ class DuelMatch
 public:
     DuelMatch (DuelConfig configuration,
                DuelBotLevel botLevel,
+               int songDifficulty,
                std::uint32_t seed,
                int noteCount)
-        : engine (configuration),
-          config (configuration),
+        : engine (duelConfigForNoteCount (configuration, noteCount)),
+          config (duelConfigForNoteCount (configuration, noteCount)),
           level (botLevel),
           matchSeed (seed)
     {
@@ -56,7 +57,7 @@ public:
         for (int i = 0; i < noteCount; ++i)
             botQualities[static_cast<size_t> (i)] =
                 static_cast<std::uint8_t> (
-                    duelBotQuality (level, matchSeed, i));
+                    duelBotQuality (level, songDifficulty, matchSeed, i));
 
         playerHealth = config.maxHealth;
         opponentHealth = config.maxHealth;

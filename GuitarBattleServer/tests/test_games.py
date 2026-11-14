@@ -178,7 +178,12 @@ def test_global_and_song_leaderboards(
     )
     assert (
         _finish_session(
-            db_client, user_account["headers"], first_session["id"], score_points=2000
+            db_client,
+            user_account["headers"],
+            first_session["id"],
+            score_points=2000,
+            notes_total=100,
+            notes_played=100,
         ).status_code
         == 200
     )
@@ -187,7 +192,12 @@ def test_global_and_song_leaderboards(
     )
     assert (
         _finish_session(
-            db_client, second_user["headers"], second_session["id"], score_points=500
+            db_client,
+            second_user["headers"],
+            second_session["id"],
+            score_points=500,
+            notes_total=100,
+            notes_played=100,
         ).status_code
         == 200
     )
@@ -224,7 +234,16 @@ def test_global_and_song_leaderboards(
 def _play_song(client, headers, song_id, score_points):
     """Finish one full session for ``song_id`` with the given points."""
     session = _create_session(client, headers, song_id)
-    response = _finish_session(client, headers, session["id"], score_points=score_points)
+    response = _finish_session(
+        client,
+        headers,
+        session["id"],
+        score_points=score_points,
+        # The chart length makes the score-efficiency component of Guitar
+        # Skills meaningful: without it the server cannot know the maximum.
+        notes_total=100,
+        notes_played=100,
+    )
     assert response.status_code == 200, response.text
     return response.json()
 

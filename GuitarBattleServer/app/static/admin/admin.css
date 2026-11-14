@@ -421,6 +421,26 @@ code {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
 }
 
+/* Thumbnails of uploaded gameplay visuals (UI-level sheets and stage
+ * backgrounds). The 2:1 box matches the character spritesheet grid. */
+.visual-thumb {
+  width: 4.5rem;
+  height: 2.25rem;
+  display: block;
+  object-fit: cover;
+  border-radius: 0.5rem;
+  background: #0c1117;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+/* Compact name tags of the selected character/stage in the songs table. */
+.badge-visual {
+  color: #c7d7e6;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.12);
+  font-size: 0.67rem;
+}
+
 .song-title {
   font-weight: 650;
   color: #f0f5fa;
@@ -805,6 +825,17 @@ code {
   margin: -0.25rem 0.6rem -0.25rem -0.75rem;
 }
 
+/* UI sounds table: a bounded gain slider and a compact file picker keep the
+ * six columns readable without a second layout. */
+.ui-sound-gain {
+  width: 7rem;
+  flex: 0 0 auto;
+}
+
+.ui-sound-file {
+  min-width: 11rem;
+}
+
 .bg-music-actions {
   display: flex;
   flex-direction: column;
@@ -1036,6 +1067,28 @@ code {
   display: block;
   max-width: 100%;
   max-height: 16rem;
+}
+
+.campaign-cover-preview {
+  max-width: 22rem;
+}
+
+.campaign-cover-preview img {
+  width: 100%;
+  max-height: 12rem;
+  object-fit: cover;
+}
+
+.campaign-cover-preview .campaign-cover-url {
+  position: absolute;
+  right: 0.5rem;
+  bottom: 0.4rem;
+  max-width: calc(100% - 1rem);
+  overflow: hidden;
+  color: var(--gb-muted);
+  font-size: 0.68rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .landing-bg-url {
@@ -1546,3 +1599,244 @@ code {
 }
 
 
+
+/* ---------------------------------------------------------------------------
+ * Statistics: game-mode columns and the per-account card.
+ * The table columns are compact (value + mono caption) and follow the same
+ * tokens as the rest of the stats tab; the card lives in a Bootstrap modal and
+ * only needs spacing, a metric grid and the character list.
+ * ------------------------------------------------------------------------- */
+
+.stats-user-row {
+  cursor: pointer;
+}
+
+.stats-user-row:hover > *,
+.stats-user-row:focus-visible > * {
+  background-color: rgba(255, 255, 255, 0.035);
+}
+
+.stats-user-row:focus-visible {
+  outline: 2px solid rgba(243, 196, 81, 0.55);
+  outline-offset: -2px;
+}
+
+.stats-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  white-space: nowrap;
+}
+
+.stats-mode-value {
+  color: #eef4fa;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-mode-empty {
+  color: #607080;
+}
+
+.stats-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.stats-detail-block {
+  padding: 1rem;
+  border: 1px solid var(--gb-border);
+  border-radius: 0.9rem;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.stats-detail-grid .stats-detail-block {
+  margin-top: 0;
+}
+
+#statsUserBody > .stats-detail-block:last-child {
+  margin-top: 1rem;
+}
+
+.stats-detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.75rem;
+}
+
+.stats-detail-title {
+  color: #f0f5fa;
+  font-weight: 700;
+  font-size: 0.95rem;
+  margin-bottom: 0.6rem;
+}
+
+.stats-detail-head .stats-detail-title {
+  margin-bottom: 0;
+}
+
+.stats-detail-sub {
+  color: var(--gb-muted);
+  font-size: 0.76rem;
+}
+
+.stats-detail-kv {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0;
+}
+
+.stats-detail-kv > div {
+  display: grid;
+  grid-template-columns: 7.5rem 1fr;
+  gap: 0.75rem;
+  align-items: baseline;
+}
+
+.stats-detail-kv dt {
+  color: var(--gb-muted);
+  font-weight: 500;
+  font-size: 0.78rem;
+}
+
+.stats-detail-kv dd {
+  margin: 0;
+  color: #e9eff6;
+  font-size: 0.85rem;
+  overflow-wrap: anywhere;
+}
+
+.stats-detail-metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(6.5rem, 1fr));
+  gap: 0.6rem;
+  margin-bottom: 0.9rem;
+}
+
+.stats-detail-metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--gb-border);
+  border-radius: 0.65rem;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.stats-detail-label {
+  color: var(--gb-muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stats-detail-value {
+  color: #f0f5fa;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
+
+.stats-detail-hint {
+  color: #607080;
+  font-size: 0.68rem;
+}
+
+.stats-detail-empty {
+  color: var(--gb-muted);
+  font-size: 0.8rem;
+  margin: 0;
+  padding: 0.5rem 0;
+}
+
+.stats-towers-wrap {
+  border: 1px solid var(--gb-border);
+  border-radius: 0.65rem;
+  overflow: hidden;
+}
+
+.stats-towers-table {
+  font-size: 0.8rem;
+}
+
+.stats-towers-table th {
+  color: var(--gb-muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stats-towers-table td,
+.stats-towers-table th {
+  padding: 0.4rem 0.6rem;
+}
+
+.stats-char-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin: 0 0 0.75rem;
+  padding: 0;
+  list-style: none;
+}
+
+.stats-char {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid var(--gb-border);
+  border-radius: 0.65rem;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.stats-char.is-selected {
+  border-color: rgba(243, 196, 81, 0.45);
+  background: rgba(243, 196, 81, 0.06);
+}
+
+.stats-char-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.stats-char-name {
+  color: #eef4fa;
+  font-weight: 650;
+  font-size: 0.85rem;
+}
+
+.stats-char-badge {
+  margin-left: 0.35rem;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(243, 196, 81, 0.16);
+  color: var(--gb-accent);
+  font-size: 0.64rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stats-char-meta {
+  color: var(--gb-muted);
+  font-size: 0.72rem;
+}
+
+.stats-chars-add {
+  display: flex;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.stats-chars-add .form-select {
+  min-width: 0;
+}

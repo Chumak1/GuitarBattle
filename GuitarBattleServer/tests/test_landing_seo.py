@@ -199,7 +199,10 @@ def test_structured_data_describes_the_app(client, lang: str) -> None:
     organization = graph["Organization"]
     assert organization["name"] == "fretfight"
     assert organization["url"] == f"{ORIGIN}/"
-    assert organization["logo"]["url"] == f"{ORIGIN}/app/logo.png"
+    # The square brand icon, not the 600px marketing artwork: Google shows
+    # ``Organization.logo`` next to the site in results.
+    assert organization["logo"] == f"{ORIGIN}/app/icon-512.png"
+    assert organization["image"] == f"{ORIGIN}/app/icon-512.png"
 
     site = graph["WebSite"]
     assert site["url"] == f"{ORIGIN}/"
@@ -351,6 +354,140 @@ def test_og_image_is_served_from_the_app_mount(client) -> None:
         assert response.status_code == 200, name
         assert response.headers["content-type"] == "image/png"
     assert _png_size(OG_IMAGES["ru"]) == (1200, 630)
+
+
+# ---------------------------------------------------------------------------
+# Browser/search-engine icons and the web manifest
+# ---------------------------------------------------------------------------
+ICON_CACHE_CONTROL = "public, max-age=604800"
+PNG_ICONS = {
+    "icon-48.png": (48, 48),
+    "icon-96.png": (96, 96),
+    "icon-192.png": (192, 192),
+    "icon-512.png": (512, 512),
+    "apple-touch-icon.png": (180, 180),
+}
+HEAD_LINKS = (
+    '<link rel="icon" href="/favicon.ico" sizes="any">',
+    '<link rel="icon" type="image/png" sizes="48x48" href="/app/icon-48.png">',
+    '<link rel="icon" type="image/png" sizes="96x96" href="/app/icon-96.png">',
+    '<link rel="icon" type="image/png" sizes="192x192" href="/app/icon-192.png">',
+    '<link rel="apple-touch-icon" sizes="180x180" href="/app/apple-touch-icon.png">',
+    '<link rel="manifest" href="/app/site.webmanifest">',
+)
+
+
+def _ico_sizes(path: Path) -> list[tuple[int, int]]:
+    data = path.read_bytes()
+    assert data[:4] == b"\x00\x00\x01\x00", "not an ICO file"
+    count = struct.unpack("<H", data[4:6])[0]
+    sizes = []
+    for index in range(count):
+        offset = 6 + index * 16
+        width = data[offset] or 256
+        height = data[offset + 1] or 256
+        sizes.append((width, height))
+    return sizes
+
+
+def test_favicon_ico_contains_the_small_sizes() -> None:
+    path = STATIC_DIR / "app" / "favicon.ico"
+
+    assert path.is_file(), "favicon.ico is missing"
+    assert sorted(_ico_sizes(path)) == [(16, 16), (32, 32), (48, 48)]
+
+
+@pytest.mark.parametrize("name", sorted(PNG_ICONS))
+def test_png_icons_have_the_expected_size(name: str) -> None:
+    path = STATIC_DIR / "app" / name
+
+    assert path.is_file(), f"{name} is missing"
+    assert _png_size(path) == PNG_ICONS[name]
+    assert path.stat().st_size > 1_000
+
+
+def test_root_favicon_is_served_with_the_ico_type(client) -> None:
+    response = client.get("/favicon.ico")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"] == "image/x-icon"
+    assert response.headers["cache-control"] == ICON_CACHE_CONTROL
+    assert response.content[:4] == b"\x00\x00\x01\x00"
+
+
+@pytest.mark.parametrize(
+    "path", ["/apple-touch-icon.png", "/apple-touch-icon-precomposed.png"]
+)
+def test_root_apple_touch_icon_aliases(client, path: str) -> None:
+    response = client.get(path)
+
+    assert response.status_code == 200, path
+    assert response.headers["content-type"] == "image/png"
+    assert response.headers["cache-control"] == ICON_CACHE_CONTROL
+    assert response.content[:8] == b"\x89PNG\r\n\x1a\n"
+    assert struct.unpack(">II", response.content[16:24]) == (180, 180)
+
+
+def test_icons_are_also_reachable_under_the_app_mount(client) -> None:
+    response = client.get("/app/favicon.ico")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == ICON_CACHE_CONTROL
+
+    for name, size in PNG_ICONS.items():
+        response = client.get(f"/app/{name}")
+        assert response.status_code == 200, name
+        assert response.headers["content-type"] == "image/png"
+        assert response.headers["cache-control"] == ICON_CACHE_CONTROL
+        assert struct.unpack(">II", response.content[16:24]) == size
+
+
+def test_webmanifest_is_served_with_the_manifest_type(client) -> None:
+    response = client.get("/app/site.webmanifest")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("application/manifest+json")
+
+    manifest = json.loads(response.text)
+    assert manifest["name"] == "FretFight"
+    assert manifest["short_name"] == "FretFight"
+    assert manifest["start_url"] == "/"
+    assert manifest["display"] == "standalone"
+    assert manifest["background_color"] == "#070b10"
+    assert manifest["theme_color"] == "#070b10"
+    assert {(icon["sizes"], icon["src"]) for icon in manifest["icons"]} == {
+        ("48x48", "/app/icon-48.png"),
+        ("96x96", "/app/icon-96.png"),
+        ("192x192", "/app/icon-192.png"),
+        ("512x512", "/app/icon-512.png"),
+    }
+    for icon in manifest["icons"]:
+        assert (STATIC_DIR / "app" / Path(icon["src"]).name).is_file(), icon["src"]
+
+
+@pytest.mark.parametrize(
+    "path", ["/", "/en", "/login", "/account", "/policy", "/support"]
+)
+def test_every_page_head_links_the_icons_and_the_manifest(client, path: str) -> None:
+    html = client.get(path).text
+
+    head = re.search(r"<head>(.*?)</head>", html, re.DOTALL)
+    assert head is not None, path
+    head_html = head.group(1)
+    for link in HEAD_LINKS:
+        assert head_html.count(link) == 1, f"{path}: {link}"
+    # The 600px artwork is no longer the touch icon, and iOS reads exactly one.
+    assert head_html.count('rel="apple-touch-icon"') == 1, path
+    assert 'href="/app/logo.png"' not in head_html, path
+    # The SVG variant stays as an extra, for browsers that prefer vectors.
+    assert '<link rel="icon" type="image/svg+xml" href="/app/logo.svg">' in head_html
+
+
+@pytest.mark.parametrize("path", ["/robots.txt"])
+def test_icons_are_not_disallowed_for_crawlers(client, path: str) -> None:
+    lines = [line.strip() for line in client.get(path).text.splitlines()]
+
+    for disallow in ("Disallow: /app/", "Disallow: /favicon.ico", "Disallow: /app"):
+        assert disallow not in lines
 
 
 # ---------------------------------------------------------------------------

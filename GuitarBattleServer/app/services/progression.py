@@ -35,6 +35,7 @@ from app.models.progression import (
 )
 from app.models.song import Song
 from app.models.user import User
+from app.services import reward_config
 from app.services.achievement_catalog import catalog_rows
 
 # ---------------------------------------------------------------------------
@@ -204,6 +205,52 @@ def content_factor(duration_seconds: int | None, completion_percent: float) -> f
     """Song length (sub-linear) times how much of it was actually played."""
     base = clamp(0.6, 1.4, math.sqrt(max(int(duration_seconds or 0), 1) / 90))
     return base * (clamp(0.0, 100.0, completion_percent) / 100.0)
+
+
+def completion_ratio(
+    completion_percent: float,
+    notes_total: int | None = None,
+    notes_played: int | None = None,
+) -> float:
+    """Effective played fraction in ``0..1``.
+
+    Uses the same clamping as :func:`effective_completion`, so a client cannot
+    claim a completion larger than the notes it actually played.
+    """
+    return effective_completion(completion_percent, notes_total, notes_played) / 100.0
+
+
+def normalized_score(
+    *,
+    score_points: int,
+    completion_percent: float,
+    notes_total: int | None,
+    notes_played: int | None = None,
+) -> int | None:
+    """Extrapolate a partial attempt to a full song, or ``None`` when unsafe.
+
+    ``normalized = actual / completion_ratio`` with two hard guards:
+
+    * an effective completion below ``NORMALIZATION_MIN_COMPLETION`` (or a
+      missing/zero ``notes_total``) yields ``None`` — an early end is not
+      extrapolated at all;
+    * the multiplier is capped at ``NORMALIZATION_MAX_MULTIPLIER`` (10), so an
+      early victory can never inflate the value without bound.
+
+    The actual score is never touched: callers store both values separately.
+    """
+    if notes_total is None or int(notes_total) <= 0:
+        return None
+
+    ratio = completion_ratio(completion_percent, notes_total, notes_played)
+    if ratio * 100.0 < reward_config.NORMALIZATION_MIN_COMPLETION:
+        return None
+
+    multiplier = min(
+        1.0 / ratio,
+        max(1.0, float(reward_config.NORMALIZATION_MAX_MULTIPLIER)),
+    )
+    return max(0, _round_half_up(max(0, int(score_points)) * multiplier))
 
 
 def repeat_factor(attempts_today: int) -> float:
@@ -658,9 +705,10 @@ def player_stats(db: Session, user_id: Any) -> dict[str, Any]:
         .where(
             GameSession.user_id == user_id,
             GameSession.status == "finished",
-            # Preview attempts on unpublished drafts are history only; they must
-            # not shift the player's accuracy/speed/versatility statistics.
-            GameSession.mode != "preview",
+            # Preview attempts on unpublished drafts and Practice-section runs
+            # are history only; they must not shift the player's
+            # accuracy/speed/versatility statistics.
+            GameSession.mode.notin_(("preview", "practice")),
             Score.completion_percent > STATS_MIN_COMPLETION,
         )
         .order_by(Score.created_at.desc())
@@ -1115,6 +1163,97 @@ def attempts_today_for_song(
     )
 
 
+def award_attempt_achievements(
+    db: Session,
+    user: User,
+    *,
+    completion_percent: float,
+    accuracy_percent: float,
+    miss_count: int,
+    avg_timing_error_ms: float | None,
+    difficulty: int,
+    is_daily: bool,
+    personal_best_updated: bool,
+    previous_best_accuracy: float | None,
+    daily_result_count: int,
+    now: datetime,
+    additional_qualifying_attempts: int = 0,
+) -> tuple[list[dict[str, Any]], int]:
+    """Evaluate and grant achievements for one attempt.
+
+    Extracted from :func:`apply_attempt_progression` so a Battle ("tower")
+    run can reuse exactly the same rules with facts built from its own payload
+    instead of a ``scores`` row. Already owned achievements are skipped, so
+    calling it twice can never double-award.
+
+    ``additional_qualifying_attempts`` counts qualifiable attempts that are not
+    stored in ``scores`` (Battle stage runs); it only affects the
+    ``first_notes`` threshold, never XP.
+    """
+    snapshot = build_snapshot(db, user.id)
+    qualifying_attempts = int(
+        db.scalar(
+            select(func.count(Score.id))
+            .join(GameSession, GameSession.id == Score.session_id)
+            .where(
+                GameSession.user_id == user.id,
+                GameSession.status == "finished",
+                Score.completion_percent >= MIN_COMPLETION_FOR_XP,
+            )
+        )
+        or 0
+    ) + max(0, int(additional_qualifying_attempts))
+    facts = _AttemptFacts(
+        completion_percent=completion_percent,
+        accuracy_percent=accuracy_percent,
+        miss_count=miss_count,
+        avg_timing_error_ms=avg_timing_error_ms,
+        difficulty=difficulty,
+        is_daily=is_daily,
+        personal_best_updated=personal_best_updated,
+        previous_best_accuracy=previous_best_accuracy,
+        qualifying_attempts=qualifying_attempts,
+        daily_result_count=daily_result_count,
+    )
+
+    catalog = catalog_rows(db)
+    thresholds = genre_thresholds(catalog, snapshot.total_published_genres)
+    owned = set(
+        db.scalars(
+            select(UserAchievement.achievement_code).where(
+                UserAchievement.user_id == user.id
+            )
+        ).all()
+    )
+    awarded: list[dict[str, Any]] = []
+    bonus = 0
+    for achievement in catalog:
+        if achievement.code in owned:
+            continue
+        unlocked, progress = evaluate_achievement(
+            achievement, snapshot=snapshot, attempt=facts, thresholds=thresholds
+        )
+        if not unlocked:
+            continue
+        if _award_achievement(
+            db,
+            user_id=user.id,
+            achievement=achievement,
+            progress=progress,
+            now=now,
+        ):
+            awarded.append(
+                {
+                    "code": achievement.code,
+                    "title": achievement.title,
+                    "xp_bonus": int(achievement.xp_bonus),
+                }
+            )
+            bonus += int(achievement.xp_bonus)
+
+    return awarded, bonus
+
+
 def apply_attempt_progression(
     db: Session,
     *,
@@ -1193,19 +1332,9 @@ def apply_attempt_progression(
         db.flush()
 
     snapshot = build_snapshot(db, user.id)
-    qualifying_attempts = int(
-        db.scalar(
-            select(func.count(Score.id))
-            .join(GameSession, GameSession.id == Score.session_id)
-            .where(
-                GameSession.user_id == user.id,
-                GameSession.status == "finished",
-                Score.completion_percent >= MIN_COMPLETION_FOR_XP,
-            )
-        )
-        or 0
-    )
-    facts = _AttemptFacts(
+    awarded, bonus = award_attempt_achievements(
+        db,
+        user,
         completion_percent=completion,
         accuracy_percent=float(score.accuracy_percent),
         miss_count=int(score.miss_count),
@@ -1214,44 +1343,9 @@ def apply_attempt_progression(
         is_daily=daily_date is not None,
         personal_best_updated=pb_updated,
         previous_best_accuracy=previous_accuracy,
-        qualifying_attempts=qualifying_attempts,
         daily_result_count=len(snapshot.daily_dates),
+        now=now,
     )
-
-    catalog = catalog_rows(db)
-    thresholds = genre_thresholds(catalog, snapshot.total_published_genres)
-    owned = set(
-        db.scalars(
-            select(UserAchievement.achievement_code).where(
-                UserAchievement.user_id == user.id
-            )
-        ).all()
-    )
-    awarded: list[dict[str, Any]] = []
-    bonus = 0
-    for achievement in catalog:
-        if achievement.code in owned:
-            continue
-        unlocked, progress = evaluate_achievement(
-            achievement, snapshot=snapshot, attempt=facts, thresholds=thresholds
-        )
-        if not unlocked:
-            continue
-        if _award_achievement(
-            db,
-            user_id=user.id,
-            achievement=achievement,
-            progress=progress,
-            now=now,
-        ):
-            awarded.append(
-                {
-                    "code": achievement.code,
-                    "title": achievement.title,
-                    "xp_bonus": int(achievement.xp_bonus),
-                }
-            )
-            bonus += int(achievement.xp_bonus)
 
     total = int(user.xp_total or 0) + xp_earned + bonus
     user.xp_total = total

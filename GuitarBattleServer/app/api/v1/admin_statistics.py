@@ -29,6 +29,10 @@ from app.schemas.statistics import (
 )
 from app.services.geolocation import country_flag
 from app.services.platforms import normalize_platform
+from app.services.admin_user_stats import (
+    battle_summary_by_user,
+    online_summary_by_user,
+)
 
 router = APIRouter(prefix="/admin/statistics", tags=["admin: statistics"])
 
@@ -250,6 +254,12 @@ def statistics_users(
     page (see :func:`_platforms_by_user`), so it adds a single round trip no
     matter how many rows are returned. ``country`` filters on the country of
     registration and is a plain equality on the indexed ``country_code``.
+
+    The six compact game-mode fields (``online_*``/``battle_*``) are additive:
+    they are filled for the current page by one grouped query per mode group
+    (see :mod:`app.services.admin_user_stats`), so older admin clients that
+    ignore them keep working and the query count never depends on the page
+    size.
     """
     session_agg = (
         select(
@@ -364,9 +374,17 @@ def statistics_users(
     # One extra query for the whole page: the platforms of every listed user.
     platforms_by_user = _platforms_by_user(db, [row.user_id for row in rows])
 
+    # Two more grouped statements for the whole page: duel and tower summaries
+    # (one query per group, never one per row).
+    user_ids = [row.user_id for row in rows]
+    online_by_user = online_summary_by_user(db, user_ids)
+    battle_by_user = battle_summary_by_user(db, user_ids)
+
     items = []
     for row in rows:
         platforms = platforms_by_user.get(row.user_id, [])
+        online = online_by_user.get(row.user_id, {})
+        battle = battle_by_user.get(row.user_id, {})
         items.append(
             StatisticsUserItem(
                 user_id=row.user_id,
@@ -392,6 +410,12 @@ def statistics_users(
                 country_flag=country_flag(row.country_code),
                 registration_ip=row.registration_ip,
                 last_login_ip=row.last_login_ip,
+                online_rating=online.get("online_rating"),
+                online_matches=int(online.get("online_matches", 0)),
+                online_wins=int(online.get("online_wins", 0)),
+                online_losses=int(online.get("online_losses", 0)),
+                battle_towers_completed=int(battle.get("battle_towers_completed", 0)),
+                battle_stages_cleared=int(battle.get("battle_stages_cleared", 0)),
             )
         )
     return StatisticsUserList(items=items, total=int(total), limit=limit, offset=offset)

@@ -13,13 +13,15 @@
 - Авторизация REST: `Authorization: Bearer <access_token>`.
 - Авторизация WebSocket: `?token=<access_token>` (браузер не умеет ставить
   заголовок на handshake). Токен не логируется.
-- `rules_version = 2`; матч хранит версию, с которой он создан.
+- `rules_version = 3`; матч хранит версию, с которой он создан.
   Версия 2 подняла урон до клиентского баланса 1.2.0 (0.10 за очко, зажим
-  `[1.0, 10.0]`); матчи версии 1 остаются в истории как есть.
+  `[1.0, 10.0]`). Версия 3 масштабирует урон по длине чарта (эталон 48 нот,
+  минимум `0.20`); матчи версий 1–2 сохраняют прежний, немасштабированный
+  урон и не пересчитываются.
 
 ---
 
-## 1. Правила дуэли (rules_version = 2)
+## 1. Правила дуэли (rules_version = 3)
 
 ### 1.1 Качества нот
 
@@ -44,12 +46,22 @@
 Урон:
 
 ```text
-damage = clamp(abs(points_a - points_b) * 0.10, 1.0, 10.0)
+base   = clamp(abs(points_a - points_b) * 0.10, 1.0, 10.0)
+scale  = 1.0, если note_count <= 48
+         max(0.20, min(1.0, 48 / note_count)), если note_count > 48
+damage = base * scale
 ```
 
-- `perfect` vs `good`: `30 * 0.10 = 3.0`.
-- `perfect` vs `miss`: `100 * 0.10 = 10.0` (максимум).
+- `perfect` vs `good`: `30 * 0.10 = 3.0` (на чарте ≤ 48 нот).
+- `perfect` vs `miss`: `100 * 0.10 = 10.0` (максимум base).
 - `great` vs `good`: `15 * 0.10 = 1.5`.
+- Масштаб применяется симметрично к обеим сторонам и **не** зажимается
+  повторно в `[1.0, 10.0]`: на длинном чарте нота может снять меньше 1 HP.
+  Примеры: 96 нот → `0.5` (perfect vs miss = `5.0`), 144 ноты → `1/3`
+  (`3.33`), 1000 нот → `0.20` (`2.0`).
+- `rules_version` 1–2 не масштабируются: урон там прежний, независимо от
+  длины чарта. Новые матчи создаются с `rules_version = 3`; уже созданные
+  матчи не пересчитываются.
 - HP стартует со `100`, после каждого обмена зажимается в `[0, 100]`.
 - При HP `0` сторона сразу проигрывает. Если чарт закончился без нокаута,
   побеждает сторона с большим HP; равный HP — ничья.
@@ -180,13 +192,17 @@ waiting ──(оба ready)──> playing ──(finish/нокаут/коне�
   "match_id": "9b8c7d6e-5f4a-3210-9fed-cba987654321",
   "mode": "online",
   "status": "playing",
-  "rules_version": 2,
+  "rules_version": 3,
   "seed": 3141592653,
   "bot_level": null,
   "song": { "...": "DuelSongInfo" },
   "note_count": 180,
   "next_note_index": 12,
   "your_side": "player",
+  "you_character_name": "Bard",
+  "you_character_sheet_url": "/media/characters/<uuid>.png",
+  "opponent_character_name": "Bluesman",
+  "opponent_character_sheet_url": "/media/characters/<uuid>.png",
   "starts_in_ms": -4200,
   "server_time_ms": 4200,
   "waiting_seconds": 4,
@@ -209,6 +225,12 @@ waiting ──(оба ready)──> playing ──(finish/нокаут/коне�
 - `waiting_seconds`, `waiting_expired`: только для `waiting`.
 - В широковещательных WS-сообщениях `your_side` может быть `null`; сторону
   можно определить по `participants[].user_id`.
+- `you_character_name` / `you_character_sheet_url` и
+  `opponent_character_name` / `opponent_character_sheet_url` — текущий выбор
+  персонажей (`users.character_id`), `null` у бота и у игрока без выбора.
+  Значения читаются в момент ответа, не снимаются при создании матча. В
+  широковещательном `state` (`your_side = null`) все четыре поля `null`;
+  персональный снимок приходит в `connected` и в REST-ответах.
 
 ---
 
@@ -537,7 +559,7 @@ Online (в очередь):
 { "type": "join", "match_id": "...", "user_id": "...", "side": "opponent" }
 { "type": "ready", "match_id": "...", "side": "player" }
 { "type": "countdown", "match_id": "...", "seconds": 3, "starts_in_ms": 3000 }
-{ "type": "start", "match_id": "...", "started_at": "2026-11-07T12:00:03Z", "countdown_ms": 3000, "rules_version": 2, "seed": 123, "note_count": 180 }
+{ "type": "start", "match_id": "...", "started_at": "2026-11-07T12:00:03Z", "countdown_ms": 3000, "rules_version": 3, "seed": 123, "note_count": 180 }
 { "type": "note", "match_id": "...", "note_index": 12, "exchange": "player_hit", "quality": { "player": "perfect", "opponent": "good" }, "damage_to_player": 0.0, "damage_to_opponent": 3.0, "player_hp": 100.0, "opponent_hp": 97.0, "player_stats": { "...": "..." }, "opponent_stats": { "...": "..." } }
 { "type": "block", "match_id": "...", "note_index": 13, "player_hp": 100.0, "opponent_hp": 97.0 }
 { "type": "hp", "match_id": "...", "note_index": 13, "player_hp": 100.0, "opponent_hp": 97.0, "player_stats": { "...": "..." }, "opponent_stats": { "...": "..." } }
@@ -589,6 +611,10 @@ Online (в очередь):
 2. **Индекс ноты** должен быть в `[0, note_count)`. `note_count` и времена
    нот замораживаются в `duel_matches.note_times_ms` при создании матча;
    повторный анализ/замена MIDI не двигает чарт идущего матча.
+   Времена берутся из MIDI-анализа; если в MIDI нет `set_tempo` (так бывает
+   у части экспортов), вместо стандартных 120 BPM подставляется `Song.bpm`,
+   чтобы чарт совпадал со стемами. Явный `set_tempo` в файле всегда важнее
+   `Song.bpm`. Уже замороженные матчи не пересчитываются.
 3. **Время события** проверяется по серверным часам относительно
    `started_at`:
    - реальный чарт: `[-1500, +4000]` мс от позиции ноты;
@@ -747,3 +773,158 @@ online-пару, Elo/лидерборд, `no_opponent`, `leave` (техниче�
 лобби (online + waiting + не старше 30 с + есть места), сортировку, поля
 комнаты, вход из лобби и исчезновение комнаты после старта/истечения очереди.
 Без БД эти тесты штатно пропускаются.
+
+---
+
+## 11. Общие лобби — комнаты с чатом и выбором песни
+
+Быстрая очередь `GET /duels/lobby` (комнаты, созданные `POST /duels` с
+`mode=online`, живут 30 секунд) осталась для совместимости. Новый поток —
+**общее лобби**: комната создаётся без песни, второй игрок заходит по паролю,
+оба общаются в чате, хост выбирает опубликованную песню и запускает матч;
+после матча оба либо переигрывают ту же песню, либо возвращаются в ту же
+комнату с сохранённым чатом.
+
+Отдельная таблица `duel_lobbies` (не статус матча): у матча `song_id`
+NOT NULL и другая семантика (очередь/таймаут), а лобби живёт до закрытия
+хостом.
+
+### 11.1 Эндпоинты
+
+Все требуют `Authorization: Bearer <access_token>`. Формат ошибок общий:
+`{"detail": {"code": "...", "message": "..."}}`.
+
+| Метод | Путь | Тело / параметры | Ответ |
+|---|---|---|---|
+| POST | `/duels/lobbies` | `name` (1–40 после trim), `password?` (≤128; пустая строка = без пароля) | 201, `DuelRoomState` |
+| GET | `/duels/lobbies` | `include_full=true` (по умолчанию `false`) | `{items, total, include_full}` |
+| GET | `/duels/lobbies/{lobby_id}` | — | `DuelRoomState`; 403 не участнику |
+| POST | `/duels/lobbies/{lobby_id}/join` | `password?` (тело можно не слать) | `DuelRoomState`; 403 `password_required`/`invalid_password`, 409 `lobby_full`/`lobby_closed`/`lobby_not_waiting`; повторный вход участника идемпотентен |
+| POST | `/duels/lobbies/{lobby_id}/leave` | — | `DuelRoomState`; гость освобождает место, хост закрывает комнату (`status=closed`) |
+| POST | `/duels/lobbies/{lobby_id}/song` | `song_id` (UUID опубликованной песни) | `DuelRoomState`; только хост (`403 not_host`), только `waiting` (`409 lobby_not_waiting`), `404 song_not_found`, `422 song_not_published` |
+| POST | `/duels/lobbies/{lobby_id}/start` | — | `{match_id, lobby}`; только хост; `409 opponent_missing`, `409 song_not_selected`, `409 lobby_not_waiting`; **legacy**: матч создаётся сразу `playing` со стандартным отсчётом (клиенты ≤ 1.3.x) |
+| POST | `/duels/lobbies/{lobby_id}/start/request` | — | `DuelRoomState`; только хост; `409 opponent_missing`/`song_not_selected`/`lobby_not_waiting`; открывает подтверждение, комната остаётся `waiting`, ничего не скачивается |
+| POST | `/duels/lobbies/{lobby_id}/start/confirm` | — | `{match_id, lobby}`; участник; пока подтвердил только один — `match_id: null`; когда оба — матч создан, `lobby.status="playing"`; `409 start_not_requested`/`lobby_not_waiting` |
+| POST | `/duels/lobbies/{lobby_id}/start/decline` | — | `DuelRoomState`; участник; сбрасывает запрос (`start: null`), комната остаётся `waiting`; идемпотентно |
+| GET | `/duels/lobbies/{lobby_id}/chat` | `after_id` (≥0), `limit` (1–200, по умолчанию 200) | `{items, latest_id}`; последние 200 при `after_id=0`, иначе только новее |
+| POST | `/duels/lobbies/{lobby_id}/chat` | `message` (1–500) | 201, `DuelChatMessage`; 422 пустое/длинное, 429 `rate_limited` (2 сообщения/с, burst 12 на пару `(lobby, user)`) |
+| POST | `/duels/{match_id}/rematch` | — | `{match_id, previous_match_id, lobby_id, song, already_created}`; только участники; результат прошлого матча не меняется; повторный вызов возвращает уже созданный матч с `already_created=true` |
+| POST | `/duels/{match_id}/return-to-lobby` | — | `DuelRoomState`; только участники; матч должен быть `finished`/`cancelled`; лобби → `waiting`, песня и чат сохраняются |
+
+`DuelRoomState`:
+
+```json
+{
+  "lobby_id": "uuid",
+  "name": "Friday night",
+  "has_password": true,
+  "status": "waiting",
+  "host_user_id": "uuid",
+  "guest_user_id": null,
+  "song": null,
+  "match_id": null,
+  "players": [{"user_id": "uuid", "username": "nick", "display_name": "Nick", "is_host": true}],
+  "start": null,
+  "created_at": "2026-11-09T12:00:00Z",
+  "updated_at": "2026-11-09T12:00:00Z"
+}
+```
+
+`start` (аддитивное поле, может отсутствовать/быть `null`) — незавершённое
+подтверждение старта:
+
+```json
+{"requested_by": "uuid хоста", "host_confirmed": false, "guest_confirmed": true}
+```
+
+`start: null` = запросов нет. Пока `start` не `null`, комната остаётся
+`waiting` и матч не создан.
+
+### 11.1.1 Старт с подтверждением (клиенты ≥ 1.4.0)
+
+Порядок «подтверждение → скачивание → отсчёт» вместо прежнего «старт сразу»:
+
+1. Хост: `POST .../start/request` → у обоих в `DuelRoomState.start` появляется
+   `{requested_by, host_confirmed: false, guest_confirmed: false}`; комната
+   остаётся `waiting`, ассеты песни не скачиваются.
+2. Оба игрока (и хост, и гость) шлют `POST .../start/confirm`; каждый ставит
+   свой флаг. Ответ — `DuelRoomStartResponse`. Пока подтвердил только один,
+   `match_id = null`, клиент продолжает опрашивать комнату.
+3. Когда оба флага `true`, сервер в той же транзакции создаёт матч `online`
+   со `status="waiting"`, `started_at = null`, `ready_at = null` у обоих
+   участников и переводит комнату в `playing`; `start` очищается.
+4. Каждый клиент скачивает песню (индикатор прогресса) и после успешной
+   подготовки шлёт `POST /duels/{match_id}/ready`. Когда готовы оба,
+   срабатывает обычный механизм `ready` — общий отсчёт 3 с и старт матча.
+5. `POST .../start/decline` любого участника сбрасывает `start`; комната
+   остаётся `waiting` с той же песней и чатом, хост может нажать START снова.
+6. Отмена/выход из такого матча (`POST /duels/{match_id}/leave`, пока матч
+   `waiting`) переводит комнату назад в `waiting` и очищает `start`, чтобы
+   оба клиента вернулись в ту же комнату.
+7. `POST .../start` (без `/request`) остаётся прежним для старых клиентов:
+   немедленный матч `playing`, `started_at = now + 3 с`, оба участника
+   `ready_at = now`.
+
+Важно: у матча из комнаты `waiting_expired` **не** выставляется (таймаут
+30 секунд относится только к быстрой очереди), иначе длинное скачивание
+предлагало бы бота.
+
+`DuelChatMessage`: `{id, user_id, username, display_name, text, created_at}`.
+`id` — монотонный `BIGINT` (`duel_lobby_messages.id`), его и нужно передавать
+в `after_id`. `latest_id` — максимальный id в выдаче (или запрошенный
+`after_id`, если новых сообщений нет).
+
+`DuelMatchState` получил аддитивное поле `lobby_id` (`null` для бота и
+быстрой очереди) — по нему клиент понимает, что матч связан с комнатой.
+
+### 11.2 Правила и безопасность
+
+- Пароль комнаты хранится только как Argon2-хеш (`duel_lobbies.password_hash`,
+  `app/services/passwords.py`); в ответах есть только `has_password`.
+- В комнате максимум два человека (`host_user_id` + `guest_user_id`,
+  CHECK «гость ≠ хост»); третий получает `409 lobby_full`.
+- Читать состояние и чат могут только участники (`403 not_participant`);
+  песню и старт — только хост (`403 not_host`).
+- Чат очищается на сервере: удаляются HTML-теги, `<`/`>` и управляющие
+  символы, пробелы схлопываются, текст обрезается до 500 символов; после
+  очистки пустая строка — `422 empty_message`.
+- Создание комнаты ограничено `duel_lobby_create_limiter` (burst 6,
+  0.5/с), чат — `duel_chat_limiter` (burst 12, 2/с).
+- Список `GET /duels/lobbies` отдаёт только `waiting`/`playing` (максимум 50),
+  без `closed`; полные комнаты — только с `include_full=true`.
+
+### 11.3 Миграция
+
+`migrations/versions/0024_duel_lobbies.py` (`down_revision = "0023_user_character"`):
+
+- `duel_lobbies` — `id`, `name`, `password_hash`, `host_user_id`, `guest_user_id`,
+  `song_id`, `status`, `created_at`, `updated_at`; CHECK на статус, длину имени
+  и «гость ≠ хост».
+- `duel_lobby_messages` — `id BIGSERIAL`, `lobby_id`, `user_id`, `text`,
+  `created_at`; индекс `(lobby_id, id)` для `after_id`.
+- `duel_matches.lobby_id` — nullable FK `ON DELETE SET NULL` (история матчей
+  не удаляется вместе с комнатой).
+
+`migrations/versions/0027_duel_lobby_start_confirm.py`
+(`down_revision = "0026_campaigns"`): `duel_lobbies.start_requested_by`
+(nullable FK `users.id` `ON DELETE SET NULL`), `start_host_confirmed` и
+`start_guest_confirmed` (`BOOLEAN NOT NULL DEFAULT false`). Существующие
+комнаты получают «нет запроса».
+
+Файлы: `app/models/duel.py`, `app/schemas/duels.py`,
+`app/services/duel_lobby_service.py`, `app/services/passwords.py`,
+`app/services/duel_rooms.py`, `app/api/v1/duel_lobbies.py`,
+`app/api/v1/duels.py`, `app/api/v1/router.py` (роутер `/duels/lobbies`
+подключается **до** `/duels`, иначе `GET /duels/lobbies` попадёт в
+`GET /duels/{match_id}`), `tests/test_duel_lobbies.py`.
+
+### 11.4 Клиент
+
+`Source/Network/DuelClient.h` / `.cpp`: `DuelRoomSnapshot`, `DuelRoomPlayer`,
+`DuelRoomListReply`, `DuelChatMessage`, `DuelChatHistoryReply`,
+`DuelRoomStartReply`, `DuelRematchReply` и методы `createRoom`, `rooms`,
+`room`, `joinRoom`, `leaveRoom`, `selectRoomSong`, `startRoomMatch`,
+`roomChat`, `sendRoomChat`, `rematch`, `returnToLobby`. Все вызовы идут через
+`ApiClient` на worker pool с доставкой в message thread; `room()` и
+`roomChat()` — идемпотентные GET с ограниченным ретраем, их можно вызывать из
+`juce::Timer`.

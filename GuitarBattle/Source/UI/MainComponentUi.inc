@@ -35,7 +35,14 @@
     // Opens the public support page in the default browser. Lives in the
     // song-select header next to SETTINGS / AUDIO SETTINGS / EXIT.
     juce::TextButton supportButton;
+
+    // Opens the in-app feedback form. The message is posted to /feedback and
+    // emailed to the project address.
+    juce::TextButton feedbackButton;
     juce::Component::SafePointer<juce::DialogWindow> accountDialog;
+    // Set while the PROFILE dialog is open: re-reads its character catalogue
+    // after a server-side unlock. Assigned in MainComponentUI.cpp.
+    std::function<void()> refreshOpenAccountCharacters;
     void openAccountWindow();
 
     // --- VST monitor plugin ----------------------------------------------

@@ -25,6 +25,7 @@ from app.services.song_assets import (
     build_readiness,
     load_active_files_by_song,
 )
+from app.services.gameplay_media import character_sheet_url, stage_background_url
 
 router = APIRouter(prefix="/songs", tags=["songs"])
 
@@ -81,12 +82,32 @@ def _public_assets(song: Song, files_by_role: dict[str, SongFile]) -> SongAssets
     )
 
 
+def _apply_public_visuals(song: Song, result: SongSummaryResponse) -> None:
+    """Expose the selected character/stage as additive catalogue fields.
+
+    The URLs stay origin-relative (``/media/characters/...``); the desktop
+    client joins them with its configured server origin, exactly like the other
+    media paths. Every field is ``None`` when the song has no selection.
+    """
+    character = song.character
+    stage = song.stage
+    result.character_name = character.name if character is not None else None
+    result.character_sheet_url = (
+        character_sheet_url(character.sheet_key) if character is not None else None
+    )
+    result.stage_name = stage.name if stage is not None else None
+    result.stage_background_url = (
+        stage_background_url(stage.background_key) if stage is not None else None
+    )
+
+
 def _public_summary(
     song: Song, files_by_role: dict[str, SongFile], request: Request
 ) -> SongSummaryResponse:
     result = SongSummaryResponse.model_validate(song)
     result.preview_url = _preview_url(request, song, files_by_role)
     result.readiness = build_readiness(files_by_role)
+    _apply_public_visuals(song, result)
     return result
 
 
@@ -186,6 +207,7 @@ def get_song(
     result = SongDetailResponse.model_validate(song)
     result.preview_url = _preview_url(request, song, files_by_role)
     result.readiness = build_readiness(files_by_role)
+    _apply_public_visuals(song, result)
     result.files = [
         _public_file_response(song, files_by_role[role])
         for role in ASSET_ROLES

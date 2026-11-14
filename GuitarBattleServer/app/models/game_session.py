@@ -18,7 +18,8 @@ class GameSession(Base):
     song_version: Mapped[int] = mapped_column(Integer, nullable=False)
     speed_percent: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     # "normal" for free play and practice on the daily song, "daily" for the one
-    # official daily challenge attempt.
+    # official daily challenge attempt, "preview" for an admin draft preview and
+    # "practice" for a Practice-section run (stored for audit, never ranked).
     mode: Mapped[str] = mapped_column(String(16), nullable=False, default="normal")
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -29,6 +30,10 @@ class Score(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("game_sessions.id", ondelete="CASCADE"), unique=True, nullable=False)
     score_points: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    #: ``score_points`` extrapolated to a full song by the played fraction.
+    #: ``NULL`` when the attempt ended too early to extrapolate safely, or when
+    #: the row predates migration 0030. The actual score is never overwritten.
+    normalized_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     accuracy_percent: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     max_combo: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     perfect_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)

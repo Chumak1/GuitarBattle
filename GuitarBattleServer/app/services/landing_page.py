@@ -81,8 +81,11 @@ OG_IMAGE_PATHS: Final[dict[str, str]] = {
 }
 OG_IMAGE_WIDTH: Final = 1200
 OG_IMAGE_HEIGHT: Final = 630
-LOGO_PATH: Final = "/app/logo.png"
-LOGO_SIZE: Final = 600
+# Square brand icon for the Organization JSON-LD and the web manifest,
+# generated from ``logo.png`` by ``scripts/build_brand_icons.py``. Google wants
+# a raster logo at least 112x112 in ``Organization.logo``; 512x512 also serves
+# as the manifest's high-density icon.
+SITE_ICON_PATH: Final = "/app/icon-512.png"
 
 # Private or non-HTML sections. Everything else stays crawlable, including the
 # pages listed in the sitemap.
@@ -158,12 +161,11 @@ def _structured_data(lang: str) -> dict:
                 "@type": "Organization",
                 "name": "fretfight",
                 "url": root,
-                "logo": {
-                    "@type": "ImageObject",
-                    "url": absolute_url(LOGO_PATH),
-                    "width": LOGO_SIZE,
-                    "height": LOGO_SIZE,
-                },
+                # Google uses this square icon in the knowledge panel and next
+                # to the site name in results; ``image`` is the same asset for
+                # consumers that only read that property.
+                "logo": absolute_url(SITE_ICON_PATH),
+                "image": absolute_url(SITE_ICON_PATH),
             },
             # No potentialAction: the site has no search box, and advertising a
             # SearchAction that does not exist is worse than omitting it.

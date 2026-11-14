@@ -167,13 +167,22 @@ def build_midi_bytes(
     note: int = 60,
     velocity: int = 100,
     duration_ticks: int = 480,
+    start_tick: int = 0,
+    include_tempo: bool = True,
 ) -> bytes:
-    """Build a minimal, valid type-0 Standard MIDI File in memory."""
+    """Build a minimal, valid type-0 Standard MIDI File in memory.
+
+    ``include_tempo=False`` reproduces files exported without a ``set_tempo``
+    meta event (the parser then has to fall back to the caller's BPM).
+    """
     midi = mido.MidiFile(type=0, ticks_per_beat=ticks_per_beat)
     track = mido.MidiTrack()
     midi.tracks.append(track)
-    track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
-    track.append(mido.Message("note_on", note=note, velocity=velocity, time=0))
+    if include_tempo:
+        track.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(bpm), time=0))
+    track.append(
+        mido.Message("note_on", note=note, velocity=velocity, time=max(0, start_tick))
+    )
     track.append(mido.Message("note_off", note=note, velocity=0, time=duration_ticks))
     buffer = BytesIO()
     midi.save(file=buffer)

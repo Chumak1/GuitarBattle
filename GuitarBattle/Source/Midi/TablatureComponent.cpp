@@ -25,7 +25,9 @@ namespace
 
 TablatureComponent::TablatureComponent()
 {
-    setOpaque(true);
+    // The tablature is drawn straight over the duel stage artwork, so the
+    // component itself must stay transparent.
+    setOpaque(false);
     startTimerHz(60);
 }
 
@@ -64,6 +66,13 @@ void TablatureComponent::setTuning(const GuitarTuning::Tuning& newTuning,
     tuning.count = juce::jlimit(1, maxStrings, tuning.count);
     stringCount = tuning.count;
     tuningName = name.isNotEmpty() ? name : juce::String("CUSTOM");
+    staticLayerDirty = true;
+    repaint();
+}
+
+void TablatureComponent::resized()
+{
+    staticLayerDirty = true;
     repaint();
 }
 
@@ -88,6 +97,7 @@ void TablatureComponent::setTimeSignature(int numerator, int denominator)
         * 4.0
         / static_cast<double>(timeSignatureDenominator);
 
+    staticLayerDirty = true;
     repaint();
 }
 
@@ -182,15 +192,15 @@ bool TablatureComponent::isStringActive(int stringIndex) const
 void TablatureComponent::drawString(juce::Graphics& g, int stringIndex, float y)
 {
     // Bass strings read slightly heavier than the treble strings.
-    const float thickness = 1.0f + static_cast<float>(stringCount - 1 - stringIndex) * 0.28f;
+    const float thickness = 1.3f + static_cast<float>(stringCount - 1 - stringIndex) * 0.34f;
 
     // A string the player marked as empty keeps its place in the diagram but
     // is drawn faintly: it exists on the instrument, yet no note may land on it.
     const float alpha = isStringActive(stringIndex)
-        ? 0.30f + static_cast<float>(stringCount - 1 - stringIndex) * 0.04f
-        : 0.12f;
+        ? 0.62f + static_cast<float>(stringCount - 1 - stringIndex) * 0.05f
+        : 0.18f;
 
-    g.setColour(UiColors::borderStrong.withAlpha(alpha));
+    g.setColour(UiColors::text.withAlpha(juce::jmin(1.0f, alpha)));
     g.fillRect(leftMargin, y - thickness * 0.5f,
                static_cast<float>(getWidth()) - leftMargin - rightMargin,
                thickness);
@@ -335,13 +345,36 @@ void TablatureComponent::drawNote(juce::Graphics& g,
                       (noteRadius + 3.0f) * 2.0f, 2.0f);
     }
 
-    g.setColour(UiColors::background);
-    g.drawText(juce::String(note.fret),
-               juce::Rectangle<int>(static_cast<int>(x - noteRadius),
-                                    static_cast<int>(y - noteRadius),
-                                    static_cast<int>(noteRadius * 2.0f),
-                                    static_cast<int>(noteRadius * 2.0f)),
-               juce::Justification::centred, false);
+    // The fret digit is pre-rendered once per radius: laying out text for every
+    // visible note on every frame dominated the paint on dense, fast charts.
+    if (fretGlyphRadius != noteRadius)
+    {
+        for (auto& image : fretGlyphs)
+            image = {};
+
+        fretGlyphRadius = noteRadius;
+    }
+
+    const int glyphIndex = juce::jlimit(0,
+                                        static_cast<int>(fretGlyphs.size()) - 1,
+                                        note.fret);
+    auto& glyph = fretGlyphs[static_cast<size_t>(glyphIndex)];
+
+    if (! glyph.isValid())
+    {
+        const int glyphSize = juce::jmax(1, juce::roundToInt(noteRadius * 2.0f));
+        glyph = juce::Image(juce::Image::ARGB, glyphSize, glyphSize, true);
+        juce::Graphics glyphGraphics(glyph);
+        glyphGraphics.setColour(UiColors::background);
+        glyphGraphics.setFont(GameUi::heading(juce::jmax(10.0f, noteRadius * 1.05f)));
+        glyphGraphics.drawText(juce::String(note.fret),
+                               glyph.getBounds().toFloat(),
+                               juce::Justification::centred, false);
+    }
+
+    g.drawImageAt(glyph,
+                  juce::roundToInt(x - noteRadius),
+                  juce::roundToInt(y - noteRadius));
 
     if (note.durationBeats > 0.25)
     {
@@ -360,65 +393,88 @@ void TablatureComponent::drawNote(juce::Graphics& g,
 
 void TablatureComponent::paint(juce::Graphics& g)
 {
-    g.fillAll(UiColors::background);
+    const auto paintStartMs = juce::Time::getMillisecondCounterHiRes();
 
     if (getWidth() <= 0 || getHeight() <= 0)
         return;
 
     const auto card = getLocalBounds().toFloat().reduced(1.0f);
-    juce::ColourGradient cardFill(
-        UiColors::surface2.withAlpha(0.98f), card.getX(), card.getY(),
-        UiColors::surface.withAlpha(0.98f), card.getX(), card.getBottom(),
-        false);
-    g.setGradientFill(cardFill);
-    g.fillRoundedRectangle(card, 16.0f);
-    g.setColour(UiColors::border);
-    g.drawRoundedRectangle(card, 16.0f, 1.0f);
 
-    g.setColour(UiColors::accent);
-    g.fillRoundedRectangle(card.getX() + 22.0f, card.getY() + 1.0f,
-                           56.0f, 2.0f, 1.0f);
-
-    g.reduceClipRegion(card.toNearestInt());
-
-    //==========================================================================
-    // Header
-
-    g.setColour(UiColors::accent);
-    g.setFont(GameUi::eyebrow(10.0f));
-    g.drawText("TABLATURE",
-               juce::Rectangle<float>(24.0f, 12.0f, 150.0f, 18.0f),
-               juce::Justification::centredLeft, false);
-
-    g.setColour(UiColors::muted);
-    g.setFont(GameUi::font(10.5f));
-    g.drawText(tuningName + " TUNING  /  "
-                   + GuitarTuning::label(tuning, false)
-                   + "  /  " + juce::String(timeSignatureNumerator)
-                   + "/" + juce::String(timeSignatureDenominator),
-               juce::Rectangle<float>(180.0f, 12.0f, 420.0f, 18.0f),
-               juce::Justification::centredLeft, false);
-
-    const float legendX = static_cast<float>(getWidth()) - 212.0f;
-    g.setColour(UiColors::muted);
-    g.setFont(GameUi::eyebrow(7.5f));
-    g.drawText("FINGERING",
-               juce::Rectangle<float>(legendX - 118.0f, 13.0f, 110.0f, 14.0f),
-               juce::Justification::centredRight, false);
-
-    for (int finger = 1; finger <= 4; ++finger)
+    // The card background, header and finger legend are static: render them
+    // into an image once per resize instead of on every 60 Hz frame.
+    if (staticLayer.isNull()
+        || staticLayer.getWidth() != getWidth()
+        || staticLayer.getHeight() != getHeight()
+        || staticLayerDirty)
     {
-        const float cx = legendX + 8.0f + static_cast<float>(finger - 1) * 28.0f;
-        const float cy = 20.0f;
-        g.setColour(getFingerColour(finger));
-        g.fillEllipse(cx - 8.0f, cy - 8.0f, 16.0f, 16.0f);
-        g.setColour(UiColors::background);
-        g.setFont(GameUi::font(9.0f, true));
-        g.drawText(juce::String(finger),
-                   juce::Rectangle<int>(static_cast<int>(cx - 8.0f),
-                                        static_cast<int>(cy - 8.0f), 16, 16),
-                   juce::Justification::centred, false);
+        staticLayer = juce::Image(juce::Image::ARGB, getWidth(), getHeight(), true);
+        juce::Graphics sg(staticLayer);
+
+        // The stage artwork stays visible under the tabs, but with a soft
+        // vertical fade: at the low strings (bottom) the card is filled almost
+        // solid, and toward the high strings (top) it opens up to the same
+        // glass tint the controls use.
+        {
+            juce::ColourGradient fade(
+                UiColors::surface.withAlpha(0.56f), card.getX(), card.getY(),
+                UiColors::surface.withAlpha(0.98f), card.getX(), card.getBottom(),
+                false);
+            sg.setGradientFill(fade);
+            sg.fillRoundedRectangle(card, 16.0f);
+        }
+
+        // Hairline border and the accent tick define the area.
+        sg.setColour(UiColors::border.withAlpha(0.55f));
+        sg.drawRoundedRectangle(card, 16.0f, 1.0f);
+
+        sg.setColour(UiColors::accent);
+        sg.fillRoundedRectangle(card.getX() + 22.0f, card.getY() + 1.0f,
+                                56.0f, 2.0f, 1.0f);
+
+        sg.reduceClipRegion(card.toNearestInt());
+
+        // Header
+        sg.setColour(UiColors::accent);
+        sg.setFont(GameUi::eyebrow(10.0f));
+        sg.drawText("TABLATURE",
+                    juce::Rectangle<float>(24.0f, 12.0f, 150.0f, 18.0f),
+                    juce::Justification::centredLeft, false);
+
+        sg.setColour(UiColors::muted);
+        sg.setFont(GameUi::font(10.5f));
+        sg.drawText(tuningName + " TUNING  /  "
+                        + GuitarTuning::label(tuning, false)
+                        + "  /  " + juce::String(timeSignatureNumerator)
+                        + "/" + juce::String(timeSignatureDenominator),
+                    juce::Rectangle<float>(180.0f, 12.0f, 420.0f, 18.0f),
+                    juce::Justification::centredLeft, false);
+
+        const float legendX = static_cast<float>(getWidth()) - 212.0f;
+        sg.setColour(UiColors::muted);
+        sg.setFont(GameUi::eyebrow(7.5f));
+        sg.drawText("FINGERING",
+                    juce::Rectangle<float>(legendX - 118.0f, 13.0f, 110.0f, 14.0f),
+                    juce::Justification::centredRight, false);
+
+        for (int finger = 1; finger <= 4; ++finger)
+        {
+            const float cx = legendX + 8.0f + static_cast<float>(finger - 1) * 28.0f;
+            const float cy = 20.0f;
+            sg.setColour(getFingerColour(finger));
+            sg.fillEllipse(cx - 8.0f, cy - 8.0f, 16.0f, 16.0f);
+            sg.setColour(UiColors::background);
+            sg.setFont(GameUi::font(9.0f, true));
+            sg.drawText(juce::String(finger),
+                        juce::Rectangle<int>(static_cast<int>(cx - 8.0f),
+                                             static_cast<int>(cy - 8.0f), 16, 16),
+                        juce::Justification::centred, false);
+        }
+
+        staticLayerDirty = false;
     }
+
+    g.drawImageAt(staticLayer, 0, 0);
+    g.reduceClipRegion(card.toNearestInt());
 
     //==========================================================================
     // Adaptive string layout
@@ -455,8 +511,8 @@ void TablatureComponent::paint(juce::Graphics& g)
         const float y = layoutFirstStringY + displayRow * layoutStringSpacing;
         drawString(g, stringIndex, y);
 
-        g.setColour(UiColors::muted.withAlpha(isStringActive(stringIndex) ? 0.82f : 0.40f));
-        g.setFont(GameUi::font(10.0f, true));
+        g.setColour(UiColors::text.withAlpha(isStringActive(stringIndex) ? 0.95f : 0.38f));
+        g.setFont(GameUi::font(11.0f, true));
         g.drawText(getStringName(stringIndex),
                    juce::Rectangle<float>(8.0f, y - 9.0f, 30.0f, 18.0f),
                    juce::Justification::centred, false);
@@ -585,6 +641,18 @@ void TablatureComponent::paint(juce::Graphics& g)
     }
 
     juce::ignoreUnused(countInDisplayActive, countInDisplayCount);
+
+    {
+        const double paintMs =
+            juce::Time::getMillisecondCounterHiRes() - paintStartMs;
+        double previousMax = maxPaintMs.load(std::memory_order_relaxed);
+
+        while (paintMs > previousMax
+               && ! maxPaintMs.compare_exchange_weak(previousMax, paintMs,
+                                                     std::memory_order_relaxed))
+        {
+        }
+    }
 }
 
 //==============================================================================
@@ -593,6 +661,29 @@ void TablatureComponent::timerCallback()
 {
     if (!playheadRunning)
         return;
+
+    // Adaptive repaint rate. The static-layer and fret-glyph caches made a
+    // frame cheap enough for 120 Hz on this class of hardware; the faster
+    // cadence halves the visible scroll step on 190+ BPM charts. The rate drops
+    // back to 60 Hz when a frame consistently costs too much.
+    if (++rateCheckTicks >= 60)
+    {
+        rateCheckTicks = 0;
+
+        const double worstPaintMs =
+            maxPaintMs.exchange(0.0, std::memory_order_relaxed);
+
+        if (timerHz < 120 && worstPaintMs > 0.0 && worstPaintMs < 6.0)
+        {
+            timerHz = 120;
+            startTimerHz(timerHz);
+        }
+        else if (timerHz > 60 && worstPaintMs > 12.0)
+        {
+            timerHz = 60;
+            startTimerHz(timerHz);
+        }
+    }
 
     if (bpm <= 0.0)
         return;

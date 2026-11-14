@@ -1,7 +1,8 @@
-<?xml version="1.0" encoding="UTF-8"?>
+﻿<?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" version="1.2.2" useAppConfig="0"
-              addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1" defines="JUCE_USE_MP3AUDIOFORMAT=1">
+<JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" version="2.0.0"
+              useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1"
+              defines="JUCE_USE_MP3AUDIOFORMAT=1">
   <MAINGROUP id="YwvWlz" name="GuitarBattle">
     <GROUP id="{FD100ED6-F86C-F2E1-2AEB-B88EA6EF2BB0}" name="Source">
       <GROUP id="{263DF7EE-CD09-F830-E8C4-010189E33041}" name="Tuner">
@@ -24,10 +25,8 @@
               file="Source/Gameplay/GameplayEngine.cpp"/>
         <FILE id="APfuqV" name="GameplayEngine.h" compile="0" resource="0"
               file="Source/Gameplay/GameplayEngine.h"/>
-        <FILE id="DuelEn1" name="DuelEngine.h" compile="0" resource="0"
-              file="Source/Gameplay/DuelEngine.h"/>
-        <FILE id="DuelMa1" name="DuelMatch.h" compile="0" resource="0"
-              file="Source/Gameplay/DuelMatch.h"/>
+        <FILE id="DuelEn1" name="DuelEngine.h" compile="0" resource="0" file="Source/Gameplay/DuelEngine.h"/>
+        <FILE id="DuelMa1" name="DuelMatch.h" compile="0" resource="0" file="Source/Gameplay/DuelMatch.h"/>
         <FILE id="DuelCpp" name="MainComponentDuel.cpp" compile="1" resource="0"
               file="Source/Gameplay/MainComponentDuel.cpp"/>
         <FILE id="McGame1" name="MainComponentGameplay.cpp" compile="1" resource="0"
@@ -40,6 +39,8 @@
         <FILE id="O7EDSc" name="GameStyle.h" compile="0" resource="0" file="Source/UI/GameStyle.h"/>
         <FILE id="DuelLo1" name="DuelLobby.h" compile="0" resource="0" file="Source/UI/DuelLobby.h"/>
         <FILE id="DuelLo2" name="DuelLobby.cpp" compile="1" resource="0" file="Source/UI/DuelLobby.cpp"/>
+        <FILE id="DuelRm1" name="OnlineDuelRoom.h" compile="0" resource="0" file="Source/UI/OnlineDuelRoom.h"/>
+        <FILE id="DuelRm2" name="OnlineDuelRoom.cpp" compile="1" resource="0" file="Source/UI/OnlineDuelRoom.cpp"/>
         <FILE id="t8Skoe" name="SelectComponent.cpp" compile="1" resource="0"
               file="Source/UI/SelectComponent.cpp"/>
         <FILE id="QZun1U" name="SelectComponent.h" compile="0" resource="0"
@@ -56,21 +57,35 @@
               file="Source/UI/GuitarInputMonitor.cpp"/>
         <FILE id="gIm02b" name="GuitarInputMonitor.h" compile="0" resource="0"
               file="Source/UI/GuitarInputMonitor.h"/>
-        <FILE id="VstP01" name="VstPanel.cpp" compile="1" resource="0"
-              file="Source/UI/VstPanel.cpp"/>
-        <FILE id="VstP02" name="VstPanel.h" compile="0" resource="0"
-              file="Source/UI/VstPanel.h"/>
-        <FILE id="BrAs01" name="BrandAssets.cpp" compile="1" resource="0"
-              file="Source/UI/BrandAssets.cpp"/>
-        <FILE id="BrAs02" name="BrandAssets.h" compile="0" resource="0"
-              file="Source/UI/BrandAssets.h"/>
+        <FILE id="VstP01" name="VstPanel.cpp" compile="1" resource="0" file="Source/UI/VstPanel.cpp"/>
+        <FILE id="VstP02" name="VstPanel.h" compile="0" resource="0" file="Source/UI/VstPanel.h"/>
+        <FILE id="BrAs01" name="BrandAssets.cpp" compile="1" resource="0" file="Source/UI/BrandAssets.cpp"/>
+        <FILE id="BrAs02" name="BrandAssets.h" compile="0" resource="0" file="Source/UI/BrandAssets.h"/>
+        <FILE id="DStg01" name="DuelStageComponent.cpp" compile="1" resource="0"
+              file="Source/UI/DuelStageComponent.cpp"/>
+        <FILE id="DStg02" name="DuelStageComponent.h" compile="0" resource="0"
+              file="Source/UI/DuelStageComponent.h"/>
+        <FILE id="SecSb1" name="SectionSidebar.cpp" compile="1" resource="0"
+              file="Source/UI/SectionSidebar.cpp"/>
+        <FILE id="SecSb2" name="SectionSidebar.h" compile="0" resource="0"
+              file="Source/UI/SectionSidebar.h"/>
+        <FILE id="CmpP01" name="CampaignPanel.cpp" compile="1" resource="0"
+              file="Source/UI/CampaignPanel.cpp"/>
+        <FILE id="CmpP02" name="CampaignPanel.h" compile="0" resource="0" file="Source/UI/CampaignPanel.h"/>
+        <FILE id="PlrC01" name="PlayerCard.cpp" compile="1" resource="0" file="Source/UI/PlayerCard.cpp"/>
+        <FILE id="PlrC02" name="PlayerCard.h" compile="0" resource="0" file="Source/UI/PlayerCard.h"/>
+        <FILE id="FrP01" name="FriendsPanel.cpp" compile="1" resource="0" file="Source/UI/FriendsPanel.cpp"/>
+        <FILE id="FrP02" name="FriendsPanel.h" compile="0" resource="0" file="Source/UI/FriendsPanel.h"/>
+        <FILE id="MsgP01" name="MessagesPanel.cpp" compile="1" resource="0" file="Source/UI/MessagesPanel.cpp"/>
+        <FILE id="MsgP02" name="MessagesPanel.h" compile="0" resource="0" file="Source/UI/MessagesPanel.h"/>
+        <FILE id="PubP01" name="PublicProfilePanel.cpp" compile="1" resource="0" file="Source/UI/PublicProfilePanel.cpp"/>
+        <FILE id="PubP02" name="PublicProfilePanel.h" compile="0" resource="0" file="Source/UI/PublicProfilePanel.h"/>
+        <FILE id="McSec1" name="MainComponentSections.cpp" compile="1" resource="0"
+              file="Source/UI/MainComponentSections.cpp"/>
         <GROUP id="{6C1D2A54-8F3E-4B7A-9C21-5D0E8B4A7F13}" name="Assets">
-          <FILE id="LogDk1" name="LogoDark.svg" compile="0" resource="1"
-                file="Source/UI/Assets/LogoDark.svg"/>
-          <FILE id="LogLt1" name="LogoLight.svg" compile="0" resource="1"
-                file="Source/UI/Assets/LogoLight.svg"/>
-          <FILE id="AppIc1" name="AppIcon.png" compile="0" resource="1"
-                file="Source/UI/Assets/AppIcon.png"/>
+          <FILE id="LogDk1" name="LogoDark.svg" compile="0" resource="1" file="Source/UI/Assets/LogoDark.svg"/>
+          <FILE id="LogLt1" name="LogoLight.svg" compile="0" resource="1" file="Source/UI/Assets/LogoLight.svg"/>
+          <FILE id="AppIc1" name="AppIcon.png" compile="0" resource="1" file="Source/UI/Assets/AppIcon.png"/>
         </GROUP>
       </GROUP>
       <GROUP id="{A35EFB33-1A02-30F8-880B-74B0F642A9AB}" name="Game"/>
@@ -90,40 +105,40 @@
         <FILE id="colv8R" name="PitchDetector.cpp" compile="1" resource="0"
               file="Source/Audio/PitchDetector.cpp"/>
         <FILE id="HOHEdQ" name="PitchDetector.h" compile="0" resource="0" file="Source/Audio/PitchDetector.h"/>
+        <FILE id="UiSnd01" name="UiSounds.cpp" compile="1" resource="0" file="Source/Audio/UiSounds.cpp"/>
+        <FILE id="UiSnd02" name="UiSounds.h" compile="0" resource="0" file="Source/Audio/UiSounds.h"/>
         <FILE id="IngGt1" name="InstrumentGate.h" compile="0" resource="0"
               file="Source/Audio/InstrumentGate.h"/>
         <FILE id="McAud1" name="MainComponentAudio.cpp" compile="1" resource="0"
               file="Source/Audio/MainComponentAudio.cpp"/>
+        <FILE id="VoiCh01" name="VoiceChat.cpp" compile="1" resource="0"
+              file="Source/Audio/VoiceChat.cpp"/>
+        <FILE id="VoiCh02" name="VoiceChat.h" compile="0" resource="0"
+              file="Source/Audio/VoiceChat.h"/>
         <FILE id="McMus1" name="MainComponentMusic.cpp" compile="1" resource="0"
               file="Source/Audio/MainComponentMusic.cpp"/>
         <FILE id="MtPly1" name="MusicTrackPlayer.cpp" compile="1" resource="0"
               file="Source/Audio/MusicTrackPlayer.cpp"/>
         <FILE id="MtPly2" name="MusicTrackPlayer.h" compile="0" resource="0"
               file="Source/Audio/MusicTrackPlayer.h"/>
-        <FILE id="VstH01" name="VstHost.cpp" compile="1" resource="0"
-              file="Source/Audio/VstHost.cpp"/>
-        <FILE id="VstH02" name="VstHost.h" compile="0" resource="0"
-              file="Source/Audio/VstHost.h"/>
+        <FILE id="VstH01" name="VstHost.cpp" compile="1" resource="0" file="Source/Audio/VstHost.cpp"/>
+        <FILE id="VstH02" name="VstHost.h" compile="0" resource="0" file="Source/Audio/VstHost.h"/>
         <FILE id="VstH03" name="Vst3ScanWorker.h" compile="0" resource="0"
               file="Source/Audio/Vst3ScanWorker.h"/>
       </GROUP>
       <GROUP id="{4B2A6C1E-7F3D-4A9B-8C2E-1D5F6A7B8C9D}" name="Network">
         <FILE id="SesSt1" name="SessionStore.cpp" compile="1" resource="0"
               file="Source/Network/SessionStore.cpp"/>
-        <FILE id="SesSt2" name="SessionStore.h" compile="0" resource="0"
-              file="Source/Network/SessionStore.h"/>
+        <FILE id="SesSt2" name="SessionStore.h" compile="0" resource="0" file="Source/Network/SessionStore.h"/>
         <FILE id="McNet1" name="MainComponentNetwork.cpp" compile="1" resource="0"
               file="Source/Network/MainComponentNetwork.cpp"/>
         <FILE id="McAst1" name="MainComponentAssets.cpp" compile="1" resource="0"
               file="Source/Network/MainComponentAssets.cpp"/>
-        <FILE id="McApiH1" name="ApiClient.h" compile="0" resource="0"
-              file="Source/Network/ApiClient.h"/>
-        <FILE id="DuelClH1" name="DuelClient.h" compile="0" resource="0"
-              file="Source/Network/DuelClient.h"/>
+        <FILE id="McApiH1" name="ApiClient.h" compile="0" resource="0" file="Source/Network/ApiClient.h"/>
+        <FILE id="DuelClH1" name="DuelClient.h" compile="0" resource="0" file="Source/Network/DuelClient.h"/>
         <FILE id="DuelClC1" name="DuelClient.cpp" compile="1" resource="0"
               file="Source/Network/DuelClient.cpp"/>
-        <FILE id="McAstH1" name="ClientAssets.h" compile="0" resource="0"
-              file="Source/Network/ClientAssets.h"/>
+        <FILE id="McAstH1" name="ClientAssets.h" compile="0" resource="0" file="Source/Network/ClientAssets.h"/>
       </GROUP>
       <FILE id="arNDKD" name="MainComponent.h" compile="0" resource="0" file="Source/MainComponent.h"/>
       <FILE id="PvmoSG" name="Main.cpp" compile="1" resource="0" file="Source/Main.cpp"/>
@@ -172,8 +187,7 @@
       </MODULEPATHS>
     </VS2026>
     <XCODE_MAC targetFolder="Builds/MacOSX" smallIcon="AppIc1" bigIcon="AppIc1"
-               microphonePermissionNeeded="1"
-               applicationCategory="public.app-category.games">
+               microphonePermissionNeeded="1" applicationCategory="public.app-category.games">
       <CONFIGURATIONS>
         <CONFIGURATION isDebug="1" name="Debug" recommendedWarnings="LLVM"/>
         <CONFIGURATION isDebug="0" name="Release" recommendedWarnings="LLVM"/>
@@ -196,3 +210,4 @@
     </XCODE_MAC>
   </EXPORTFORMATS>
 </JUCERPROJECT>
+

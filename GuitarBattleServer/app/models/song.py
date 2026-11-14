@@ -2,8 +2,9 @@ import uuid
 from datetime import datetime
 from sqlalchemy import Boolean, CheckConstraint, DateTime, ForeignKey, Index, Integer, SmallInteger, String, Text, func, true
 from sqlalchemy.dialects.postgresql import UUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+from app.models.gameplay_visuals import StageLevel, UiCharacter
 
 class Song(Base):
     __tablename__ = "songs"
@@ -59,8 +60,32 @@ class Song(Base):
     archived_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True, index=True
     )
+    #: Optional gameplay visuals. Both foreign keys use ``ON DELETE SET NULL``:
+    #: deleting a character or a stage never removes a song, it only clears the
+    #: selection. ``character_id`` is the source of ``character_name`` and
+    #: ``character_sheet_url`` in the public catalogue; ``stage_id`` is the
+    #: source of ``stage_name`` and ``stage_background_url``.
+    character_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("ui_characters.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
+    stage_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("stage_levels.id", ondelete="SET NULL"),
+        index=True,
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    character: Mapped[UiCharacter | None] = relationship(
+        "UiCharacter", lazy="selectin", passive_deletes=True
+    )
+    stage: Mapped[StageLevel | None] = relationship(
+        "StageLevel", lazy="selectin", passive_deletes=True
+    )
 
 class SongFile(Base):
     __tablename__ = "song_files"

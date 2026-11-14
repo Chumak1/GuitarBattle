@@ -229,16 +229,35 @@ def test_admin_page_has_no_contacts_block() -> None:
     assert "/app/contacts.js" not in html
 
 
-def test_admin_has_contacts_section() -> None:
+def test_admin_has_contacts_card_inside_landing_section() -> None:
     html = _html(ADMIN_PAGE)
     script = _html(ADMIN_SCRIPT)
 
-    assert 'data-admin-section="contacts"' in html
-    assert 'data-admin-panel="contacts"' in html
-    assert 'id="sectionContacts"' in html
-    assert 'id="contactsNameRu"' in html
-    assert 'id="contactsEmail"' in html
-    assert 'id="contactsYoutube"' in html
+    # Contacts are no longer a separate tab: the nav item and the panel are gone,
+    # the form lives inside the landing panel as a CONTACTS card.
+    assert 'data-admin-section="contacts"' not in html
+    assert 'data-admin-panel="contacts"' not in html
+    assert 'id="sectionContacts"' not in html
+
+    landing = html.index('data-admin-panel="landing"')
+    support = html.index('data-admin-panel="support"')
+    for element_id in (
+        "contactsNameRu",
+        "contactsNameEn",
+        "contactsEmail",
+        "contactsTelegram",
+        "contactsYoutube",
+        "contactsInstagram",
+        "contactsTwitter",
+        "contactsVk",
+        "contactsReload",
+        "contactsSave",
+        "contactsAlert",
+    ):
+        position = html.index(f'id="{element_id}"')
+        assert landing < position < support, element_id
+
+    assert "CONTACTS" in html
     assert "/admin/site/contacts" in script
 
 

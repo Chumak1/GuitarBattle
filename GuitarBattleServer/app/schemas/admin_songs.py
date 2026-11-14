@@ -29,6 +29,9 @@ class AdminSongCreate(BaseModel):
     description: str | None = Field(default=None, max_length=10000)
     #: Daily Challenge slot: 0 = Monday ... 6 = Sunday, ``None`` = ordinary song.
     daily_weekday: int | None = Field(default=None, ge=0, le=6)
+    #: Optional gameplay visuals. ``None`` stores no selection.
+    character_id: UUID | None = None
+    stage_id: UUID | None = None
 
     @field_validator("slug", "title", "genre")
     @classmethod
@@ -67,6 +70,9 @@ class AdminSongUpdate(BaseModel):
     description: str | None = Field(default=None, max_length=10000)
     #: Explicit ``null`` clears the slot; omitting the field keeps it as is.
     daily_weekday: int | None = Field(default=None, ge=0, le=6)
+    #: Omitted keeps the stored selection; explicit ``null`` clears it.
+    character_id: UUID | None = None
+    stage_id: UUID | None = None
 
     @field_validator("slug", "title", "genre")
     @classmethod
@@ -119,6 +125,15 @@ class AdminSongResponse(BaseModel):
     #: Admin-only download link of the active Preview Song (full mix).
     #: ``None`` until a preview is uploaded; the link needs the admin token.
     preview_url: str | None = None
+    #: Selected gameplay visuals. IDs are what ``PATCH`` accepts; the names and
+    #: URLs are provided so the songs table can render the selection without a
+    #: second request. Every value is ``None`` when nothing is selected.
+    character_id: UUID | None = None
+    character_name: str | None = None
+    character_sheet_url: str | None = None
+    stage_id: UUID | None = None
+    stage_name: str | None = None
+    stage_background_url: str | None = None
 
 class AdminSongListResponse(BaseModel):
     items: list[AdminSongResponse]
