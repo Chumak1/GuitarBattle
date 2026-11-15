@@ -604,7 +604,8 @@ private:
                               const juce::String& filename,
                               juce::int64 sizeBytes,
                               bool installerMode = false);
-    void applyDownloadedUpdate(const juce::File& downloadedFile);
+    void applyDownloadedUpdate(const juce::File& downloadedFile,
+                               const juce::String& targetVersion);
     void runDownloadedInstaller(const juce::File& installerFile);
     // A newer build found at launch is announced, never installed silently:
     // the player sees the version, the release notes and two buttons. The

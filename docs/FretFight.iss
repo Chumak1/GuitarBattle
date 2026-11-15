@@ -3,7 +3,7 @@
 ; Non-commercial use only.
 
 #define MyAppName "FretFight"
-#define MyAppVersion "2.0.0"
+#define MyAppVersion "2.0.1"
 #define MyAppPublisher "ChumakEvgeny"
 #define MyAppURL "https://fretfight.online/"
 #define MyAppExeName "GuitarBattle.exe"
@@ -83,5 +83,6 @@ Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#DoubleAmp(M
 ; An update started by the client runs in silent mode, and postinstall is
 ; skipped there, so bring the game back explicitly after the files are in place.
 Filename: "{app}\{#MyAppExeName}"; Flags: nowait; Check: WizardSilent
+
 
 

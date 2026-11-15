@@ -5,7 +5,7 @@
  #include <wincred.h>
  #pragma comment(lib, "Advapi32.lib")
 #elif JUCE_MAC
- #include <Security/Security.h>
+ #include <sys/stat.h>
 #endif
 
 namespace SessionStore
@@ -72,161 +72,116 @@ namespace SessionStore
 #elif JUCE_MAC
     namespace
     {
-        // One generic-password item in the login keychain, keyed by service and
-        // account exactly like the Windows Credential Manager entry.
-        constexpr const char* keychainService = "FretFight/Session";
-        constexpr const char* keychainAccount = "refresh_token";
-
-        // Status codes only, never the token itself. A locked login keychain or
-        // a denied access prompt is otherwise invisible: the client simply
-        // asks for the password again and looks like broken auto-login.
-        void logStatus(const char* operation, OSStatus status)
+        // The bundle is ad-hoc signed, so every build carries a different code
+        // signature. A keychain item written by the previous version belongs
+        // to a different application, and macOS asks for the login password on
+        // the first launch after each update (and denies access if the prompt
+        // is dismissed). A 0600 file in the user's Application Support avoids
+        // the prompt: it is readable only by this account, it survives updates
+        // and it never leaves the Mac.
+        juce::File tokenFile()
         {
-            auto directory = juce::File::getSpecialLocation(
-                                 juce::File::userApplicationDataDirectory)
-                                 .getChildFile("Application Support")
-                                 .getChildFile("GuitarBattle");
+            return juce::File::getSpecialLocation (
+                       juce::File::userApplicationDataDirectory)
+                       .getChildFile ("Application Support")
+                       .getChildFile ("FretFight")
+                       .getChildFile ("session.token");
+        }
 
-            directory.createDirectory();
+        juce::File logFile()
+        {
+            return juce::File::getSpecialLocation (
+                       juce::File::userApplicationDataDirectory)
+                       .getChildFile ("Application Support")
+                       .getChildFile ("GuitarBattle")
+                       .getChildFile ("session.log");
+        }
 
-            directory.getChildFile("session.log")
-                     .appendText(juce::String(operation)
+        // Status codes only, never the token itself: a failed write has to be
+        // visible, otherwise broken auto-login looks like a server problem.
+        void logStatus (const char* operation, int status)
+        {
+            auto file = logFile();
+            file.getParentDirectory().createDirectory();
+
+            file.appendText (juce::String (operation)
                                  + " status="
-                                 + juce::String(static_cast<int>(status))
+                                 + juce::String (status)
                                  + "\n");
         }
 
-        CFMutableDictionaryRef makeKeychainQuery()
+        void restrictToOwner (const juce::File& file, int mode)
         {
-            CFMutableDictionaryRef query = CFDictionaryCreateMutable(
-                kCFAllocatorDefault, 0,
-                &kCFTypeDictionaryKeyCallBacks,
-                &kCFTypeDictionaryValueCallBacks);
-
-            CFDictionarySetValue(query, kSecClass, kSecClassGenericPassword);
-
-            if (CFStringRef service = CFStringCreateWithCString(
-                    kCFAllocatorDefault, keychainService, kCFStringEncodingUTF8))
-            {
-                CFDictionarySetValue(query, kSecAttrService, service);
-                CFRelease(service);
-            }
-
-            if (CFStringRef account = CFStringCreateWithCString(
-                    kCFAllocatorDefault, keychainAccount, kCFStringEncodingUTF8))
-            {
-                CFDictionarySetValue(query, kSecAttrAccount, account);
-                CFRelease(account);
-            }
-
-            return query;
-        }
-
-        // The login keychain is the file-based one. kSecAttrAccessible (and
-        // kSecAttrAccessControl) belong to the iOS-style data protection
-        // keychain; passing them to SecItemAdd here makes macOS reject the
-        // item with errSecParam, so the item is created without them.
-        OSStatus addItem(CFDataRef data)
-        {
-            CFMutableDictionaryRef query = makeKeychainQuery();
-            CFDictionarySetValue(query, kSecValueData, data);
-
-            const OSStatus status = SecItemAdd(query, nullptr);
-            CFRelease(query);
-
-            return status;
-        }
-
-        OSStatus updateItem(CFDataRef data)
-        {
-            CFMutableDictionaryRef query = makeKeychainQuery();
-            CFMutableDictionaryRef attributes = CFDictionaryCreateMutable(
-                kCFAllocatorDefault, 0,
-                &kCFTypeDictionaryKeyCallBacks,
-                &kCFTypeDictionaryValueCallBacks);
-
-            CFDictionarySetValue(attributes, kSecValueData, data);
-
-            const OSStatus status = SecItemUpdate(query, attributes);
-
-            CFRelease(attributes);
-            CFRelease(query);
-
-            return status;
+            // 0600 for the token, 0700 for its folder: another account on a
+            // shared Mac must not be able to read the refresh token.
+            ::chmod (file.getFullPathName().toRawUTF8(),
+                     static_cast<mode_t> (mode));
         }
     }
 
     void clearRefreshToken()
     {
-        CFMutableDictionaryRef query = makeKeychainQuery();
-        const OSStatus status = SecItemDelete(query);
-        CFRelease(query);
+        auto file = tokenFile();
 
-        if (status != errSecSuccess && status != errSecItemNotFound)
-            logStatus("clear", status);
+        if (file.existsAsFile() && ! file.deleteFile())
+            logStatus ("clear", -1);
     }
 
-    bool saveRefreshToken(const juce::String& token)
+    bool saveRefreshToken (const juce::String& token)
     {
         if (token.isEmpty())
             return false;
 
-        CFDataRef data = CFDataCreate(
-            kCFAllocatorDefault,
-            reinterpret_cast<const UInt8*>(token.toRawUTF8()),
-            static_cast<CFIndex>(token.getNumBytesAsUTF8()));
+        auto file = tokenFile();
+        auto directory = file.getParentDirectory();
 
-        if (data == nullptr)
+        directory.createDirectory();
+
+        if (! directory.isDirectory())
+        {
+            logStatus ("save", -1);
             return false;
+        }
 
-        OSStatus status = addItem(data);
+        restrictToOwner (directory, S_IRWXU);
 
-        // An item written by an earlier build keeps the same service/account.
-        // Replace its data instead of failing with errSecDuplicateItem.
-        if (status == errSecDuplicateItem)
-            status = updateItem(data);
+        // Write through a temporary file: a crash must never truncate a valid
+        // token and log the player out.
+        auto temp = file.getSiblingFile ("session.token.tmp");
+        temp.deleteFile();
 
-        CFRelease(data);
+        if (! temp.replaceWithText (token))
+        {
+            logStatus ("save", -2);
+            return false;
+        }
 
-        logStatus("save", status);
-        return status == errSecSuccess;
+        restrictToOwner (temp, S_IRUSR | S_IWUSR);
+
+        if (! temp.moveFileTo (file))
+        {
+            logStatus ("save", -3);
+            temp.deleteFile();
+            return false;
+        }
+
+        restrictToOwner (file, S_IRUSR | S_IWUSR);
+        return true;
     }
 
     juce::String loadRefreshToken()
     {
-        CFMutableDictionaryRef query = makeKeychainQuery();
-        CFDictionarySetValue(query, kSecReturnData, kCFBooleanTrue);
-        CFDictionarySetValue(query, kSecMatchLimit, kSecMatchLimitOne);
+        auto file = tokenFile();
 
-        CFTypeRef result = nullptr;
-        const OSStatus status = SecItemCopyMatching(query, &result);
-        CFRelease(query);
-
-        logStatus("load", status);
-
-        if (status != errSecSuccess || result == nullptr)
+        if (! file.existsAsFile())
             return {};
 
-        juce::String token;
-
-        if (CFGetTypeID(result) == CFDataGetTypeID())
-        {
-            const auto* bytes = reinterpret_cast<const char*>(
-                CFDataGetBytePtr(static_cast<CFDataRef>(result)));
-            const auto size = static_cast<int>(
-                CFDataGetLength(static_cast<CFDataRef>(result)));
-
-            if (bytes != nullptr && size > 0)
-                token = juce::String::fromUTF8(bytes, size);
-        }
-
-        CFRelease(result);
-        return token.trim();
+        return file.loadFileAsString().trim();
     }
 
     bool hasRefreshToken()
     {
-        return loadRefreshToken().isNotEmpty();
+        return tokenFile().existsAsFile() && loadRefreshToken().isNotEmpty();
     }
 #else
     bool saveRefreshToken(const juce::String&) { return false; }

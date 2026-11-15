@@ -2395,7 +2395,10 @@ namespace
         if (name.isEmpty() || name.startsWithChar ('.'))
         {
            #if JUCE_MAC
-            name = "FretFight-" + version + ".dmg";
+            // The macOS update channel ships the portable ZIP; the DMG is the
+            // download-page installer. A missing name must not turn the update
+            // into a DMG download by accident.
+            name = "FretFight-" + version + ".zip";
            #else
             name = "FretFight-" + version + "-win64.zip";
            #endif
@@ -2403,6 +2406,79 @@ namespace
 
         return name;
     }
+
+   #if JUCE_MAC
+    /** Diagnostics file of the self-updater. macOS has no console for a
+        double-clicked bundle, so every step of the swap is appended here.
+    */
+    juce::File updateLogFile()
+    {
+        return juce::File::getSpecialLocation (
+                   juce::File::userApplicationDataDirectory)
+                   .getChildFile ("Application Support")
+                   .getChildFile ("FretFight")
+                   .getChildFile ("update.log");
+    }
+
+    void logUpdate (const juce::String& message)
+    {
+        auto file = updateLogFile();
+        file.getParentDirectory().createDirectory();
+
+        // The log is a diagnostic aid, not a journal: keep it small.
+        if (file.existsAsFile() && file.getSize() > 64 * 1024)
+            file.deleteFile();
+
+        file.appendText (juce::Time::getCurrentTime().toString (true, true)
+                             + " " + message + "\n");
+    }
+
+    void showUpdateProblem (const juce::String& message)
+    {
+        logUpdate ("update problem: " + message);
+
+        juce::AlertWindow::showMessageBoxAsync (
+            juce::MessageBoxIconType::WarningIcon,
+            "Update could not be installed",
+            message,
+            "OK");
+    }
+
+    /** Runs a command and reports whether it exited with status 0. */
+    bool runAndWait (const juce::StringArray& command, int timeoutMs)
+    {
+        juce::ChildProcess process;
+
+        if (! process.start (command, 0))
+            return false;
+
+        return process.waitForProcessToFinish (timeoutMs)
+            && process.getExitCode() == 0;
+    }
+
+    /** CFBundleShortVersionString of a staged bundle, or an empty string.
+        Info.plist is often a binary plist, so it is read through PlistBuddy
+        instead of parsing the file as text.
+    */
+    juce::String readBundleVersion (const juce::File& bundle)
+    {
+        const auto plist = bundle.getChildFile ("Contents").getChildFile ("Info.plist");
+
+        if (! plist.existsAsFile())
+            return {};
+
+        juce::ChildProcess process;
+
+        if (! process.start ({ "/usr/libexec/PlistBuddy", "-c",
+                               "Print :CFBundleShortVersionString",
+                               plist.getFullPathName() },
+                             juce::ChildProcess::wantStdOut))
+            return {};
+
+        process.waitForProcessToFinish (5000);
+        return process.readAllProcessOutput().trim();
+    }
+   #endif
 
     /** Downloads the installer on a worker thread and reports progress in a
         modal progress window. The window owns itself and deletes itself when
@@ -2749,11 +2825,12 @@ void MainComponent::startAutomaticUpdate (const juce::String& version,
         resolveUpdateUrl (downloadUrl),
         version,
         sizeBytes,
-        [safeThis, installerMode] (bool success, juce::File downloadedFile)
+        [safeThis, installerMode, version] (bool success, juce::File downloadedFile)
         {
             // The progress window has already closed; defer the follow-up so
             // it is not created from inside the window's teardown.
-            juce::MessageManager::callAsync ([safeThis, success, downloadedFile, installerMode]
+            juce::MessageManager::callAsync ([safeThis, success, downloadedFile,
+                                              installerMode, version]
             {
                 auto* self = safeThis.getComponent();
 
@@ -2768,7 +2845,7 @@ void MainComponent::startAutomaticUpdate (const juce::String& version,
                 if (installerMode)
                     self->runDownloadedInstaller (downloadedFile);
                 else
-                    self->applyDownloadedUpdate (downloadedFile);
+                    self->applyDownloadedUpdate (downloadedFile, version);
             });
         });
 
@@ -2826,12 +2903,14 @@ void MainComponent::runDownloadedInstaller (const juce::File& installerFile)
    #endif
 }
 
-void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile)
+void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
+                                           const juce::String& targetVersion)
 {
     if (! downloadedFile.existsAsFile())
         return;
 
    #if JUCE_WINDOWS
+    juce::ignoreUnused (targetVersion);
     // The active Windows build is a portable ZIP with FretFight.exe inside.
     // Never copy an arbitrary server file over the running executable: the
     // ZIP entry and the extracted PE header are both checked.
@@ -2931,10 +3010,16 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile)
     });
 
    #elif JUCE_MAC
-    // The active macOS build is the .dmg (or the CI .zip) with FretFight.app.
-    // Stage the new bundle, then let a shell helper replace the running bundle
-    // after this process exits.
+    // The macOS update payload is the portable ZIP (the DMG is the installer
+    // on the download page). Stage the new bundle, verify that it really is
+    // the advertised build, then let a shell helper swap it in after this
+    // process exits. Every step is logged: a double-clicked bundle has no
+    // console, and a silent failure here leaves the player with the same
+    // update prompt on every launch.
     auto updateDirectory = downloadedFile.getParentDirectory();
+    logUpdate ("apply start: " + downloadedFile.getFullPathName()
+                   + " target=" + targetVersion);
+
     juce::File stagedApp;
 
     if (downloadedFile.hasFileExtension ("dmg"))
@@ -2943,55 +3028,37 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile)
         mountPoint.deleteRecursively();
         mountPoint.createDirectory();
 
+        if (! runAndWait ({ "/usr/bin/hdiutil", "attach", "-nobrowse", "-readonly",
+                            "-mountpoint", mountPoint.getFullPathName(),
+                            downloadedFile.getFullPathName() }, 60000))
         {
-            juce::ChildProcess attach;
-            attach.start (juce::StringArray {
-                "/usr/bin/hdiutil", "attach", "-nobrowse", "-readonly",
-                "-mountpoint", mountPoint.getFullPathName(),
-                downloadedFile.getFullPathName() }, 0);
-
-            if (! attach.waitForProcessToFinish (60000)
-                || attach.getExitCode() != 0)
-                return;
+            showUpdateProblem ("The downloaded disk image could not be mounted.\n\n"
+                               "Download the installer from https://fretfight.online.");
+            return;
         }
 
         const auto mountedApp = mountPoint.getChildFile ("FretFight.app");
 
-        if (! mountedApp.isDirectory())
+        if (mountedApp.isDirectory())
         {
-            juce::ChildProcess detach;
-            detach.start (juce::StringArray {
-                "/usr/bin/hdiutil", "detach", mountPoint.getFullPathName() }, 0);
-            detach.waitForProcessToFinish (30000);
-            return;
-        }
+            stagedApp = updateDirectory.getChildFile ("FretFight.app");
+            stagedApp.deleteRecursively();
 
-        stagedApp = updateDirectory.getChildFile ("FretFight.app");
-        stagedApp.deleteRecursively();
-
-        {
-            juce::ChildProcess copy;
-            copy.start (juce::StringArray {
-                "/bin/cp", "-R", mountedApp.getFullPathName(),
-                stagedApp.getFullPathName() }, 0);
-
-            if (! copy.waitForProcessToFinish (60000)
-                || copy.getExitCode() != 0)
+            // ditto keeps the bundle metadata and the ad-hoc signature;
+            // cp -R drops extended attributes on some macOS versions.
+            if (! runAndWait ({ "/usr/bin/ditto", mountedApp.getFullPathName(),
+                                stagedApp.getFullPathName() }, 120000))
             {
-                juce::ChildProcess detach;
-                detach.start (juce::StringArray {
-                    "/usr/bin/hdiutil", "detach", mountPoint.getFullPathName() }, 0);
-                detach.waitForProcessToFinish (30000);
-                return;
+                logUpdate ("ditto from the dmg failed");
+                stagedApp = {};
             }
         }
-
+        else
         {
-            juce::ChildProcess detach;
-            detach.start (juce::StringArray {
-                "/usr/bin/hdiutil", "detach", mountPoint.getFullPathName() }, 0);
-            detach.waitForProcessToFinish (30000);
+            logUpdate ("no FretFight.app inside the dmg");
         }
+
+        runAndWait ({ "/usr/bin/hdiutil", "detach", mountPoint.getFullPathName() }, 30000);
     }
     else if (downloadedFile.hasFileExtension ("zip"))
     {
@@ -2999,25 +3066,44 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile)
         extracted.deleteRecursively();
         extracted.createDirectory();
 
+        if (! runAndWait ({ "/usr/bin/ditto", "-x", "-k",
+                            downloadedFile.getFullPathName(),
+                            extracted.getFullPathName() }, 120000))
         {
-            juce::ChildProcess unzip;
-            unzip.start (juce::StringArray {
-                "/usr/bin/ditto", "-x", "-k",
-                downloadedFile.getFullPathName(),
-                extracted.getFullPathName() }, 0);
-
-            if (! unzip.waitForProcessToFinish (60000)
-                || unzip.getExitCode() != 0)
-                return;
+            showUpdateProblem ("The downloaded archive could not be unpacked.\n\n"
+                               "Download the installer from https://fretfight.online.");
+            return;
         }
 
         stagedApp = extracted.getChildFile ("FretFight.app");
-
-        if (! stagedApp.isDirectory())
-            return;
     }
     else
     {
+        logUpdate ("unsupported payload: " + downloadedFile.getFileName());
+        return;
+    }
+
+    if (! stagedApp.isDirectory())
+    {
+        showUpdateProblem ("The downloaded file does not contain FretFight.app.\n\n"
+                           "Nothing was changed. Download the installer from "
+                           "https://fretfight.online.");
+        return;
+    }
+
+    // Never replace a working app with a truncated download or with a build
+    // that is not the one the server advertised.
+    const auto stagedVersion = readBundleVersion (stagedApp);
+    logUpdate ("staged version=" + stagedVersion);
+
+    if (stagedVersion.isEmpty() || stagedVersion != targetVersion)
+    {
+        showUpdateProblem ("The downloaded build is not FretFight " + targetVersion
+                           + " (found: "
+                           + (stagedVersion.isEmpty() ? juce::String ("unknown")
+                                                      : stagedVersion)
+                           + ").\n\nNothing was changed. Download the installer from "
+                             "https://fretfight.online.");
         return;
     }
 
@@ -3029,39 +3115,95 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile)
                          .getParentDirectory()
                          .getParentDirectory();
 
+    const auto appPath = currentApp.getFullPathName();
+    logUpdate ("running bundle: " + appPath);
+
+    // A bundle that is still inside a mounted disk image, or one that
+    // Gatekeeper moved to a read-only translocated folder, cannot be replaced
+    // in place. Say so instead of quitting and coming back with the old build.
+    if (appPath.startsWith ("/Volumes/")
+        || appPath.containsIgnoreCase ("AppTranslocation"))
+    {
+        showUpdateProblem ("FretFight is running from a read-only location:\n"
+                           + appPath
+                           + "\n\nDrag FretFight.app into Applications, quit it and start it "
+                             "from there. The next update will install itself.");
+        return;
+    }
+
     if (! currentApp.getParentDirectory().hasWriteAccess())
     {
-        juce::AlertWindow::showMessageBoxAsync (
-            juce::MessageBoxIconType::WarningIcon,
-            "Auto-update needs a writable folder",
-            "FretFight cannot replace itself in:\n"
-                + currentApp.getParentDirectory().getFullPathName()
-                + "\n\nMove FretFight.app to a user folder (for example ~/Applications) "
-                  "to let future versions update automatically.",
-            "OK");
+        showUpdateProblem ("FretFight cannot replace itself in:\n"
+                           + currentApp.getParentDirectory().getFullPathName()
+                           + "\n\nMove FretFight.app to a folder you own (for example "
+                             "/Applications) to let future versions update automatically.");
         return;
     }
 
     const auto helper = updateDirectory.getChildFile ("apply-update.sh");
     const auto pid = static_cast<int> (getpid());
+    const auto logPath = updateLogFile().getFullPathName();
 
+    // The helper waits for this process to exit, copies the verified bundle
+    // next to the old one, swaps them with mv (so a failure never leaves the
+    // player without an app), clears the quarantine flag and starts the new
+    // build. Each step is logged for the case where it still fails.
     juce::String script;
     script << "#!/bin/sh\n"
-           << "while kill -0 " << pid << " 2>/dev/null; do sleep 0.5; done\n"
-           << "xattr -dr com.apple.quarantine \"" << stagedApp.getFullPathName() << "\" 2>/dev/null\n"
-           << "rm -rf \"" << currentApp.getFullPathName() << "\"\n"
-           << "/bin/cp -R \"" << stagedApp.getFullPathName() << "\" \""
-           << currentApp.getFullPathName() << "\"\n"
-           << "open \"" << currentApp.getFullPathName() << "\"\n"
+           << "LOG=\"" << logPath << "\"\n"
+           << "APP=\"" << appPath << "\"\n"
+           << "STAGED=\"" << stagedApp.getFullPathName() << "\"\n"
+           << "log() { printf '%s %s\\n' \"$(date '+%Y-%m-%d %H:%M:%S')\" \"$1\" >> \"$LOG\"; }\n"
+           << "log \"helper start pid=" << pid << "\"\n"
+           << "i=0\n"
+           << "while kill -0 " << pid << " 2>/dev/null; do sleep 0.5; i=$((i+1)); "
+              "if [ \"$i\" -gt 240 ]; then break; fi; done\n"
+           << "log \"app stopped\"\n"
+           << "PARENT=$(dirname \"$APP\")\n"
+           << "NEW=\"$PARENT/.FretFight-new.$$\"\n"
+           << "OLD=\"$PARENT/.FretFight-old.$$\"\n"
+           << "rm -rf \"$NEW\"\n"
+           << "if /usr/bin/ditto \"$STAGED\" \"$NEW\" >> \"$LOG\" 2>&1; then\n"
+           << "  log \"copy ready\"\n"
+           << "  if mv \"$APP\" \"$OLD\" >> \"$LOG\" 2>&1; then\n"
+           << "    if mv \"$NEW\" \"$APP\" >> \"$LOG\" 2>&1; then\n"
+           << "      log \"installed\"\n"
+           << "      /usr/bin/xattr -dr com.apple.quarantine \"$APP\" >> \"$LOG\" 2>&1\n"
+           << "      rm -rf \"$OLD\"\n"
+           << "    else\n"
+           << "      log \"move new failed, restoring\"\n"
+           << "      mv \"$OLD\" \"$APP\" >> \"$LOG\" 2>&1\n"
+           << "    fi\n"
+           << "  else\n"
+           << "    log \"move old failed\"\n"
+           << "  fi\n"
+           << "else\n"
+           << "  log \"ditto failed\"\n"
+           << "fi\n"
+           << "rm -rf \"$STAGED\"\n"
+           << "/usr/bin/open \"$APP\" >> \"$LOG\" 2>&1\n"
            << "rm -f \"$0\"\n";
 
     if (! helper.replaceWithText (script))
+    {
+        showUpdateProblem ("The update helper could not be written to:\n"
+                           + updateDirectory.getFullPathName());
         return;
+    }
 
     helper.setExecutePermission (true);
 
     juce::ChildProcess process;
-    process.start (juce::StringArray { "/bin/sh", helper.getFullPathName() }, 0);
+
+    if (! process.start (juce::StringArray { "/bin/sh", helper.getFullPathName() }, 0))
+    {
+        // Quitting here would look like a crash that installs nothing.
+        showUpdateProblem ("The update helper could not be started.\n\n"
+                           "Download the installer from https://fretfight.online.");
+        return;
+    }
+
+    logUpdate ("helper started, quitting for the swap");
 
     juce::MessageManager::callAsync ([]()
     {
