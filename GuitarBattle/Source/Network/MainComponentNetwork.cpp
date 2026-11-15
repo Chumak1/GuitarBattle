@@ -3050,7 +3050,7 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
                                 stagedApp.getFullPathName() }, 120000))
             {
                 logUpdate ("ditto from the dmg failed");
-                stagedApp = {};
+                stagedApp = juce::File();
             }
         }
         else
