@@ -32,7 +32,7 @@
     // profile/password forms and sign-out.
     juce::TextButton accountSettingsButton;
 
-    // Opens the public support page in the default browser. Lives in the
+    // Opens the public donation page in the default browser. Lives in the
     // song-select header next to SETTINGS / AUDIO SETTINGS / EXIT.
     juce::TextButton supportButton;
 

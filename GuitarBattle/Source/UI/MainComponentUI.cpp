@@ -1,4 +1,4 @@
-﻿#include "../MainComponent.h"
+#include "../MainComponent.h"
 
 #include <algorithm>
 #include <cmath>
@@ -1478,7 +1478,7 @@ void MainComponent::paintOverlay(juce::Graphics& g)
             tunedCountTop += (tunedMaskTop & (1 << slot)) != 0 ? 1 : 0;
         const bool allTunedTop = tunedCountTop >= activeStrings;
 
-        // The global EXIT / SUPPORT / FEEDBACK buttons occupy the top-right
+        // The global EXIT / DONATION / FEEDBACK buttons occupy the top-right
         // corner on tuner screens; keep the tuning pill to their left.
         GameUi::drawPill(g,
                          juce::Rectangle<float>(width - 524.0f, 42.0f,
@@ -2624,7 +2624,7 @@ void MainComponent::resized()
     // sections now.
     vstButton.setVisible (false);
     accountSettingsButton.setVisible (false);
-    // SUPPORT and FEEDBACK follow EXIT on every hub page and on the tuner.
+    // DONATION and FEEDBACK follow EXIT on every hub page and on the tuner.
     supportButton.setVisible ((hub || tunerScreen) && !authScreen);
     feedbackButton.setVisible ((hub || tunerScreen) && !authScreen);
     adminPreviewButton.setVisible (profileSection && onlineIsAdmin
@@ -2810,7 +2810,7 @@ void MainComponent::resized()
         const int contentX = 48 + sideW;
         const int contentW = juce::jmax(420, width - 96 - sideW);
 
-        // The hub header keeps EXIT; SUPPORT and FEEDBACK sit next to it on
+        // The hub header keeps EXIT; DONATION and FEEDBACK sit next to it on
         // every section.
         quitButton.setBounds(width - 44 - 100, 42, 100, 32);
         supportButton.setBounds (width - 44 - 100 - 8 - 110, 42, 110, 32);
@@ -2845,7 +2845,7 @@ void MainComponent::resized()
             if (settingsContent != nullptr)
                 settingsContent->setSize(contentW, panelH);
 
-            // Left of FEEDBACK, so EXIT / SUPPORT / FEEDBACK stay in place.
+            // Left of FEEDBACK, so EXIT / DONATION / FEEDBACK stay in place.
             fullScreenButton.setBounds (width - 44 - 100 - 8 - 110 - 8 - 110 - 8 - 140,
                                         42, 140, 32);
         }
@@ -5863,6 +5863,12 @@ private:
                          int selectedComboId = 0;
                          juce::StringArray lockedLines;
 
+                         // The picker grid is built from characterOptions, so
+                         // the playable characters are collected first and the
+                         // locked ones are appended after them.
+                         std::vector<CharacterOption> unlockedOptions;
+                         std::vector<CharacterOption> lockedOptions;
+
                          for (const auto& item : *reply.json.getArray())
                          {
                              if (! item.isObject())
@@ -5889,18 +5895,20 @@ private:
                              if (option.id <= 0 || option.name.isEmpty())
                                  continue;
 
-                             const auto optionIndex = self->characterOptions.size();
-                             self->characterOptions.push_back (option);
-
                              if (option.unlocked)
                              {
+                                 // The combo is indexed by the position inside
+                                 // the unlocked block, which is also the
+                                 // position in the final list.
                                  self->characterCombo.addItem (option.name, comboId);
-                                 self->comboOptionIndices.push_back (optionIndex);
+                                 self->comboOptionIndices.push_back (
+                                     static_cast<int> (unlockedOptions.size()));
 
                                  if (option.id == self->meCharacterId)
                                      selectedComboId = comboId;
 
                                  ++comboId;
+                                 unlockedOptions.push_back (option);
                              }
                              else
                              {
@@ -5918,8 +5926,14 @@ private:
                                      line += " - " + condition;
 
                                  lockedLines.add (line);
+                                 lockedOptions.push_back (option);
                              }
                          }
+
+                         self->characterOptions = std::move (unlockedOptions);
+                         self->characterOptions.insert (self->characterOptions.end(),
+                                                        lockedOptions.begin(),
+                                                        lockedOptions.end());
 
                          if (selectedComboId > 0)
                              self->characterCombo.setSelectedId (
@@ -8593,10 +8607,10 @@ void MainComponent::initialiseUi()
     adminPreviewButton.setVisible(false);
     addAndMakeVisible(adminPreviewButton);
 
-    // Support: one click opens the public support page in the default browser.
-    // Same accent fill as START SONG so it reads as a primary action in the
-    // header instead of a faded secondary button.
-    supportButton.setButtonText("SUPPORT");
+    // Donations: one click opens the public donation page in the default
+    // browser. Same accent fill as START SONG so it reads as a primary action
+    // in the header instead of a faded secondary button.
+    supportButton.setButtonText("DONATION");
     supportButton.setColour(juce::TextButton::buttonColourId,
                             UiColors::accent);
     supportButton.setColour(juce::TextButton::buttonOnColourId,
@@ -8606,7 +8620,7 @@ void MainComponent::initialiseUi()
     supportButton.setColour(juce::TextButton::textColourOnId,
                             UiColors::onAccent);
     supportButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
-    supportButton.setTooltip("Open the Fretfight support page in your browser");
+    supportButton.setTooltip("Open the Fretfight donation page in your browser");
     supportButton.onClick = []
     {
         // Same origin as every other link in the client, so a future domain
