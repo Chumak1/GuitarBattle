@@ -119,13 +119,11 @@ public:
         const auto statusColour = isCompleted ? UiColors::green
                                               : (isCurrent ? UiColors::accent
                                                            : UiColors::muted);
-        g.setColour (statusColour.withAlpha (0.16f));
+        // Solid chip: the row background is already a translucent surface, so a
+        // see-through pill left the stage state almost unreadable.
         const juce::Rectangle<float> pill (row.getRight() - 108.0f,
                                            row.getY() + 13.0f, 92.0f, 22.0f);
-        g.fillRoundedRectangle (pill, 11.0f);
-        g.setColour (statusColour);
-        g.setFont (GameUi::eyebrow (8.0f));
-        g.drawText (status, pill, juce::Justification::centred, false);
+        GameUi::drawBadge (g, pill, status, statusColour);
     }
 
 private:
@@ -198,6 +196,10 @@ void CampaignPanel::setCampaigns (std::vector<CampaignView> newCampaigns,
     campaigns = std::move (newCampaigns);
     selectedId = selectedCampaignId;
     currentStage = juce::jmax (0, newCurrentStage);
+
+    // The greyscale copies belong to the previous set of covers; a refresh may
+    // have replaced the artwork, so they are rebuilt on the next paint.
+    greyCovers.clear();
 
     if (selectedId.isEmpty() && ! campaigns.empty() && showingDetail)
         selectedId = campaigns.front().id;
@@ -510,10 +512,14 @@ void CampaignPanel::paintTowerCard (juce::Graphics& g, juce::Rectangle<float> ar
         clip.addRoundedRectangle (inner, 18.0f);
         g.reduceClipRegion (clip);
 
-        if (campaign.cover.isValid())
+        // A locked tower shows the same artwork desaturated: colour is the
+        // signal that a tower can be played right now.
+        const auto& cover = locked ? greyCoverFor (campaign) : campaign.cover;
+
+        if (cover.isValid())
         {
             g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
-            const auto& image = campaign.cover;
+            const auto& image = cover;
 
             // Normal cover crop, anchored to the top edge: the guitarist's
             // head is near the top of the artwork and must never be cut off.
@@ -536,12 +542,15 @@ void CampaignPanel::paintTowerCard (juce::Graphics& g, juce::Rectangle<float> ar
             g.setGradientFill (fallback);
             g.fillRect (coverArea);
 
-            // Branded placeholder: the tower initial on a soft disc.
+            // Branded placeholder: the tower initial on a soft disc. A locked
+            // tower keeps the same layout in grey, like its artwork.
             const auto disc = juce::Rectangle<float> (coverArea.getCentreX() - 34.0f,
                                                       coverArea.getY() + 34.0f, 68.0f, 68.0f);
-            g.setColour (UiColors::accent.withAlpha (0.16f));
+            const auto placeholderColour = locked ? UiColors::muted
+                                                  : UiColors::accent;
+            g.setColour (placeholderColour.withAlpha (0.16f));
             g.fillEllipse (disc);
-            g.setColour (UiColors::accent);
+            g.setColour (placeholderColour);
             g.setFont (GameUi::heading (30.0f));
             g.drawText (campaign.name.substring (0, 1).toUpperCase(),
                         disc.toNearestInt(), juce::Justification::centred, false);
@@ -566,19 +575,20 @@ void CampaignPanel::paintTowerCard (juce::Graphics& g, juce::Rectangle<float> ar
 
     auto text = area.reduced (16.0f, 12.0f);
 
-    // Difficulty plate in the top-left corner of the artwork.
-    GameUi::drawPill (g, { text.getX(), text.getY(), 76.0f, 20.0f },
-                      towerDifficultyLabel (campaign.botLevel),
-                      towerDifficultyColour (campaign.botLevel), false);
+    // Difficulty plate in the top-left corner of the artwork. Solid fill: over
+    // a photo the old translucent pill was almost invisible.
+    GameUi::drawBadge (g, { text.getX(), text.getY(), 76.0f, 20.0f },
+                       towerDifficultyLabel (campaign.botLevel),
+                       towerDifficultyColour (campaign.botLevel));
 
-    // Status pill floats over the artwork; it carries its own dark background.
+    // Status chip floats over the artwork; it carries its own solid colour.
     const auto status = locked ? juce::String ("LOCKED")
                                : towerStatus (bestStageForTower, count);
     const auto statusColour = locked ? UiColors::orange
                                      : towerStatusColour (bestStageForTower, count);
     const float pillW = 104.0f;
-    GameUi::drawPill (g, { text.getRight() - pillW, text.getY(), pillW, 20.0f },
-                      status, statusColour, complete && ! locked);
+    GameUi::drawBadge (g, { text.getRight() - pillW, text.getY(), pillW, 20.0f },
+                       status, statusColour);
 
     // Everything else lives on the solid panel below; the cover above is fully
     // visible and is never covered by the title or a dark gradient.
@@ -649,6 +659,31 @@ void CampaignPanel::paintTowerCard (juce::Graphics& g, juce::Rectangle<float> ar
     }
 }
 
+const juce::Image& CampaignPanel::greyCoverFor (const CampaignView& campaign)
+{
+    const auto key = campaign.coverImageUrl.isNotEmpty()
+                         ? campaign.coverImageUrl
+                         : juce::String ("id:") + campaign.id;
+
+    const auto found = greyCovers.find (key);
+
+    if (found != greyCovers.end())
+        return found->second;
+
+    juce::Image grey;
+
+    if (campaign.cover.isValid())
+    {
+        // createCopy() detaches the pixel buffer: desaturate() would otherwise
+        // grey out the shared original and the tower would lose its colour
+        // even after it unlocks.
+        grey = campaign.cover.createCopy();
+        grey.desaturate();
+    }
+
+    return greyCovers.emplace (key, std::move (grey)).first->second;
+}
+
 void CampaignPanel::paintDetail (juce::Graphics& g)
 {
     const auto* campaign = selectedCampaign();
@@ -710,17 +745,17 @@ void CampaignPanel::paintDetail (juce::Graphics& g)
                       juce::Justification::topLeft, 2, 1.0f);
 
     const auto pillW = 112.0f;
-    GameUi::drawPill (g, { detailBanner.getRight() - 20.0f - pillW,
-                           detailBanner.getY() + 18.0f, pillW, 20.0f },
-                      locked ? juce::String ("LOCKED")
-                             : towerStatus (currentStage, count),
-                      statusColour, complete && ! locked);
+    GameUi::drawBadge (g, { detailBanner.getRight() - 20.0f - pillW,
+                            detailBanner.getY() + 18.0f, pillW, 20.0f },
+                       locked ? juce::String ("LOCKED")
+                              : towerStatus (currentStage, count),
+                       statusColour);
 
     // Admin difficulty of the tower.
-    GameUi::drawPill (g, { detailBanner.getRight() - 20.0f - pillW,
-                           detailBanner.getY() + 44.0f, pillW, 20.0f },
-                      towerDifficultyLabel (campaign->botLevel),
-                      towerDifficultyColour (campaign->botLevel), false);
+    GameUi::drawBadge (g, { detailBanner.getRight() - 20.0f - pillW,
+                            detailBanner.getY() + 44.0f, pillW, 20.0f },
+                       towerDifficultyLabel (campaign->botLevel),
+                       towerDifficultyColour (campaign->botLevel));
 
     // Progress + reward row under the banner.
     auto body = detailBody;

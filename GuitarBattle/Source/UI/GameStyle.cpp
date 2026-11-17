@@ -170,6 +170,30 @@ namespace GameUi
                          juce::Justification::centred, 1, 0.78f);
     }
 
+    void drawBadge(juce::Graphics& g,
+                   juce::Rectangle<float> area,
+                   const juce::String& label,
+                   juce::Colour colour)
+    {
+        if (area.isEmpty())
+            return;
+
+        const float radius = area.getHeight() * 0.5f;
+
+        // Solid fill: these chips float over the tower artwork, where a
+        // translucent pill washes out and the label stops reading.
+        g.setColour(colour.withAlpha(0.94f));
+        g.fillRoundedRectangle(area, radius);
+        g.setColour(colour.brighter(0.45f).withAlpha(0.85f));
+        g.drawRoundedRectangle(area.reduced(0.5f), radius, 1.0f);
+
+        g.setColour(UiColors::onAccent);
+        g.setFont(font(juce::jmax(8.5f, area.getHeight() * 0.34f), true, textTracking));
+        g.drawFittedText(label,
+                         area.reduced(area.getHeight() * 0.38f, 0.0f).toNearestInt(),
+                         juce::Justification::centred, 1, 0.78f);
+    }
+
     void drawEyebrow(juce::Graphics& g,
                      const juce::String& label,
                      juce::Rectangle<float> area,

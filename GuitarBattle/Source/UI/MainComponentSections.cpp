@@ -261,6 +261,15 @@ void MainComponent::refreshServerCampaigns (bool silent)
 
             self->serverCampaigns = std::move (parsed);
 
+            // The tower grid is a progression, so it reads easiest first. The
+            // admin's order breaks ties inside the same difficulty tier.
+            std::stable_sort (self->serverCampaigns.begin(),
+                              self->serverCampaigns.end(),
+                              [] (const CampaignView& a, const CampaignView& b)
+                              {
+                                  return a.botLevel < b.botLevel;
+                              });
+
             if (auto* settings = self->appProperties.getUserSettings())
             {
                 const auto saved = settings->getValue ("SelectedCampaignId");

@@ -114,6 +114,14 @@ namespace GameUi
                   juce::Colour colour,
                   bool filled = false);
 
+    // Opaque variant of drawPill for labels that sit on top of artwork: a
+    // translucent fill disappears over a photo, so the badge carries a solid
+    // colour and dark ink. Used by the battle towers and their status chips.
+    void drawBadge(juce::Graphics& g,
+                   juce::Rectangle<float> area,
+                   const juce::String& label,
+                   juce::Colour colour);
+
     void drawEyebrow(juce::Graphics& g,
                      const juce::String& label,
                      juce::Rectangle<float> area,

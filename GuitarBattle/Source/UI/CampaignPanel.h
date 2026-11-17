@@ -3,6 +3,7 @@
 #include <JuceHeader.h>
 
 #include <functional>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -86,6 +87,10 @@ private:
     void paintDetail (juce::Graphics& g);
     void paintTowerCard (juce::Graphics& g, juce::Rectangle<float> area,
                          const CampaignView& campaign, int currentStageForTower);
+
+    // Greyscale copy of a tower cover, built once per artwork URL. Locked
+    // towers are painted with it so only the playable ones keep their colour.
+    const juce::Image& greyCoverFor (const CampaignView& campaign);
     bool isCampaignLocked (const CampaignView& campaign) const;
 
     juce::TextButton fightButton { "FIGHT" };
@@ -95,6 +100,7 @@ private:
     juce::ListBox stageList { "campaign stages", nullptr };
 
     std::vector<CampaignView> campaigns;
+    std::map<juce::String, juce::Image> greyCovers;
     juce::String selectedId;
     int currentStage = 0;
     int playerLevel = 1;
