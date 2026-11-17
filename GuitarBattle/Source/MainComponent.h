@@ -7,6 +7,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <set>
 #include <vector>
 
 #include "Gameplay/ScoringSystem.h"
@@ -32,6 +33,7 @@
 #include "UI/DuelStageComponent.h"
 #include "UI/SectionSidebar.h"
 #include "UI/CampaignPanel.h"
+#include "UI/Notifications.h"
 #include "UI/VstPanel.h"
 #include "UI/PublicProfilePanel.h"
 #include "Network/SessionStore.h"
@@ -534,6 +536,7 @@ private:
     void openPublicProfile(const juce::String& userId);
     void closePublicProfile();
     void openNotifications();
+    void closeNotificationPopup();
     void refreshSocialNotifications();
     void refreshMessageUnread();
     void openMessagesFor (const juce::String& userId,
@@ -541,6 +544,14 @@ private:
     int socialUnreadNotifications = 0;
     int notificationPollTicks = 0;
     juce::uint32 lastNotificationPollMs = 0;
+    // Social notifications are pop-up cards in the corner of the window plus a
+    // small history panel behind the sidebar bell. ``seenNotificationIds`` keeps
+    // the poll from replaying the same event; the first poll after sign-in only
+    // primes it so the whole history is not shown as toasts.
+    std::unique_ptr<NotificationToasts> notificationToasts;
+    std::unique_ptr<NotificationPopup> notificationPopup;
+    std::set<juce::String> seenNotificationIds;
+    bool notificationsPrimed = false;
     juce::TextButton refreshLeaderboardButton{ "REFRESH RATING" };
     juce::TextButton accountLoginButton{ "LOGIN" };
     juce::TextButton accountRegisterButton{ "REGISTER" };

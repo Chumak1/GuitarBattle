@@ -1,6 +1,6 @@
 ﻿<?xml version="1.0" encoding="UTF-8"?>
 
-<JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" version="2.0.3"
+<JUCERPROJECT id="ZQGaBQ" name="GuitarBattle" projectType="guiapp" version="2.0.4"
               useAppConfig="0" addUsingNamespaceToJuceHeader="0" jucerFormatVersion="1"
               defines="JUCE_USE_MP3AUDIOFORMAT=1">
   <MAINGROUP id="YwvWlz" name="GuitarBattle">
@@ -78,6 +78,8 @@
         <FILE id="FrP02" name="FriendsPanel.h" compile="0" resource="0" file="Source/UI/FriendsPanel.h"/>
         <FILE id="MsgP01" name="MessagesPanel.cpp" compile="1" resource="0" file="Source/UI/MessagesPanel.cpp"/>
         <FILE id="MsgP02" name="MessagesPanel.h" compile="0" resource="0" file="Source/UI/MessagesPanel.h"/>
+        <FILE id="Ntf01" name="Notifications.cpp" compile="1" resource="0" file="Source/UI/Notifications.cpp"/>
+        <FILE id="Ntf02" name="Notifications.h" compile="0" resource="0" file="Source/UI/Notifications.h"/>
         <FILE id="PubP01" name="PublicProfilePanel.cpp" compile="1" resource="0" file="Source/UI/PublicProfilePanel.cpp"/>
         <FILE id="PubP02" name="PublicProfilePanel.h" compile="0" resource="0" file="Source/UI/PublicProfilePanel.h"/>
         <FILE id="McSec1" name="MainComponentSections.cpp" compile="1" resource="0"

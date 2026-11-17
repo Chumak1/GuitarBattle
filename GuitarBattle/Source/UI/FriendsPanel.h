@@ -11,12 +11,16 @@
 class ApiClient;
 
 /*
-    Friends section: friends, incoming/outgoing requests, player search, the
-    friends' activity feed and the social notifications list.
+    Friends section: friends, incoming/outgoing requests, player search and the
+    friends' activity feed.
 
     Every row is the universal PlayerCardComponent, so a friend looks exactly
     like a leaderboard player and a search result. All data comes from the
     /api/v1/social endpoints; nothing is stored only on the client.
+
+    Social notifications are not a tab here: they pop up in the corner of the
+    main window (NotificationToasts) and their history hangs off the sidebar
+    bell (NotificationHistoryPanel).
 */
 class FriendsPanel final : public juce::Component,
                            private juce::Timer
@@ -28,15 +32,10 @@ public:
     ~FriendsPanel() override;
 
     std::function<void (const juce::String& userId)> onOpenProfile;
-    /** Notifies the shell so the sidebar bell badge stays in sync. */
-    std::function<void (int unread)> onUnreadChanged;
 
     void refreshAll();
     void setTab (Tab newTab);
     Tab getTab() const { return tab; }
-
-    /** Opens the notifications list (sidebar bell). */
-    void openNotificationsView();
 
     void paint (juce::Graphics& g) override;
     void resized() override;
@@ -75,20 +74,17 @@ private:
     void loadRequests();
     void loadSearch();
     void loadActivity();
-    void loadNotifications();
     void rebuildCards();
     void postAction (const Row& row, PlayerCardComponent::Action picked);
-    void markAllRead();
     void layoutTabBar();
     void paintTabBar (juce::Graphics& g);
-    void paintNotifications (juce::Graphics& g);
+    void paintActivity (juce::Graphics& g);
     static Player parsePlayer (const juce::var& object);
 
     ApiClient& api;
     juce::String token;
 
     Tab tab = Tab::Friends;
-    bool showNotifications = false;
     bool searchPending = false;
     juce::String searchQuery;
     double lastSearchMs = 0.0;
@@ -96,24 +92,21 @@ private:
     std::vector<Row> rows;
     std::vector<std::unique_ptr<PlayerCardComponent>> cards;
 
-    struct Notification
+    struct ActivityEntry
     {
         juce::String kind;
         juce::String text;
         juce::String time;
         juce::String userId;
-        bool read = false;
     };
 
-    std::vector<Notification> notifications;
-    int unreadCount = 0;
+    std::vector<ActivityEntry> activityEntries;
 
     juce::TextEditor searchEditor;
     juce::Viewport viewport;
     juce::Component listContent;
-    juce::TextButton notificationsButton { "NOTIFICATIONS" };
 
-    std::array<juce::Rectangle<int>, 5> tabBounds {};
+    std::array<juce::Rectangle<int>, 4> tabBounds {};
     int hoveredTab = -1;
     juce::String statusLine;
 

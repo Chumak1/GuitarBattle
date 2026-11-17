@@ -204,6 +204,31 @@ MainComponent::MainComponent()
     addAndMakeVisible(modalOverlayComponent);
     modalOverlayComponent.toFront(false);
 
+    // Social notifications: a stack of pop-up cards in the corner of the window
+    // and, from the sidebar bell, a small history pop-up. Both live above every
+    // section so they never get hidden by the screen that happens to be open.
+    notificationToasts = std::make_unique<NotificationToasts>();
+    notificationToasts->onOpenProfile =
+        [safeThis](const juce::String& userId)
+        {
+            if (auto* self = safeThis.getComponent())
+                self->openPublicProfile(userId);
+        };
+    notificationToasts->onSizeChanged = [safeThis]
+    {
+        if (auto* self = safeThis.getComponent())
+        {
+            self->resized();
+
+            if (self->notificationToasts != nullptr)
+                self->notificationToasts->toFront(false);
+
+            if (self->notificationPopup != nullptr)
+                self->notificationPopup->toFront(false);
+        }
+    };
+    addAndMakeVisible(*notificationToasts);
+
     resized();
     repaint();
 }

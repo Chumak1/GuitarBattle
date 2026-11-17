@@ -2,63 +2,10 @@
 
 #include "PlayerCard.h"
 #include "GameStyle.h"
+#include "Notifications.h"
 #include "../Network/ApiClient.h"
 
 #include <algorithm>
-
-namespace
-{
-    juce::String humanKind (const juce::String& kind)
-    {
-        return kind.replaceCharacter ('_', ' ').toUpperCase();
-    }
-
-    juce::String shortDate (const juce::String& iso)
-    {
-        return iso.length() >= 16 ? iso.substring (0, 16).replaceCharacter ('T', ' ')
-                                  : iso;
-    }
-
-    juce::String payloadName (const juce::var& payload)
-    {
-        auto name = payload.getProperty ("display_name", juce::var()).toString();
-
-        if (name.isEmpty())
-            name = payload.getProperty ("username", juce::var()).toString();
-
-        if (name.isEmpty())
-            name = payload.getProperty ("user_id", juce::var()).toString();
-
-        return name.isNotEmpty() ? name : juce::String ("A player");
-    }
-
-    // Server kinds: friend_request, friend_accepted, activity_<kind>.
-    juce::String describeNotification (const juce::String& kind, const juce::var& payload)
-    {
-        const auto who = payloadName (payload);
-
-        if (kind == "friend_request")
-            return who + " sent you a friend request.";
-
-        if (kind == "friend_accepted")
-            return who + " accepted your friend request.";
-
-        if (kind.startsWith ("activity_"))
-        {
-            const auto inner = kind.substring (9);
-
-            if (inner == "record")       return who + " set a new record.";
-            if (inner == "level_up")     return who + " reached a new level.";
-            if (inner == "achievement")  return who + " unlocked an achievement.";
-            if (inner == "tower")        return who + " cleared a battle tower.";
-            if (inner == "song")         return who + " mastered a new song.";
-
-            return who + " - " + humanKind (inner);
-        }
-
-        return humanKind (kind);
-    }
-}
 
 FriendsPanel::FriendsPanel (ApiClient& apiToUse, juce::String bearerToken)
     : api (apiToUse), token (std::move (bearerToken))
@@ -81,9 +28,6 @@ FriendsPanel::FriendsPanel (ApiClient& apiToUse, juce::String bearerToken)
         searchPending = true;
     };
     addAndMakeVisible (searchEditor);
-
-    notificationsButton.setVisible (false);
-    addAndMakeVisible (notificationsButton);
 
     startTimerHz (4);
 }
@@ -117,11 +61,10 @@ void FriendsPanel::timerCallback()
 
 void FriendsPanel::setTab (Tab newTab)
 {
-    if (tab == newTab && ! showNotifications)
+    if (tab == newTab)
         return;
 
     tab = newTab;
-    showNotifications = false;
     rows.clear();
     rebuildCards();
     resized();
@@ -135,22 +78,10 @@ void FriendsPanel::setTab (Tab newTab)
 
 void FriendsPanel::refreshAll()
 {
-    loadNotifications();
-
     if (tab == Tab::Friends)      loadFriends();
     else if (tab == Tab::Requests) loadRequests();
     else if (tab == Tab::Find)     loadSearch();
     else                           loadActivity();
-}
-
-void FriendsPanel::openNotificationsView()
-{
-    showNotifications = true;
-    loadNotifications();
-    // Opening the list is the moment the player sees the items: mark them.
-    markAllRead();
-    resized();
-    repaint();
 }
 
 void FriendsPanel::loadFriends()
@@ -294,74 +225,27 @@ void FriendsPanel::loadActivity()
             if (self == nullptr)
                 return;
 
-            self->notifications.clear();
+            self->activityEntries.clear();
 
             if (const auto* items = reply.json.getProperty ("items", juce::var()).getArray())
                 for (const auto& item : *items)
                 {
-                    Notification entry;
+                    ActivityEntry entry;
                     const auto payload = item.getProperty ("payload", juce::var());
                     entry.kind = item.getProperty ("kind", juce::var()).toString();
-                    entry.text = describeNotification (entry.kind, payload);
-                    entry.time = shortDate (item.getProperty ("created_at", juce::var())
-                                                .toString());
+                    entry.text = NotificationText::describe (entry.kind, payload);
+                    entry.time = NotificationText::shortDate (
+                        item.getProperty ("created_at", juce::var()).toString());
                     entry.userId = payload.getProperty ("user_id", juce::var()).toString();
-                    entry.read = true;
-                    self->notifications.push_back (std::move (entry));
+                    self->activityEntries.push_back (std::move (entry));
                 }
 
-            self->statusLine = self->notifications.empty()
+            self->statusLine = self->activityEntries.empty()
                                    ? "No recent activity from your friends."
-                                   : juce::String (static_cast<int> (self->notifications.size()))
+                                   : juce::String (static_cast<int> (self->activityEntries.size()))
                                          + " events";
             self->rows.clear();
             self->rebuildCards();
-        });
-}
-
-void FriendsPanel::loadNotifications()
-{
-    juce::Component::SafePointer<FriendsPanel> safeThis (this);
-
-    api.getJson ("/social/notifications?limit=30", token, 6000,
-        [safeThis] (ApiClient::Response reply)
-        {
-            auto* self = safeThis.getComponent();
-
-            if (self == nullptr)
-                return;
-
-            self->unreadCount = static_cast<int> (reply.json.getProperty ("unread", 0));
-            self->notifications.clear();
-
-            if (const auto* items = reply.json.getProperty ("items", juce::var()).getArray())
-                for (const auto& item : *items)
-                {
-                    Notification entry;
-                    const auto payload = item.getProperty ("payload", juce::var());
-                    entry.kind = item.getProperty ("kind", juce::var()).toString();
-                    entry.text = describeNotification (entry.kind, payload);
-                    entry.time = shortDate (item.getProperty ("created_at", juce::var())
-                                                .toString());
-                    entry.userId = payload.getProperty ("user_id", juce::var()).toString();
-                    entry.read = ! item.getProperty ("read_at", juce::var()).isVoid();
-                    self->notifications.push_back (std::move (entry));
-                }
-
-            if (self->showNotifications)
-                self->statusLine = self->notifications.empty()
-                                       ? "No notifications."
-                                       : juce::String (static_cast<int> (self->notifications.size()))
-                                             + " notifications";
-
-            self->notificationsButton.setButtonText (
-                self->unreadCount > 0 ? "NOTIFICATIONS (" + juce::String (self->unreadCount) + ")"
-                                      : "NOTIFICATIONS");
-
-            if (self->onUnreadChanged != nullptr)
-                self->onUnreadChanged (self->unreadCount);
-
-            self->repaint();
         });
 }
 
@@ -369,7 +253,7 @@ void FriendsPanel::rebuildCards()
 {
     cards.clear();
 
-    if (showNotifications || tab == Tab::Activity)
+    if (tab == Tab::Activity)
     {
         viewport.setVisible (false);
         resized();
@@ -519,44 +403,14 @@ void FriendsPanel::postAction (const Row& row, PlayerCardComponent::Action picke
     }
 }
 
-void FriendsPanel::markAllRead()
-{
-    juce::DynamicObject::Ptr body = new juce::DynamicObject();
-    body->setProperty ("all", true);
-
-    juce::Component::SafePointer<FriendsPanel> safeThis (this);
-    api.postJson ("/social/notifications/read", juce::var (body.get()), token, 5000,
-        [safeThis] (ApiClient::Response reply)
-        {
-            auto* self = safeThis.getComponent();
-
-            if (self == nullptr || ! reply.transportOk)
-                return;
-
-            self->unreadCount = 0;
-
-            for (auto& entry : self->notifications)
-                entry.read = true;
-
-            self->notificationsButton.setButtonText ("NOTIFICATIONS");
-
-            if (self->onUnreadChanged != nullptr)
-                self->onUnreadChanged (0);
-
-            self->repaint();
-        });
-}
-
 void FriendsPanel::layoutTabBar()
 {
     const int width = getWidth();
     const int startY = 8;
-    const int tabW = juce::jmax (110, (width - 200) / 4);
+    const int tabW = juce::jmax (110, (width - 40) / 4);
 
     for (int i = 0; i < 4; ++i)
         tabBounds[(size_t) i] = { 8 + i * (tabW + 8), startY, tabW, 30 };
-
-    tabBounds[4] = { width - 8 - 200, startY, 200, 30 };
 }
 
 void FriendsPanel::paint (juce::Graphics& g)
@@ -565,9 +419,9 @@ void FriendsPanel::paint (juce::Graphics& g)
 
     paintTabBar (g);
 
-    if (showNotifications || tab == Tab::Activity)
+    if (tab == Tab::Activity)
     {
-        paintNotifications (g);
+        paintActivity (g);
         return;
     }
 
@@ -587,8 +441,7 @@ void FriendsPanel::paintTabBar (juce::Graphics& g)
 
     for (int i = 0; i < 4; ++i)
     {
-        const bool active = ! showNotifications
-                            && static_cast<int> (tab) == i;
+        const bool active = static_cast<int> (tab) == i;
         const bool hovered = hoveredTab == i;
 
         if (active)
@@ -612,53 +465,27 @@ void FriendsPanel::paintTabBar (juce::Graphics& g)
         g.setFont (GameUi::font (11.0f, true));
         g.drawText (labels[i], tabBounds[(size_t) i], juce::Justification::centred, false);
     }
-
-    const bool notificationsActive = showNotifications;
-    auto area = tabBounds[4];
-
-    g.setColour (notificationsActive ? UiColors::accent.withAlpha (0.20f)
-                                     : UiColors::surface2);
-    g.fillRoundedRectangle (area.toFloat(), 9.0f);
-
-    if (unreadCount > 0)
-    {
-        g.setColour (UiColors::accent);
-        g.fillEllipse ((float) area.getRight() - 18.0f, (float) area.getY() + 4.0f,
-                       12.0f, 12.0f);
-        g.setColour (UiColors::onAccent);
-        g.setFont (GameUi::font (8.0f, true));
-        g.drawText (juce::String (juce::jmin (unreadCount, 99)),
-                    juce::Rectangle<float> ((float) area.getRight() - 18.0f,
-                                            (float) area.getY() + 4.0f, 12.0f, 12.0f),
-                    juce::Justification::centred, false);
-    }
-
-    g.setColour (unreadCount > 0 ? UiColors::text : UiColors::muted);
-    g.setFont (GameUi::font (10.5f, true));
-    g.drawText ("NOTIFICATIONS", area.withTrimmedRight (22),
-                juce::Justification::centred, false);
 }
 
-void FriendsPanel::paintNotifications (juce::Graphics& g)
+void FriendsPanel::paintActivity (juce::Graphics& g)
 {
     auto area = getLocalBounds().reduced (8, 0).withTrimmedTop (52);
     const int rowH = 40;
 
-    if (notifications.empty())
+    if (activityEntries.empty())
     {
         g.setColour (UiColors::muted);
         g.setFont (GameUi::font (12.0f));
-        g.drawText (tab == Tab::Activity ? "No recent activity."
-                                         : "No notifications.",
+        g.drawText ("No recent activity.",
                     area, juce::Justification::topLeft, false);
         return;
     }
 
     g.setFont (GameUi::font (11.5f));
 
-    for (int i = 0; i < static_cast<int> (notifications.size()); ++i)
+    for (int i = 0; i < static_cast<int> (activityEntries.size()); ++i)
     {
-        const auto& entry = notifications[static_cast<size_t> (i)];
+        const auto& entry = activityEntries[static_cast<size_t> (i)];
         const juce::Rectangle<int> row (area.getX(), area.getY() + i * rowH,
                                         area.getWidth(), rowH - 4);
 
@@ -668,16 +495,13 @@ void FriendsPanel::paintNotifications (juce::Graphics& g)
         g.setColour (UiColors::surface2.withAlpha (0.55f));
         g.fillRoundedRectangle (row.toFloat(), 8.0f);
 
-        if (! entry.read)
-        {
-            g.setColour (UiColors::accent);
-            g.fillEllipse ((float) row.getX() + 12.0f, (float) row.getCentreY() - 3.0f,
-                           6.0f, 6.0f);
-        }
+        g.setColour (NotificationText::kindColour (entry.kind));
+        g.fillRoundedRectangle (row.toFloat().withWidth (3.0f).reduced (0.0f, 8.0f),
+                                1.5f);
 
-        g.setColour (entry.read ? UiColors::muted : UiColors::text);
+        g.setColour (UiColors::text);
         g.setFont (GameUi::font (11.5f));
-        g.drawText (entry.text, row.withTrimmedLeft (28).withTrimmedRight (130),
+        g.drawText (entry.text, row.withTrimmedLeft (20).withTrimmedRight (130),
                     juce::Justification::centredLeft, true);
 
         if (entry.time.isNotEmpty())
@@ -695,7 +519,7 @@ void FriendsPanel::resized()
     layoutTabBar();
 
     const int top = 52;
-    searchEditor.setVisible (tab == Tab::Find && ! showNotifications);
+    searchEditor.setVisible (tab == Tab::Find);
     searchEditor.setBounds (8, top, juce::jmin (420, getWidth() - 16), 30);
 
     viewport.setBounds (8, top + (searchEditor.isVisible() ? 40 : 0),
@@ -711,7 +535,7 @@ void FriendsPanel::mouseMove (const juce::MouseEvent& event)
 {
     int hovered = -1;
 
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < 4; ++i)
         if (tabBounds[(size_t) i].contains (event.getPosition()))
             hovered = i;
 
@@ -735,42 +559,26 @@ void FriendsPanel::mouseUp (const juce::MouseEvent& event)
 {
     const auto position = event.getPosition();
 
-    for (int i = 0; i < 5; ++i)
+    for (int i = 0; i < 4; ++i)
     {
         if (! tabBounds[(size_t) i].contains (position))
             continue;
-
-        if (i == 4)
-        {
-            showNotifications = ! showNotifications;
-
-            if (showNotifications)
-            {
-                loadNotifications();
-                // Everything visible in the panel counts as seen.
-                markAllRead();
-            }
-
-            resized();
-            repaint();
-            return;
-        }
 
         setTab (static_cast<Tab> (i));
         return;
     }
 
-    // Notification rows open the player's profile.
-    if (showNotifications || tab == Tab::Activity)
+    // Activity rows open the player's profile.
+    if (tab == Tab::Activity)
     {
         const auto area = getLocalBounds().reduced (8, 0).withTrimmedTop (52);
         const int rowH = 40;
         const int index = (position.y - area.getY()) / rowH;
 
         if (position.y >= area.getY()
-            && juce::isPositiveAndBelow (index, static_cast<int> (notifications.size())))
+            && juce::isPositiveAndBelow (index, static_cast<int> (activityEntries.size())))
         {
-            const auto& entry = notifications[static_cast<size_t> (index)];
+            const auto& entry = activityEntries[static_cast<size_t> (index)];
 
             if (entry.userId.isNotEmpty() && onOpenProfile != nullptr)
                 onOpenProfile (entry.userId);

@@ -943,6 +943,9 @@
     <ClCompile Include="..\..\Source\UI\MessagesPanel.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\UI\Notifications.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\UI\PublicProfilePanel.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
@@ -4315,6 +4318,9 @@
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\MessagesPanel.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\Notifications.h">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\PublicProfilePanel.h">

@@ -37,6 +37,11 @@ public:
     void setUnreadNotifications (int count);
     void setUnreadMessages (int count);
 
+    // Bell row in sidebar-local coordinates. The sidebar sits at the window
+    // origin, so the shell uses this rectangle to anchor the notification
+    // history panel.
+    juce::Rectangle<int> getNotificationsBounds() const { return notificationsBounds; }
+
     void paint (juce::Graphics& g) override;
     void resized() override;
     void mouseDown (const juce::MouseEvent& event) override;

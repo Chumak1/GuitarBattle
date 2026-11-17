@@ -512,6 +512,12 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             self->currentSection = AppSection::Home;
             self->matchOriginSection = AppSection::Home;
 
+            // A new session starts with an empty notification memory: the first
+            // poll primes it and only events that arrive later pop up.
+            self->notificationsPrimed = false;
+            self->seenNotificationIds.clear();
+            self->refreshSocialNotifications();
+
             // Profile character: the account choice wins; a brand-new profile
             // starts with Ray selected. Existing profiles without a character
             // keep their local choice instead of being forced to a default.
@@ -728,6 +734,18 @@ void MainComponent::logoutCurrentUser()
     onlineGameSessionUuid.clear();
     currentSessionIsDaily = false;
     currentSessionIsPractice = false;
+    // Notifications belong to the account: drop the history pop-up and the
+    // corner cards, and forget which events were already shown.
+    closeNotificationPopup();
+    notificationsPrimed = false;
+    seenNotificationIds.clear();
+    socialUnreadNotifications = 0;
+
+    if (notificationToasts != nullptr)
+        notificationToasts->dismissAll();
+
+    if (sectionSidebar != nullptr)
+        sectionSidebar->setUnreadNotifications (0);
     // The admin tools belong to the account, not to the machine: hide them and
     // drop the preview mode. The saved preference stays in the settings so the
     // next admin sign-in restores it.
@@ -1850,11 +1868,57 @@ void MainComponent::openNotifications()
     if (onlineAccessToken.isEmpty())
         return;
 
-    setSection(AppSection::Friends);
-    ensureFriendsSection();
+    closeNotificationPopup();
 
-    if (auto* panel = dynamic_cast<FriendsPanel*>(friendsContent.get()))
-        panel->openNotificationsView();
+    if (sectionSidebar == nullptr)
+        return;
+
+    const auto anchor = sectionSidebar->getNotificationsBounds();
+
+    auto popup = std::make_unique<NotificationPopup> (apiClient, onlineAccessToken,
+                                                      anchor);
+
+    // The popup lives until it is dismissed; the callback must not delete a
+    // newer popup that replaced this one in the meantime.
+    juce::Component::SafePointer<NotificationPopup> safePopup (popup.get());
+
+    popup->onDismiss = [safeThis = juce::Component::SafePointer<MainComponent> (this),
+                        safePopup]
+    {
+        if (auto* self = safeThis.getComponent())
+            if (self->notificationPopup.get() == safePopup.getComponent())
+                self->notificationPopup.reset();
+    };
+
+    popup->onOpenProfile = [safeThis = juce::Component::SafePointer<MainComponent> (this)]
+                           (const juce::String& userId)
+    {
+        if (auto* self = safeThis.getComponent())
+            self->openPublicProfile (userId);
+    };
+
+    popup->onUnreadChanged = [safeThis = juce::Component::SafePointer<MainComponent> (this)]
+                             (int unread)
+    {
+        if (auto* self = safeThis.getComponent())
+        {
+            self->socialUnreadNotifications = juce::jmax (0, unread);
+
+            if (self->sectionSidebar != nullptr)
+                self->sectionSidebar->setUnreadNotifications (
+                    self->socialUnreadNotifications);
+        }
+    };
+
+    notificationPopup = std::move (popup);
+    addAndMakeVisible (*notificationPopup);
+    notificationPopup->setBounds (getLocalBounds());
+    notificationPopup->toFront (true);
+}
+
+void MainComponent::closeNotificationPopup()
+{
+    notificationPopup.reset();
 }
 
 void MainComponent::refreshSocialNotifications()
@@ -1862,6 +1926,8 @@ void MainComponent::refreshSocialNotifications()
     if (onlineAccessToken.isEmpty())
     {
         socialUnreadNotifications = 0;
+        seenNotificationIds.clear();
+        notificationsPrimed = false;
 
         if (sectionSidebar != nullptr)
             sectionSidebar->setUnreadNotifications(0);
@@ -1871,7 +1937,7 @@ void MainComponent::refreshSocialNotifications()
 
     juce::Component::SafePointer<MainComponent> safeThis(this);
 
-    apiClient.getJson("/social/notifications?limit=1", onlineAccessToken, 6000,
+    apiClient.getJson("/social/notifications?limit=20", onlineAccessToken, 6000,
         [safeThis](ApiClient::Response reply)
         {
             auto* self = safeThis.getComponent();
@@ -1885,6 +1951,57 @@ void MainComponent::refreshSocialNotifications()
             if (self->sectionSidebar != nullptr)
                 self->sectionSidebar->setUnreadNotifications(
                     self->socialUnreadNotifications);
+
+            const auto* items =
+                reply.json.getProperty("items", juce::var()).getArray();
+
+            if (items == nullptr)
+                return;
+
+            // The first answer after sign-in only records what already exists:
+            // the history must not be replayed as a burst of pop-ups.
+            if (! self->notificationsPrimed)
+            {
+                for (const auto& item : *items)
+                    self->seenNotificationIds.insert(
+                        item.getProperty("id", juce::var()).toString());
+
+                self->notificationsPrimed = true;
+                return;
+            }
+
+            // The server lists newest first; walk backwards so the newest card
+            // ends up at the bottom of the stack.
+            for (int i = items->size() - 1; i >= 0; --i)
+            {
+                const auto& item = (*items)[i];
+                const auto id = item.getProperty("id", juce::var()).toString();
+
+                if (id.isEmpty() || self->seenNotificationIds.count(id) > 0)
+                    continue;
+
+                self->seenNotificationIds.insert(id);
+
+                if (self->notificationToasts == nullptr)
+                    continue;
+
+                const auto payload = item.getProperty("payload", juce::var());
+                const auto kind = item.getProperty("kind", juce::var()).toString();
+
+                self->notificationToasts->push(
+                    id, kind, NotificationText::describe(kind, payload),
+                    payload.getProperty("user_id", juce::var()).toString());
+            }
+
+            // Keep the seen set bounded on a long-running session.
+            if (self->seenNotificationIds.size() > 400)
+            {
+                self->seenNotificationIds.clear();
+
+                for (const auto& item : *items)
+                    self->seenNotificationIds.insert(
+                        item.getProperty("id", juce::var()).toString());
+            }
         });
 }
 

@@ -3432,6 +3432,20 @@ void MainComponent::resized()
         layoutMixerChannel(metronomeMixerButton, metronomeMixerVolumeLabel,
                            metronomeMixerVolumeSlider, 6);
     }
+
+    // Notifications: the corner stack floats above every section; the history
+    // pop-up covers the window so an outside click can dismiss it.
+    if (notificationToasts != nullptr)
+    {
+        const int toastW = juce::jmin (360, juce::jmax (220, width - 48));
+        const int toastH = notificationToasts->getPreferredHeight();
+
+        notificationToasts->setBounds (width - toastW - 24, height - toastH - 24,
+                                       toastW, juce::jmax (1, toastH));
+    }
+
+    if (notificationPopup != nullptr)
+        notificationPopup->setBounds (getLocalBounds());
 }
 
 //==============================================================================
@@ -9319,17 +9333,6 @@ void MainComponent::ensureFriendsSection()
             {
                 if (auto* self = safeThis.getComponent())
                     self->openPublicProfile (userId);
-            };
-        panel->onUnreadChanged =
-            [safeThis = juce::Component::SafePointer<MainComponent> (this)] (int unread)
-            {
-                if (auto* self = safeThis.getComponent())
-                {
-                    self->socialUnreadNotifications = unread;
-
-                    if (self->sectionSidebar != nullptr)
-                        self->sectionSidebar->setUnreadNotifications (unread);
-                }
             };
         friendsContent = std::move (panel);
 
