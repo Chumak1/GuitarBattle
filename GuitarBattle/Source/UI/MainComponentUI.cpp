@@ -6747,6 +6747,93 @@ private:
     juce::Rectangle<int> showMoreButtonArea;
 };
 
+//==============================================================================
+// Fullscreen
+//
+// The window is a normal 16:9 DocumentWindow. FULLSCREEN puts it into kiosk
+// mode: the peer drops the native frame and the window covers the whole
+// display, taskbar included. WINDOWED puts the remembered 16:9 geometry back.
+void MainComponent::toggleFullScreen()
+{
+    auto& desktop = juce::Desktop::getInstance();
+    auto* window = dynamic_cast<juce::ResizableWindow*> (getTopLevelComponent());
+
+    if (window == nullptr)
+        return;
+
+    if (desktop.getKioskModeComponent() == window)
+    {
+        desktop.setKioskModeComponent (nullptr);
+
+       #if ! JUCE_MAC
+        // Kiosk mode restores the bounds it saved on the way in. Set them again
+        // so a moved/resized window never comes back with the frame at the
+        // fullscreen size.
+        if (! windowedBoundsBeforeFullscreen.isEmpty())
+            window->setBounds (windowedBoundsBeforeFullscreen);
+       #endif
+
+        updateFullScreenToggle();
+        return;
+    }
+
+   #if JUCE_MAC
+    // The green traffic-light button also puts the window into full screen.
+    // The toggle mirrors that state instead of stacking another request.
+    if (window->isFullScreen())
+    {
+        window->setFullScreen (false);
+        updateFullScreenToggle();
+        return;
+    }
+   #endif
+
+    // On Windows a maximized window ignores the resize kiosk mode performs, so
+    // the window would keep the taskbar-sized frame. Leave that state first:
+    // JUCE restores the last normal (16:9) bounds, which are then remembered.
+    if (window->isFullScreen())
+        window->setFullScreen (false);
+
+    windowedBoundsBeforeFullscreen = window->getBounds();
+
+    desktop.setKioskModeComponent (window, false);
+
+   #if ! JUCE_MAC
+    // Cover the whole display (taskbar area included) even on window managers
+    // that ignore the resize kiosk mode applies.
+    if (const auto* display = desktop.getDisplays()
+                                  .getDisplayForRect (window->getScreenBounds()))
+        window->setBounds (display->logicalBounds.toNearestInt());
+   #endif
+
+    updateFullScreenToggle();
+}
+
+void MainComponent::updateFullScreenToggle()
+{
+    const bool fullscreen =
+        juce::Desktop::getInstance().getKioskModeComponent() != nullptr;
+
+    fullScreenButton.setButtonText (fullscreen ? "WINDOWED" : "FULLSCREEN");
+}
+
+//==============================================================================
+void MainComponent::updateScreenSaverForSession()
+{
+    // While a song is loaded the player reads the tabs and plays the guitar, so
+    // the OS sees no keyboard or mouse input and dims the display after the
+    // configured idle time. Keep the screen awake for the session and hand the
+    // normal idle behaviour back on the menus. JUCE only holds the assertion
+    // while the app is the foreground process.
+    const bool keepAwake = ! showAuthScreen && gameState != GameState::SongSelect;
+
+    if (keepAwake == screenSaverSuppressed)
+        return;
+
+    screenSaverSuppressed = keepAwake;
+    juce::Desktop::setScreenSaverEnabled (! keepAwake);
+}
+
 void MainComponent::openAccountWindow()
 {
     if (onlineAccessToken.isEmpty() || currentUsername.isEmpty())
@@ -8562,21 +8649,7 @@ void MainComponent::initialiseUi()
     fullScreenButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
     fullScreenButton.setMouseCursor(juce::MouseCursor::PointingHandCursor);
     fullScreenButton.setTooltip("Switch between the 16:9 window and fullscreen.");
-    fullScreenButton.onClick = [this]
-    {
-        auto& desktop = juce::Desktop::getInstance();
-
-        if (desktop.getKioskModeComponent() != nullptr)
-        {
-            desktop.setKioskModeComponent(nullptr);
-            fullScreenButton.setButtonText("FULLSCREEN");
-        }
-        else if (auto* top = getTopLevelComponent())
-        {
-            desktop.setKioskModeComponent(top, false);
-            fullScreenButton.setButtonText("WINDOWED");
-        }
-    };
+    fullScreenButton.onClick = [this] { toggleFullScreen(); };
     fullScreenButton.setVisible(false);
     addAndMakeVisible(fullScreenButton);
 

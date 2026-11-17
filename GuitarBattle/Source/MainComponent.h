@@ -563,6 +563,16 @@ private:
     juce::TextButton logoutButton{ "LOG OUT" };
     juce::TextButton quitButton{ "EXIT" };
     juce::TextButton fullScreenButton{ "FULLSCREEN" };
+    // Windowed geometry remembered by the FULLSCREEN toggle so WINDOWED puts
+    // the 16:9 window back where it was, even after a maximized fullscreen.
+    juce::Rectangle<int> windowedBoundsBeforeFullscreen;
+    void toggleFullScreen();
+    void updateFullScreenToggle();
+    // macOS and Windows dim the display after a few idle minutes. While a song
+    // runs the player reads tabs and plays, so the OS sees no input at all and
+    // the screen goes dark mid-session: keep it awake while a session exists.
+    void updateScreenSaverForSession();
+    bool screenSaverSuppressed = false;
     bool showAuthScreen = true;
     juce::String currentUsername;
 

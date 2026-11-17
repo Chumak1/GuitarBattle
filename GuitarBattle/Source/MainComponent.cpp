@@ -288,6 +288,15 @@ void MainComponent::timerCallback()
         }
     }
 
+    // Keep the display awake while a song is loaded: playing the guitar produces
+    // no input events, so the OS would otherwise dim the screen mid-session.
+    updateScreenSaverForSession();
+
+    // The fullscreen state can also change from the native window controls
+    // (green button on macOS, maximize on Windows); keep the label honest.
+    if (fullScreenButton.isVisible())
+        updateFullScreenToggle();
+
     // Input monitor: read the audio-thread atomics and advance the meter
     // smoothing / peak hold. Message thread only.
     updateInputMonitor();
@@ -644,6 +653,13 @@ MainComponent::~MainComponent()
     // alive. The request is queued on the worker pool; the client's destructor
     // waits for the running job, and nothing here touches the UI thread.
     sendActivityHeartbeat(true);
+
+    // Never leave the display-sleep assertion behind for the next app.
+    if (screenSaverSuppressed)
+    {
+        screenSaverSuppressed = false;
+        juce::Desktop::setScreenSaverEnabled (true);
+    }
 
     // An online duel that is still waiting or playing is resigned on the
     // server. Fire-and-forget: the API client outlives this destructor body.
