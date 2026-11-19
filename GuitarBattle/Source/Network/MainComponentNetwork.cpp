@@ -7,12 +7,15 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <string>
 #include <vector>
 
 #if JUCE_WINDOWS
  #include <windows.h>
 #elif JUCE_MAC
  #include <unistd.h>
+ #include <crt_externs.h>
+ #include <spawn.h>
 #endif
 
 // Network-only implementation for MainComponent: authentication, catalogue,
@@ -2525,16 +2528,84 @@ namespace
     }
 
    #if JUCE_MAC
+    /** Folder that holds the updater's log and its state files. */
+    juce::File updateStateDirectory()
+    {
+        return juce::File::getSpecialLocation (
+                   juce::File::userApplicationDataDirectory)
+                   .getChildFile ("Application Support")
+                   .getChildFile ("FretFight");
+    }
+
     /** Diagnostics file of the self-updater. macOS has no console for a
         double-clicked bundle, so every step of the swap is appended here.
     */
     juce::File updateLogFile()
     {
-        return juce::File::getSpecialLocation (
-                   juce::File::userApplicationDataDirectory)
-                   .getChildFile ("Application Support")
-                   .getChildFile ("FretFight")
-                   .getChildFile ("update.log");
+        return updateStateDirectory().getChildFile ("update.log");
+    }
+
+    /** Written right before the helper is started and removed by the helper
+        once the new bundle is in place. A marker that survives to the next
+        launch means the swap never completed.
+    */
+    juce::File updateAttemptFile()
+    {
+        return updateStateDirectory().getChildFile ("update-attempt.txt");
+    }
+
+    /** Starts a process that is independent of this app's lifetime.
+
+        juce::ChildProcess forks on POSIX, and a forked child of a
+        multithreaded GUI app can die before it reaches exec() (a lock held by
+        another thread at fork time). The update helper then never writes its
+        first log line: the app quits and the same update prompt comes back on
+        the next launch. posix_spawn lets the kernel create the process, and
+        the new session keeps it alive after this app exits.
+    */
+    bool startDetachedProcess (const juce::StringArray& arguments, int& pidOut)
+    {
+        pidOut = 0;
+
+        if (arguments.isEmpty())
+            return false;
+
+        std::vector<std::string> storage;
+        storage.reserve (static_cast<size_t> (arguments.size()));
+
+        for (const auto& argument : arguments)
+            storage.push_back (argument.toStdString());
+
+        std::vector<char*> argv;
+        argv.reserve (storage.size() + 1);
+
+        for (auto& argument : storage)
+            argv.push_back (const_cast<char*> (argument.c_str()));
+
+        argv.push_back (nullptr);
+
+        posix_spawnattr_t attributes;
+        posix_spawnattr_init (&attributes);
+
+       #if defined (POSIX_SPAWN_SETSID)
+        posix_spawnattr_setflags (&attributes, static_cast<short> (POSIX_SPAWN_SETSID));
+       #endif
+
+        pid_t pid = 0;
+        const auto result = posix_spawn (&pid,
+                                         arguments[0].toRawUTF8(),
+                                         nullptr,
+                                         &attributes,
+                                         argv.data(),
+                                         *_NSGetEnviron());
+
+        posix_spawnattr_destroy (&attributes);
+
+        if (result != 0 || pid <= 0)
+            return false;
+
+        pidOut = static_cast<int> (pid);
+        return true;
     }
 
     void logUpdate (const juce::String& message)
@@ -2789,6 +2860,25 @@ void MainComponent::checkForUpdatesOnLaunch()
             if (compareVersionStrings (remoteVersion, localVersion) <= 0)
                 return;
 
+           #if JUCE_MAC
+            // A previous attempt left its marker behind: the helper never
+            // finished the swap. Offering "Update now" again would loop
+            // forever, so point the player at the installer instead.
+            const auto attempt = updateAttemptFile();
+
+            if (attempt.existsAsFile())
+            {
+                const auto attemptedVersion = attempt.loadFileAsString().trim();
+                attempt.deleteFile();
+
+                if (compareVersionStrings (attemptedVersion, localVersion) > 0)
+                {
+                    self->showUpdateFailurePrompt (attemptedVersion);
+                    return;
+                }
+            }
+           #endif
+
             // The check runs shortly after launch, but the player may already
             // have started a song. Never replace the app mid-session; the next
             // launch retries.
@@ -2849,6 +2939,39 @@ void MainComponent::checkForUpdatesOnLaunch()
             self->updatePromptPending = true;
         });
 }
+
+   #if JUCE_MAC
+void MainComponent::showUpdateFailurePrompt (const juce::String& version)
+{
+    const auto currentVersion = juce::String (ProjectInfo::versionString).trim();
+    const auto logPath = updateLogFile().getFullPathName();
+
+    juce::String message;
+    message << "FretFight " << version << " could not be installed automatically, so the game "
+            << "is still on " << currentVersion << ".\n\n"
+            << "Install it from the download page:\n"
+            << "1. Open https://fretfight.online in your browser.\n"
+            << "2. Download the macOS version.\n"
+            << "3. Quit FretFight, drag FretFight.app into Applications and choose Replace.\n\n"
+            << "Diagnostics: " << logPath;
+
+    logUpdate ("update problem: automatic install did not finish for " + version);
+
+    auto options = juce::MessageBoxOptions()
+                       .withIconType (juce::MessageBoxIconType::WarningIcon)
+                       .withTitle ("Update could not be installed")
+                       .withMessage (message)
+                       .withButton ("Open download page")
+                       .withButton ("Close")
+                       .withAssociatedComponent (this);
+
+    juce::AlertWindow::showAsync (options, [] (int result)
+    {
+        if (result == 1)
+            juce::URL ("https://fretfight.online").launchInDefaultBrowser();
+    });
+}
+   #endif
 
 void MainComponent::showUpdatePrompt()
 {
@@ -3258,8 +3381,9 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
     }
 
     const auto helper = updateDirectory.getChildFile ("apply-update.sh");
-    const auto pid = static_cast<int> (getpid());
+    const auto appPid = static_cast<int> (getpid());
     const auto logPath = updateLogFile().getFullPathName();
+    const auto attemptPath = updateAttemptFile().getFullPathName();
 
     // The helper waits for this process to exit, copies the verified bundle
     // next to the old one, swaps them with mv (so a failure never leaves the
@@ -3270,10 +3394,11 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
            << "LOG=\"" << logPath << "\"\n"
            << "APP=\"" << appPath << "\"\n"
            << "STAGED=\"" << stagedApp.getFullPathName() << "\"\n"
+           << "ATTEMPT=\"" << attemptPath << "\"\n"
            << "log() { printf '%s %s\\n' \"$(date '+%Y-%m-%d %H:%M:%S')\" \"$1\" >> \"$LOG\"; }\n"
-           << "log \"helper start pid=" << pid << "\"\n"
+           << "log \"helper start pid=" << appPid << "\"\n"
            << "i=0\n"
-           << "while kill -0 " << pid << " 2>/dev/null; do sleep 0.5; i=$((i+1)); "
+           << "while kill -0 " << appPid << " 2>/dev/null; do sleep 0.5; i=$((i+1)); "
               "if [ \"$i\" -gt 240 ]; then break; fi; done\n"
            << "log \"app stopped\"\n"
            << "PARENT=$(dirname \"$APP\")\n"
@@ -3287,6 +3412,7 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
            << "      log \"installed\"\n"
            << "      /usr/bin/xattr -dr com.apple.quarantine \"$APP\" >> \"$LOG\" 2>&1\n"
            << "      rm -rf \"$OLD\"\n"
+           << "      rm -f \"$ATTEMPT\"\n"
            << "    else\n"
            << "      log \"move new failed, restoring\"\n"
            << "      mv \"$OLD\" \"$APP\" >> \"$LOG\" 2>&1\n"
@@ -3301,7 +3427,7 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
            << "/usr/bin/open \"$APP\" >> \"$LOG\" 2>&1\n"
            << "rm -f \"$0\"\n";
 
-    if (! helper.replaceWithText (script))
+    if (! helper.replaceWithText (script) || helper.getSize() == 0)
     {
         showUpdateProblem ("The update helper could not be written to:\n"
                            + updateDirectory.getFullPathName());
@@ -3310,17 +3436,36 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
 
     helper.setExecutePermission (true);
 
-    juce::ChildProcess process;
+    // Record the attempt before starting anything. The helper deletes this
+    // marker once the new bundle is in place, so a marker that is still here
+    // on the next launch means the swap never happened and the player must be
+    // offered the installer instead of the same prompt in a loop.
+    updateAttemptFile().replaceWithText (targetVersion + "\n");
 
-    if (! process.start (juce::StringArray { "/bin/sh", helper.getFullPathName() }, 0))
+    int helperPid = 0;
+    bool started = startDetachedProcess ({ "/bin/sh", helper.getFullPathName() },
+                                         helperPid);
+
+    if (! started)
     {
+        // posix_spawn is the reliable path, but never leave the player stuck
+        // if the kernel refuses it: fall back to an ordinary child process.
+        juce::ChildProcess fallback;
+        started = fallback.start ({ "/bin/sh", helper.getFullPathName() }, 0);
+        helperPid = 0;
+    }
+
+    if (! started)
+    {
+        updateAttemptFile().deleteFile();
         // Quitting here would look like a crash that installs nothing.
         showUpdateProblem ("The update helper could not be started.\n\n"
                            "Download the installer from https://fretfight.online.");
         return;
     }
 
-    logUpdate ("helper started, quitting for the swap");
+    logUpdate ("helper started pid=" + juce::String (helperPid)
+                   + ", quitting for the swap");
 
     juce::MessageManager::callAsync ([]()
     {

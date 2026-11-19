@@ -632,6 +632,10 @@ private:
     // the player sees the version, the release notes and two buttons. The
     // prompt waits for the main screen so it cannot cover the sign-in card.
     void showUpdatePrompt();
+    // macOS only: a previous automatic install left its marker behind, so the
+    // helper never finished. Point the player at the download page instead of
+    // showing the same "Update available" dialog on every launch.
+    void showUpdateFailurePrompt(const juce::String& version);
     bool updateCheckStarted = false;
     bool updateDownloadInProgress = false;
     bool updatePromptPending = false;
