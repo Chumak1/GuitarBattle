@@ -3451,7 +3451,8 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
         // posix_spawn is the reliable path, but never leave the player stuck
         // if the kernel refuses it: fall back to an ordinary child process.
         juce::ChildProcess fallback;
-        started = fallback.start ({ "/bin/sh", helper.getFullPathName() }, 0);
+        started = fallback.start (juce::StringArray { "/bin/sh",
+                                                      helper.getFullPathName() }, 0);
         helperPid = 0;
     }
 
