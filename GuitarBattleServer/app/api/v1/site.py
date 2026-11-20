@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.models.site_content import GameBuild, LandingSettings
+from app.schemas.artwork import SiteConfigResponse
 from app.schemas.site import (
     DownloadInfo,
     GameBuildItem,
@@ -28,6 +29,7 @@ from app.schemas.site import (
     SiteContacts,
 )
 from app.services.client_ip import client_ip
+from app.services.artwork import public_site_config
 from app.services.contacts import contacts_update_from_content, public_contacts
 from app.services.game_builds import (
     DEFAULT_BUILD_ARTIFACT,
@@ -212,6 +214,7 @@ def get_landing(db: Session = Depends(get_db)) -> LandingResponse:
         windows=download_info(portables[WINDOWS], WINDOWS, PORTABLE),
         macos=download_info(portables[MACOS], MACOS, PORTABLE),
     )
+    artwork = public_site_config(db)
 
     return LandingResponse(
         blocks=blocks_from_content(content),
@@ -219,7 +222,25 @@ def get_landing(db: Session = Depends(get_db)) -> LandingResponse:
         download=downloads.windows or DownloadInfo(url=download_url()),
         downloads=downloads,
         updates=updates,
+        hero_battle_url=artwork.hero_battle_url,
+        hero_duel_url=artwork.hero_duel_url,
+        default_avatar_url=artwork.default_avatar_url,
     )
+
+
+@router.get(
+    "/site/config",
+    response_model=SiteConfigResponse,
+    summary="Public artwork URLs used by the desktop client",
+)
+def get_site_config(db: Session = Depends(get_db)) -> SiteConfigResponse:
+    """Administrator artwork slots: two HOME hero backgrounds and the avatar.
+
+    ``null`` means "not uploaded": the client keeps its procedural artwork and
+    the initial-letter avatar. The fields are additive — a server without this
+    endpoint leaves the client on its built-in fallbacks.
+    """
+    return public_site_config(db)
 
 
 @router.get(

@@ -32,6 +32,9 @@
 #include "UI/DuelLobby.h"
 #include "UI/DuelStageComponent.h"
 #include "UI/SectionSidebar.h"
+#include "UI/HubHeader.h"
+#include "UI/PlayerMenu.h"
+#include "UI/HomeView.h"
 #include "UI/CampaignPanel.h"
 #include "UI/Notifications.h"
 #include "UI/VstPanel.h"
@@ -145,10 +148,10 @@ public:
             && row.username == meUsername;
 
         g.fillAll(isMe
-                      ? UiColors::accent.withAlpha(0.08f)
+                      ? Ui::Colours::accent.withAlpha(0.08f)
                       : (index % 2 == 0
-                             ? UiColors::surface.withAlpha(0.35f)
-                             : UiColors::surface2.withAlpha(0.25f)));
+                             ? juce::Colours::white.withAlpha(0.018f)
+                             : juce::Colours::transparentBlack));
     }
 
     void paintCell(juce::Graphics& g, int rowNumber, int columnId,
@@ -167,14 +170,14 @@ public:
 
         juce::String text;
         auto justification = juce::Justification::centredLeft;
-        auto colour = isMe ? UiColors::accent : UiColors::text;
+        auto colour = isMe ? Ui::Colours::accent : Ui::Colours::text;
 
         switch (columnId)
         {
         case 1:
             text = juce::String(row.rank);
             justification = juce::Justification::centred;
-            colour = row.rank <= 3 ? UiColors::accent : UiColors::muted;
+            colour = row.rank <= 3 ? Ui::Colours::accent : Ui::Colours::textMuted;
             break;
         case 2:
             // One name per row: the display name when the player set one, the
@@ -186,7 +189,7 @@ public:
         case 3:
             text = "LVL " + juce::String(row.level);
             justification = juce::Justification::centred;
-            colour = UiColors::secondaryText;
+            colour = Ui::Colours::textSecondary;
             break;
         case 4:
             // Guitar Skills is the competitive metric. Older servers send only
@@ -194,7 +197,7 @@ public:
             text = row.guitarSkills >= 0.0 ? formatSkills(row.guitarSkills)
                                            : formatPoints(row.rating);
             justification = juce::Justification::centredRight;
-            colour = isMe ? UiColors::accent : UiColors::gold;
+            colour = Ui::Colours::accent;
             break;
         case 5:
             // Win rate plus the raw duel record in one cell: "75.0% · 12-4".
@@ -207,26 +210,27 @@ public:
                                     : juce::String())
                        : juce::String ("-");
             justification = juce::Justification::centredRight;
-            colour = UiColors::secondaryText;
+            colour = Ui::Colours::textSecondary;
             break;
         case 6:
             // No guitar_skills means the server predates the rollout: do not
             // claim the row is ranked by a metric it did not send.
             text = row.guitarSkills < 0.0
                        ? juce::String ("-")
-                       : (row.provisional ? juce::String ("PROV")
-                                          : juce::String ("RANKED"));
+                       : (row.provisional ? I18n::tr ("PROV")
+                                          : I18n::tr ("RANKED"));
             justification = juce::Justification::centred;
             colour = row.guitarSkills < 0.0
-                         ? UiColors::muted
-                         : (row.provisional ? UiColors::muted : UiColors::green);
+                         ? Ui::Colours::textMuted
+                         : (row.provisional ? Ui::Colours::textMuted
+                                            : Ui::Colours::success);
             break;
         default:
             break;
         }
 
         g.setColour(colour);
-        g.setFont(GameUi::font(12.0f, isMe && columnId == 2));
+        g.setFont(Ui::font(12.0f, isMe && columnId == 2));
         g.drawText(text, 6, 0, width - 12, height, justification, true);
     }
 
@@ -321,11 +325,6 @@ public:
     void mouseUp (const juce::MouseEvent& event) override;
 
     void resized() override;
-
-    // Podium hit areas on HOME, filled by paint() so a click on a medal card
-    // opens that player's profile like a table row does.
-    std::array<juce::Rectangle<int>, 3> podiumHitBounds {};
-    std::array<juce::String, 3> podiumUserIds {};
 
     friend class MainOverlayComponent;
     friend class MainModalOverlayComponent;
@@ -1508,6 +1507,40 @@ private:
     void requestCampaignCover (const juce::String& campaignId,
                                const juce::String& url);
     void applyServerCampaigns();
+
+    // --- Admin artwork and player avatars --------------------------------
+    // ``GET /site/config`` carries the two HOME hero backgrounds and the
+    // default avatar uploaded in the admin panel. Images are downloaded once
+    // per URL on ApiClient's worker pool and kept for the session; an invalid
+    // image keeps HomeView's procedural artwork and the initial-letter avatar.
+    void refreshSiteArtwork();
+    void applySiteArtwork (const juce::String& battleUrl,
+                           const juce::String& duelUrl,
+                           const juce::String& defaultAvatarUrl);
+    void loadArtworkImage (const juce::String& url,
+                           std::function<void (const juce::Image&)> onLoaded);
+    // Own avatar of the signed-in player (``/auth/me``) and the administrator
+    // default used when the player has none.
+    void setOwnAvatarUrl (const juce::String& url);
+    void applyOwnAvatar();
+    // Remembers the avatar URL of one player row (leaderboard) and downloads it.
+    void registerAvatarUrl (const juce::String& userId, const juce::String& url);
+    // Avatar component for a podium/table row; empty when nothing is known.
+    juce::Image avatarFor (const juce::String& userId) const;
+
+    std::map<juce::String, juce::Image> artworkImageCache;
+    std::map<juce::String, bool> artworkImageInFlight;
+    std::map<juce::String, juce::String> avatarUrlByUser;
+    juce::String heroBattleUrl;
+    juce::String heroDuelUrl;
+    juce::String defaultAvatarUrl;
+    juce::String ownAvatarUrl;
+    juce::String onlineUserId;
+    juce::Image heroBattleImage;
+    juce::Image heroDuelImage;
+    juce::Image defaultAvatarImage;
+    bool siteArtworkRequestInFlight = false;
+
     void selectCampaign(const juce::String& campaignId);
     const CampaignView* findServerCampaign(const juce::String& campaignId) const;
     juce::String campaignBestKey() const;

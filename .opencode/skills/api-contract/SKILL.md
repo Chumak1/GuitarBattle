@@ -24,7 +24,7 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | POST | `/auth/resend-verification` | `email` | 202, всегда одинаковый ответ |
 | POST | `/auth/forgot-password` | `email` | 202, всегда одинаковый ответ |
 | POST | `/auth/reset-password` | `email`, `code`, `new_password` | `access_token` (+ `refresh_token`, cookie); старые токены и refresh-сессии инвалидируются |
-| GET | `/auth/me` | Bearer | профиль, аддитивно `privacy_consent_at` (`str \| null`), `is_admin` (`bool`, по умолчанию `false`) и выбор персонажа: `character_id` (`int \| null`), `character_name` (`str \| null`), `character_sheet_url` (`str \| null`) |
+| GET | `/auth/me` | Bearer | профиль, аддитивно `privacy_consent_at` (`str \| null`), `is_admin` (`bool`, по умолчанию `false`), `avatar_image_url` (`str \| null`, `/media/avatars/...`) и выбор персонажа: `character_id` (`int \| null`), `character_name` (`str \| null`), `character_sheet_url` (`str \| null`) |
 | PATCH | `/auth/me` | `display_name?`, `username?`, `character_id?` (хотя бы одно поле в теле; `username` — 3–32 символа `[A-Za-z0-9_.-]`, приводится к нижнему регистру, 409 если занят; `character_id: null` снимает выбор, неизвестный id — 422 `Unknown character_id`, не принадлежащий игроку — 422 `Character is locked`) | профиль |
 | POST | `/auth/change-password` | Bearer, `current_password`, `new_password` | 204, без тела; старые токены инвалидируются |
 | GET | `/songs` | `search?`, `genre?`, `difficulty?`, `include_drafts?`, `limit`, `offset` | список опубликованных **без** песен со слотом Daily Challenge; у каждого элемента `readiness`, `preview_url` (`str \| null`, абсолютный URL) и `is_published` (`bool`), а также аддитивные `time_signature_numerator` / `time_signature_denominator` (`int`, по умолчанию `4`/`4`); `include_drafts=1` c admin-JWT добавляет черновики |
@@ -60,7 +60,7 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/games/history` | Bearer, `limit`, `offset` | история; `practice`-сессии не попадают |
 | GET | `/games/best-scores` | Bearer | лучший счёт по каждой опубликованной песне вне Daily Challenge + сумма рейтинга (только `mode == "normal"`) |
 | GET | `/leaderboard` | `song_slug?`, `limit`, `offset` | результаты |
-| GET | `/leaderboard/global` | `limit`, `offset` | **Guitar Skills** — главный рейтинг. `items[]`: `rank`, `guitar_skills`, `accuracy_score`, `challenge_score`, `score_performance`, `duel_performance`, `progression_score`, `confidence`, `provisional`, `accuracy_percent`, `duel_wins`/`duel_losses`/`duel_draws`/`duel_win_rate`, `duel_matches`, `events_counted`, `position_change` (`null` — нет предыдущего пересчёта). Legacy-поля `rating_points`, `games_played`, `best_accuracy`, `achievements_unlocked` сохранены, но сортировка теперь по `guitar_skills` desc |
+| GET | `/leaderboard/global` | `limit`, `offset` | **Guitar Skills** — главный рейтинг. `items[]`: `rank`, `guitar_skills`, `accuracy_score`, `challenge_score`, `score_performance`, `duel_performance`, `progression_score`, `confidence`, `provisional`, `accuracy_percent`, `duel_wins`/`duel_losses`/`duel_draws`/`duel_win_rate`, `duel_matches`, `events_counted`, `position_change` (`null` — нет предыдущего пересчёта), аддитивно `avatar_image_url` (`str \| null`). Legacy-поля `rating_points`, `games_played`, `best_accuracy`, `achievements_unlocked` сохранены, но сортировка теперь по `guitar_skills` desc |
 | GET | `/leaderboard/global/{user_id}` | — (публичный) | та же строка + `last_calculated_at`, `calculation_version`, `components.{accuracy,challenge,score,duel,progression}` = `{value, events, confidence}`; 404 `Player not found` |
 | GET | `/admin/guitar-skills/config` | Bearer admin | активная конфигурация: 5 весов, `window_size`, `recency_decay`, tier-границы и множители, note-factor, `median_note_count`, `level_normalization_max`, `xp_reference`, duel strength/scale/reliability, anti-farm cap, confidence/provisional, `calculation_version`, `updated_at` |
 | PUT | `/admin/guitar-skills/config` | Bearer admin, partial JSON + `recalculate?` (по умолчанию `true`) | сохранённая конфигурация; 422, если пять весов не дают 1.0 (±0.0001) или нарушены диапазоны; пишет историю и запускает фоновый пересчёт |
@@ -70,14 +70,15 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/profile/progression` | Bearer | уровень, XP, мастерство, жанры, статистика |
 | GET | `/profile/personal-bests` | Bearer, `limit` (1–100, по умолчанию 10), `offset` | личные рекорды по опубликованным песням |
 | GET | `/achievements` | Bearer | каталог достижений + прогресс/разблокировка; у каждого элемента `icon` и `icon_url` |
-| GET | `/profile/users/{user_id}` | Bearer | публичная карточка игрока; у выданных достижений `icon` и `icon_url` |
+| GET | `/profile/users/{user_id}` | Bearer | публичная карточка игрока; у выданных достижений `icon` и `icon_url`; аддитивно `avatar_image_url` |
+
 | GET | `/media/achievements/<icon>.svg` | — (публичный) | SVG иконки достижения, `image/svg+xml` |
 | GET | `/daily/today` | Bearer | `date`, `weekday` (0=Пн…6=Вс, UTC), `song` (или `null`), официальная попытка, топ-5 |
 | GET | `/daily/leaderboard` | Bearer, `date?` (YYYY-MM-DD, по умолчанию сегодня UTC) | официальные результаты дня |
 | GET | `/daily/history` | Bearer, `limit` (1–100, по умолчанию 20), `offset` | официальные результаты игрока по дням с `rank` и `participants` |
 | GET | `/client-assets/manifest` | — (публичный) | `schema`, `version`, `archive_url`, `archive_size_bytes`, `archive_sha256`, `files[]`; 503, если manifest или bundle отсутствует |
 | GET/HEAD | `/client-assets/bundle.zip` | — (публичный) | zip `guitarbattle-sounds.zip`; 503, если архив отсутствует |
-| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` (Windows installer, для обратной совместимости) и аддитивные `downloads` (`{"windows": DownloadInfo\|null, "macos": DownloadInfo\|null}`) — установщики; `updates` — та же карта для **portable** ZIP автообновления (`url` = `/api/v1/downloads/game/update?platform=...`, `available=false`, если portable-сборки нет). `DownloadInfo` = `available`, `version`, `filename`, `size_bytes`, `url`, `release_notes` |
+| GET | `/landing` | — (публичный) | `blocks`, `hero_background`, `download` (Windows installer, для обратной совместимости) и аддитивные `downloads` (`{"windows": DownloadInfo\|null, "macos": DownloadInfo\|null}`) — установщики; `updates` — та же карта для **portable** ZIP автообновления (`url` = `/api/v1/downloads/game/update?platform=...`, `available=false`, если portable-сборки нет). `DownloadInfo` = `available`, `version`, `filename`, `size_bytes`, `url`, `release_notes`; аддитивно `hero_battle_url`, `hero_duel_url`, `default_avatar_url` — те же значения, что у `/site/config` |
 | GET | `/downloads/game` | — (публичный), `platform=windows\|macos` (по умолчанию `windows`) | активный **installer** платформы (Windows `.exe/.msi`, macOS `.dmg`); 404, если установщика нет; 422 для неизвестного `platform` |
 | GET | `/downloads/game/update` | — (публичный), `platform=windows\|macos` (по умолчанию `windows`) | активный **portable** ZIP платформы; 404, если portable-сборки нет; 422 для неизвестного `platform` |
 | GET | `/geo` | — (публичный) | `country`, `language` (`ru`/`en`/`null`) по IP из локальной DB-IP Lite |
@@ -116,6 +117,12 @@ description: Keep the JUCE HTTP client and FastAPI server contract in sync
 | GET | `/admin/app/background-music` | Bearer admin | `url`, `content_type`, `size_bytes`, `uploaded_at`, `original_name`, `sha256` |
 | POST | `/admin/app/background-music` | Bearer admin, multipart `file` (только MP3) | 201 при первой загрузке, 200 при замене; тот же shape; 400 не-MP3, 413 больше 100 МиБ |
 | DELETE | `/admin/app/background-music` | Bearer admin | 204, идемпотентно |
+| GET | `/site/config` | — (публичный) | `{hero_battle_url: str\|null, hero_duel_url: str\|null, default_avatar_url: str\|null}` — картинки из админки, URL origin-relative (`/media/artwork/<slot>-<uuid>.<ext>`); `null` — слот пуст, клиент рисует запасной вариант |
+| GET | `/admin/artwork` | Bearer admin | `{items: [{slot, url\|null, updated_at\|null}]}`; слоты всегда все три в порядке `hero-battle`, `hero-duel`, `default-avatar` |
+| POST | `/admin/artwork/{slot}/image` | Bearer admin, multipart `file`; `slot` ∈ `hero-battle`/`hero-duel`/`default-avatar` | 201 `{slot, url, updated_at}`; PNG/JPEG/WebP по сигнатуре, hero — ≤ 8 МБ, default-avatar — ≤ 2 МБ; 415 не тот формат, 413 слишком большой, 422 неизвестный слот; замена удаляет прежний файл |
+| DELETE | `/admin/artwork/{slot}/image` | Bearer admin | 200 `{slot, url: null, updated_at: null}`, идемпотентно; файл удаляется |
+| POST | `/profile/avatar` | Bearer, multipart `file` | 201 `{avatar_image_url}`; `/media/avatars/avatar-<uuid>.<ext>`, PNG/JPEG/WebP ≤ 2 МБ; 415/413; замена удаляет прежний файл |
+| DELETE | `/profile/avatar` | Bearer | 200 `{avatar_image_url: null}`, идемпотентно |
 
 Публичные страницы сайта: `/` (лендинг), `/policy` (политика конфиденциальности),
 `/login`, `/register`, `/account`, `/admin/` (только администраторы).
@@ -1365,3 +1372,46 @@ PCM-чанками. Клиент — `Source/Audio/VoiceChat.*`, кнопка **
    Сервер в этом трафике не участвует и ничего о нём не знает.
 10. Ничего не персистится: после рестарта API/клиента обмен нужно повторить
     (публикация на старте сессии это уже покрывает).
+
+## Артворк и аватары (миграция `0036_artwork_avatars`)
+
+Аддитивно на базе `0035_guitar_skills`; существующие поля не меняются.
+
+- `artwork_assets` (`id`, `slot` UNIQUE, `url`, `updated_at`) — три
+  админских слота: `hero-battle`, `hero-duel`, `default-avatar`. Одна строка
+  на слот: загрузка заменяет URL, прежний файл удаляется после коммита.
+- `users.avatar_image_url` (`VARCHAR(500) NULL`) — аватар игрока. `NULL` у
+  всех существующих аккаунтов: клиент рисует первую букву имени.
+- Файлы: `/data/landing_media/artwork/<slot>-<uuid>.<ext>` (слоты админа) и
+  `/data/landing_media/avatars/avatar-<uuid>.<ext>` (игроки). Обе папки
+  вложены в том `landing_media_data`, отдельного тома нет. Наружу —
+  `GET /media/artwork/<name>` и `GET /media/avatars/<name>`.
+- Проверка загрузок: расширение из `.png/.jpg/.jpeg/.webp` **и** магические
+  байты; `content_type` клиента игнорируется. Лимиты:
+  `MAX_ARTWORK_BYTES` = 8 МБ (hero), `MAX_AVATAR_BYTES` = 2 МБ
+  (`default-avatar` и `/profile/avatar`). 415 — формат, 413 — размер,
+  422 — неизвестный слот.
+- `GET /site/config` — то, что читает клиент:
+  `{"hero_battle_url": "/media/artwork/hero-battle-<uuid>.png" | null,
+  "hero_duel_url": ... | null, "default_avatar_url": ... | null}`.
+  Те же три ключа аддитивно добавлены в `GET /landing`.
+- `avatar_image_url` (аддитивно, `str | null`) отдаётся в `/auth/me`,
+  строках `/leaderboard/global`, компактной карточке игрока (друзья,
+  заявки, поиск, участник диалога), `/social/players/{id}` и
+  `/profile/users/{id}`.
+- Админка: вкладка **Artwork** (`app/static/admin/admin-artwork.js`,
+  разметка `#sectionArtwork` в `index.html`), три карточки с превью,
+  выбором файла, кнопками Upload/Remove и строкой статуса. Токен — общий
+  админский из `sessionStorage`.
+- Клиент: `Source/Network/MainComponentArtwork.cpp` (в `.jucer`).
+  `refreshSiteArtwork()` вызывается после входа и при каждом переходе в HOME;
+  JSON читается на пуле `ApiClient`, картинки качаются
+  `ApiClient::download` + `runAsync` и кэшируются по URL. Результат:
+  `HomeView::setHeroBackgrounds(battle, duel)` и
+  `HubHeader::setAvatarImage(...)`; невалидная картинка оставляет
+  процедурный фон и первую букву. `MainComponent::avatarFor(userId)` отдаёт
+  аватар игрока (или `default_avatar_url`) для будущих строк/подиума.
+  Профиль: `UPLOAD AVATAR`/`REMOVE AVATAR` в карточке ACCOUNT
+  (`AccountWindow`), `juce::FileChooser::launchAsync` и
+  `ApiClient::postFileAsync("/profile/avatar", ...)` — без блокировки
+  message thread; после ответа обновляется чип игрока.

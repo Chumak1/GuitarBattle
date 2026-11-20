@@ -52,3 +52,19 @@
     std::unique_ptr<juce::DialogWindow> vstDialogWindow;
     void openVstPanel();
     void updateVstButton();
+
+    // --- Hub shell (design system v3) --------------------------------------
+    // The top bar and the HOME dashboard are real components: they own their
+    // painting and hit-testing, MainComponent only feeds them data.
+    std::unique_ptr<HubHeader> hubHeader;
+    std::unique_ptr<HomeView> homeView;
+    std::unique_ptr<PlayerMenuOverlay> playerMenu;
+
+    void initialiseHubShell();
+    void openPlayerMenu (juce::Rectangle<int> anchorInHeader);
+    void closePlayerMenu();
+    void syncHomeView();
+    void initialiseLanguage();
+    void applyLanguage (I18n::Language language, bool persist);
+    void updateLeaderboardHeaderText();
+    int homeSyncTicks = 0;

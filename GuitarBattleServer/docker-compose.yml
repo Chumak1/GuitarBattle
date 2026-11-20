@@ -38,6 +38,12 @@ services:
       # Battle tower covers live in a subdirectory of the landing media volume.
       CAMPAIGN_MEDIA_DIR: ${CAMPAIGN_MEDIA_DIR:-/data/landing_media/campaigns}
       MAX_CAMPAIGN_COVER_BYTES: ${MAX_CAMPAIGN_COVER_BYTES:-2097152}
+      # Admin artwork slots (HOME hero backgrounds, default avatar) and
+      # player avatars. Both live in subdirectories of the landing media volume.
+      ARTWORK_MEDIA_DIR: ${ARTWORK_MEDIA_DIR:-/data/landing_media/artwork}
+      MAX_ARTWORK_BYTES: ${MAX_ARTWORK_BYTES:-8388608}
+      AVATAR_MEDIA_DIR: ${AVATAR_MEDIA_DIR:-/data/landing_media/avatars}
+      MAX_AVATAR_BYTES: ${MAX_AVATAR_BYTES:-2097152}
       GAME_BUILDS_DIR: /data/game_builds
       APP_AUDIO_DIR: /data/app_audio
       GAMEPLAY_MEDIA_DIR: /data/gameplay_media

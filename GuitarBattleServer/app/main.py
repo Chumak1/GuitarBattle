@@ -170,6 +170,24 @@ app.mount(
     name="campaign-media",
 )
 
+# Administrator artwork slots (HOME hero backgrounds, default avatar) and
+# player-uploaded avatars. Both directories live inside the landing media root
+# by default, so the same Docker volume backs them.
+for _media_name, _media_dir in (
+    ("artwork", settings.artwork_media_dir),
+    ("avatars", settings.avatar_media_dir),
+):
+    try:
+        _media_dir.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        # A read-only or missing mount must not prevent the API from starting.
+        pass
+    app.mount(
+        f"/media/{_media_name}",
+        StaticFiles(directory=_media_dir, check_dir=False),
+        name=f"{_media_name}-media",
+    )
+
 # Gameplay visuals uploaded in the admin panel (UI-level character sheets and
 # stage backgrounds). They live on the gameplay_media_data volume and are
 # served from the same origin as the API; the catalogue returns these

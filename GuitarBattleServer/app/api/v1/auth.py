@@ -652,6 +652,7 @@ def _user_response(db: Session, user: User) -> UserResponse:
         email=user.email,
         display_name=user.display_name,
         avatar_key=user.avatar_key,
+        avatar_image_url=user.avatar_image_url,
         email_verified=user.email_verified,
         created_at=user.created_at,
         privacy_consent_at=user.privacy_consent_at,

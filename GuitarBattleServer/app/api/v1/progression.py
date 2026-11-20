@@ -89,6 +89,7 @@ def public_profile(
         user_id=target.id,
         username=target.username,
         display_name=target.display_name or target.username,
+        avatar_image_url=target.avatar_image_url,
         level=target.level,
         xp_total=target.xp_total,
         songs_mastered=int(songs_mastered),

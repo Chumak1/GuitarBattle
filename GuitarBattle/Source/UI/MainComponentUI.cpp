@@ -837,306 +837,13 @@ void MainComponent::paintOverlay(juce::Graphics& g)
         const bool songsSection = currentSection == AppSection::Songs;
         const bool songChrome = songsSection;
 
-        const juce::Rectangle<float> nav(24.0f + sideW, 20.0f,
-                                         width - 48.0f - sideW, 78.0f);
-        GameUi::drawCard(g, nav, 18.0f);
-
-        // The sidebar already carries the wordmark; the top bar shows the
-        // active destination and leaves the top-right corner to EXIT.
+        // The hub header and the HOME dashboard are real components now: this
+        // layer only paints the PRACTICE page and the zero-sidebar wordmark.
         if (sideW == 0)
-            drawBrand(44.0f, 40.0f);
+            drawBrand (44.0f, 40.0f);
 
-        {
-            juce::String sectionTitle = "HOME";
-
-            switch (currentSection)
-            {
-                case AppSection::Profile:    sectionTitle = "PROFILE"; break;
-                case AppSection::Campaign:   sectionTitle = "BATTLE"; break;
-                case AppSection::Songs:      sectionTitle = "PRACTICE"; break;
-                case AppSection::OnlineDuel: sectionTitle = "ONLINE"; break;
-                case AppSection::Friends:    sectionTitle = "FRIENDS"; break;
-                case AppSection::Messages:   sectionTitle = "MESSAGES"; break;
-                case AppSection::Tuner:      sectionTitle = "TUNER"; break;
-                case AppSection::Vst:        sectionTitle = "VST"; break;
-                case AppSection::Settings:   sectionTitle = "SETTINGS"; break;
-                case AppSection::Home:       break;
-            }
-
-            g.setColour (UiColors::muted);
-            g.setFont (GameUi::eyebrow (8.0f));
-            g.drawText ("FRETFIGHT",
-                        juce::Rectangle<float> (nav.getX() + 24.0f,
-                                                nav.getY() + 14.0f,
-                                                260.0f, 12.0f),
-                        juce::Justification::centredLeft, false);
-
-            g.setColour (UiColors::text);
-            g.setFont (GameUi::heading (22.0f));
-            g.drawText (sectionTitle,
-                        juce::Rectangle<float> (nav.getX() + 24.0f,
-                                                nav.getY() + 28.0f,
-                                                420.0f, 30.0f),
-                        juce::Justification::centredLeft, false);
-        }
-
-        // Profile/Campaign/VST/Settings are painted by their own embedded
-        // components below the header.
-        if (! songChrome && ! homeSection)
+        if (! songChrome || homeSection)
             return;
-
-        if (homeSection)
-        {
-            // Account summary moved here from the personal account page: the
-            // identity line plus the eight stat cards, without the REFRESH /
-            // LOG OUT buttons (they stay on the account page).
-            const float stripX = 48.0f + sideW;
-            const float stripW = width - 96.0f - sideW;
-            const float stripY = 110.0f;
-
-            g.setColour (UiColors::accent);
-            g.setFont (GameUi::eyebrow (10.0f));
-            g.drawText ("PERSONAL ACCOUNT",
-                        juce::Rectangle<float> (stripX + 24.0f, stripY,
-                                                360.0f, 14.0f),
-                        juce::Justification::centredLeft, false);
-
-            juce::String accountLine = "Signed in as ";
-            accountLine << (currentUsername.isNotEmpty() ? currentUsername
-                                                         : juce::String ("guest"));
-
-            if (accountEmail.isNotEmpty())
-                accountLine << "   |   " << accountEmail;
-
-            g.setColour (UiColors::muted);
-            g.setFont (GameUi::font (11.5f));
-            g.drawText (accountLine,
-                        juce::Rectangle<float> (stripX + 24.0f, stripY + 17.0f,
-                                                stripW - 48.0f, 15.0f),
-                        juce::Justification::centredLeft, true);
-
-            const juce::String statLabels[] = { "SCORES", "RANK", "SONGS",
-                                                "ATTEMPTS", "LEVEL", "XP",
-                                                "ACCURACY", "TIMING" };
-            const juce::String statValues[] = { accountScoresText, accountRankText,
-                                                accountSongsText, accountAttemptsText,
-                                                accountLevelText, accountXpText,
-                                                accountAccuracyText, accountTimingText };
-            const juce::String statNotes[] = { "best score per song", accountRankNote,
-                                               "songs with an attempt", "total attempts",
-                                               accountXpNote, "total experience",
-                                               "last 100 attempts", "avg timing error" };
-
-            const float cardGap = 10.0f;
-            const float statW = (stripW - 48.0f - cardGap * 7.0f) / 8.0f;
-            const float statY = stripY + 40.0f;
-            const float statH = 70.0f;
-
-            for (int i = 0; i < 8; ++i)
-            {
-                const juce::Rectangle<float> statCard(
-                    stripX + 24.0f + static_cast<float>(i) * (statW + cardGap),
-                    statY, statW, statH);
-                GameUi::drawCard (g, statCard, 14.0f);
-                GameUi::drawEyebrow (g, statLabels[i],
-                                     statCard.withTrimmedLeft (14.0f)
-                                         .withTrimmedRight (10.0f)
-                                         .withTop (statCard.getY() + 10.0f)
-                                         .withHeight (13.0f),
-                                     UiColors::accent);
-
-                g.setColour (UiColors::text);
-                g.setFont (GameUi::heading (22.0f));
-                g.drawText (statValues[i],
-                            statCard.withTrimmedLeft (14.0f)
-                                .withTrimmedRight (10.0f)
-                                .withTop (statCard.getY() + 25.0f)
-                                .withHeight (28.0f),
-                            juce::Justification::centredLeft, false);
-
-                g.setColour (UiColors::muted);
-                g.setFont (GameUi::font (9.5f));
-                g.drawText (statNotes[i],
-                            statCard.withTrimmedLeft (14.0f)
-                                .withTrimmedRight (10.0f)
-                                .withTop (statCard.getBottom() - 22.0f)
-                                .withHeight (16.0f),
-                            juce::Justification::centredLeft, true);
-            }
-
-            const float contentY = 234.0f;
-            const float contentW2 = width - 96.0f - sideW;
-            const float contentH2 = juce::jmax(320.0f, height - 68.0f - 20.0f - contentY);
-            const juce::Rectangle<float> card(48.0f + sideW, contentY,
-                                              contentW2, contentH2);
-            GameUi::drawCard(g, card, 20.0f, true);
-
-            g.setColour (UiColors::accent);
-            g.setFont (GameUi::eyebrow (10.0f));
-            g.drawText ("GLOBAL LEADERBOARD",
-                        juce::Rectangle<float> (card.getX() + 24.0f,
-                                                card.getY() + 24.0f,
-                                                card.getWidth() - 48.0f, 16.0f),
-                        juce::Justification::centredLeft, false);
-
-            // Podium: the top three players as medal cards above the table.
-            if (leaderboardModel != nullptr)
-            {
-                const auto& top = leaderboardModel->getRows();
-                const int topCount = juce::jmin (3, static_cast<int> (top.size()));
-
-                if (topCount > 0)
-                {
-                    auto spaced = [] (int value)
-                    {
-                        auto text = juce::String (value);
-
-                        for (int i = text.length() - 3; i > 0; i -= 3)
-                            text = text.substring (0, i) + " "
-                                   + text.substring (i);
-
-                        return text;
-                    };
-
-                    const float gap = 14.0f;
-                    const float innerX = card.getX() + 24.0f;
-                    const float innerW = card.getWidth() - 48.0f;
-                    const float slotW = (innerW - gap * 2.0f) / 3.0f;
-                    const float baseY = card.getY() + 96.0f;
-                    const float baseH = 150.0f;
-                    const int order[3] = { 1, 0, 2 }; // silver, gold, bronze
-
-                    for (int slot = 0; slot < 3; ++slot)
-                    {
-                        const int index = order[slot];
-
-                        if (index >= topCount)
-                            continue;
-
-                        const auto& row = top[static_cast<size_t> (index)];
-                        const bool isFirst = index == 0;
-                        const float tileH = isFirst ? baseH : baseH - 22.0f;
-                        const juce::Rectangle<float> tile (
-                            innerX + static_cast<float> (slot) * (slotW + gap),
-                            baseY + baseH - tileH, slotW, tileH);
-
-                        GameUi::drawCard (g, tile, 16.0f, isFirst);
-
-                        // Click target for the card, used by mouseUp().
-                        podiumHitBounds[static_cast<size_t> (slot)] =
-                            tile.toNearestInt();
-                        podiumUserIds[static_cast<size_t> (slot)] = row.userId;
-
-                        const juce::Colour medal = isFirst
-                            ? UiColors::gold
-                            : (index == 1 ? juce::Colour (0xFFC0C6CF)
-                                          : juce::Colour (0xFFC58B5A));
-
-                        const auto badge = juce::Rectangle<float> (
-                            tile.getX() + 16.0f, tile.getY() + 14.0f, 26.0f, 26.0f);
-                        g.setColour (medal.withAlpha (0.18f));
-                        g.fillEllipse (badge);
-                        g.setColour (medal);
-                        g.setFont (GameUi::heading (13.0f));
-                        g.drawText (juce::String (row.rank > 0 ? row.rank : index + 1),
-                                    badge.toNearestInt(),
-                                    juce::Justification::centred, false);
-
-                        const auto avatar = juce::Rectangle<float> (
-                            tile.getRight() - 60.0f, tile.getY() + 14.0f,
-                            44.0f, 44.0f);
-                        const auto name = row.displayName.isNotEmpty()
-                                              ? row.displayName
-                                              : row.username;
-
-                        g.setColour (medal.withAlpha (0.14f));
-                        g.fillEllipse (avatar);
-                        g.setColour (medal);
-                        g.setFont (GameUi::heading (18.0f));
-                        g.drawText (name.isEmpty()
-                                        ? juce::String ("?")
-                                        : name.substring (0, 1).toUpperCase(),
-                                    avatar.toNearestInt(),
-                                    juce::Justification::centred, false);
-
-                        g.setColour (UiColors::text);
-                        g.setFont (GameUi::heading (isFirst ? 16.0f : 14.5f));
-                        g.drawFittedText (
-                            name,
-                            juce::Rectangle<float> (tile.getX() + 16.0f,
-                                                    tile.getY() + 48.0f,
-                                                    tile.getWidth() - 100.0f, 22.0f)
-                                .toNearestInt(),
-                            juce::Justification::centredLeft, 1, 1.0f);
-
-                        g.setColour (UiColors::muted);
-                        g.setFont (GameUi::eyebrow (8.0f));
-                        g.drawText ("LVL " + juce::String (row.level),
-                                    juce::Rectangle<float> (tile.getX() + 16.0f,
-                                                            tile.getY() + 72.0f,
-                                                            tile.getWidth() - 32.0f,
-                                                            12.0f),
-                                    juce::Justification::centredLeft, false);
-
-                        g.setColour (medal);
-                        g.setFont (GameUi::heading (isFirst ? 24.0f : 20.0f));
-                        const auto skillsText = row.guitarSkills >= 0.0
-                                                    ? juce::String (row.guitarSkills, 1)
-                                                    : spaced (row.rating);
-                        g.drawText (skillsText,
-                                    juce::Rectangle<float> (tile.getX() + 16.0f,
-                                                            tile.getBottom() - 40.0f,
-                                                            tile.getWidth() - 32.0f,
-                                                            28.0f),
-                                    juce::Justification::centredLeft, false);
-
-                        // Rank movement since the previous calculation.
-                        if (row.hasPositionChange && row.positionChange != 0)
-                        {
-                            const bool movedUp = row.positionChange > 0;
-                            g.setColour (movedUp ? UiColors::green : UiColors::red);
-                            g.setFont (GameUi::font (11.0f, true));
-                            g.drawText ((movedUp ? "+" : "")
-                                            + juce::String (row.positionChange),
-                                        juce::Rectangle<float> (tile.getRight() - 66.0f,
-                                                                tile.getBottom() - 36.0f,
-                                                                50.0f, 18.0f),
-                                        juce::Justification::centredRight, false);
-                        }
-                    }
-                }
-            }
-
-            GameUi::drawDivider (g, card.getX() + 24.0f,
-                                 card.getRight() - 24.0f,
-                                 card.getY() + 262.0f);
-
-            if (leaderboardLabel.getText().isEmpty())
-            {
-                const float centreX = card.getCentreX();
-                const float iconY = card.getCentreY() - 20.0f;
-
-                g.setColour (UiColors::accent.withAlpha (0.08f));
-                g.fillEllipse (centreX - 44.0f, iconY - 44.0f, 88.0f, 88.0f);
-                g.setColour (UiColors::accent.withAlpha (0.32f));
-                g.drawEllipse (centreX - 44.0f, iconY - 44.0f, 88.0f, 88.0f, 1.0f);
-
-                g.setColour (UiColors::text);
-                g.setFont (GameUi::font (13.0f, true));
-                g.drawText ("NO SCORES YET",
-                            juce::Rectangle<float> (centreX - 160.0f, iconY + 62.0f,
-                                                    320.0f, 20.0f),
-                            juce::Justification::centred, false);
-                g.setColour (UiColors::muted);
-                g.setFont (GameUi::font (11.0f));
-                g.drawText ("Press REFRESH to load the global rating.",
-                            juce::Rectangle<float> (centreX - 180.0f, iconY + 84.0f,
-                                                    360.0f, 18.0f),
-                            juce::Justification::centred, false);
-            }
-
-            return;
-        }
 
         if (currentUsername.isNotEmpty() && currentUserLabel.isVisible())
         {
@@ -2515,6 +2222,11 @@ void MainComponent::resized()
     overlayComponent.setBounds(getLocalBounds());
     modalOverlayComponent.setBounds(getLocalBounds());
 
+    // A layout change moves the chip: keep the dropdown from floating over a
+    // stale position.
+    if (playerMenu != nullptr)
+        closePlayerMenu();
+
     const int width = getWidth();
     const int height = getHeight();
 
@@ -2581,7 +2293,7 @@ void MainComponent::resized()
     //==========================================================================
 
     const bool hub = songSelect;
-    const bool homeSection = hub && currentSection == AppSection::Home;
+    const bool homeSection = hub && ! authScreen && currentSection == AppSection::Home;
     const bool songsSection = hub && currentSection == AppSection::Songs;
     const bool onlineSection = hub && currentSection == AppSection::OnlineDuel;
     const bool profileSection = hub && currentSection == AppSection::Profile;
@@ -2600,6 +2312,35 @@ void MainComponent::resized()
         sectionSidebar->setVisible (shellVisible);
         sectionSidebar->setActiveSection (currentSection);
         sectionSidebar->setUser (currentUsername, progressionLevel);
+    }
+
+    // Hub header: page name, messages / notifications / settings, the player
+    // chip and EXIT. It is a real component and paints itself.
+    if (hubHeader != nullptr)
+    {
+        hubHeader->setVisible (shellVisible);
+        hubHeader->setSection (currentSection);
+        hubHeader->setUser (currentUsername, progressionLevel);
+        hubHeader->setUnreadNotifications (socialUnreadNotifications);
+
+        const int headerH = juce::jlimit (70, 84,
+                                          juce::roundToInt (height * 0.092f));
+
+        if (shellVisible)
+            hubHeader->setBounds (24 + shellSideW, 20,
+                                  juce::jmax (320, width - 48 - shellSideW), headerH);
+    }
+
+    if (homeView != nullptr)
+    {
+        const int headerH = juce::jlimit (70, 84,
+                                          juce::roundToInt (height * 0.092f));
+        const int contentTop = 20 + headerH + 16;
+
+        homeView->setVisible (homeSection);
+        homeView->setBounds (24 + shellSideW, contentTop,
+                             juce::jmax (420, width - 48 - shellSideW),
+                             juce::jmax (320, height - contentTop - 16));
     }
 
     if (campaignPanel != nullptr)
@@ -2624,13 +2365,15 @@ void MainComponent::resized()
     // sections now.
     vstButton.setVisible (false);
     accountSettingsButton.setVisible (false);
-    // DONATION and FEEDBACK follow EXIT on every hub page and on the tuner.
-    supportButton.setVisible ((hub || tunerScreen) && !authScreen);
-    feedbackButton.setVisible ((hub || tunerScreen) && !authScreen);
+    // The hub header carries EXIT and the account actions now. The legacy
+    // header buttons stay in the tree because the header menu triggers them,
+    // but they never paint.
+    supportButton.setVisible (false);
+    feedbackButton.setVisible (false);
     adminPreviewButton.setVisible (profileSection && onlineIsAdmin
                                    && onlineAccessToken.isNotEmpty());
     currentUserLabel.setVisible (false);
-    quitButton.setVisible ((hub || tunerScreen) && !authScreen);
+    quitButton.setVisible (false);
     fullScreenButton.setVisible (settingsSection);
 
     retryConnectionButton.setVisible(sessionOfflineRetryAvailable && authScreen);
@@ -2669,11 +2412,13 @@ void MainComponent::resized()
     songChordsBestLabel.setVisible(false);
     dailyChallengeBestLabel.setVisible(false);
 
-    // Ranking is a Home-only widget, never part of a sub-section.
-    leaderboardTitleLabel.setVisible(homeSection);
+    // Ranking is a Home-only widget, never part of a sub-section. The HOME
+    // dashboard paints its own title and refresh pill, so the legacy controls
+    // stay hidden.
+    leaderboardTitleLabel.setVisible(false);
     leaderboardTable.setVisible(homeSection);
     leaderboardLabel.setVisible(homeSection);
-    refreshLeaderboardButton.setVisible(homeSection);
+    refreshLeaderboardButton.setVisible(false);
     progressionSummaryLabel.setVisible(false);
 
     if (duelLobby != nullptr)
@@ -2899,29 +2644,20 @@ void MainComponent::resized()
 
         if (homeSection)
         {
-            const int contentY = 234;
-            const int contentH = juce::jmax(320, height - 68 - 20 - contentY);
-            leaderboardTitleLabel.setBounds(contentX + 24, contentY + 38,
-                                            contentW - 48, 30);
-            refreshLeaderboardButton.setBounds(contentX + contentW - 142,
-                                               contentY + 62, 118, 32);
-            leaderboardLabel.setBounds(contentX + 24, contentY + 68,
-                                       contentW - 180, 20);
-            leaderboardTable.setBounds(contentX + 24, contentY + 272,
-                                       contentW - 48,
-                                       juce::jmax(100, contentH - 296));
+            // HOME is drawn by HomeView, which also lays out the leaderboard
+            // table, its refresh button and the status label.
+            leaderboardTitleLabel.setVisible (false);
         }
         else if (songChrome)
         {
-            const int contentY = homeSection ? 250 : 124;
+            const int contentY = 124;
             const int availableH = juce::jmax(320, height - 68 - 20 - contentY);
             const int contentH = availableH;
             const int footerY = contentY + contentH + 20;
             const int gap = 20;
             const bool fullWidth = songsSection;
             const int leftW = fullWidth ? contentW : contentW * 56 / 100;
-            const int rightX = contentX + leftW + gap;
-            const int rightW = juce::jmax(0, contentW - leftW - gap);
+            juce::ignoreUnused (gap);
 
             songTitleLabel.setBounds(contentX, 140, contentW, 44);
 
@@ -2966,19 +2702,6 @@ void MainComponent::resized()
             const int listBottom = buttonY - 38;
             songListBox.setBounds(contentX + 18, listTop, leftW - 36,
                                   juce::jmax(56, listBottom - listTop));
-
-            if (homeSection)
-            {
-                leaderboardTitleLabel.setBounds(rightX + 24, contentY + 38,
-                                                rightW - 48, 30);
-                refreshLeaderboardButton.setBounds(rightX + rightW - 142,
-                                                   contentY + 68, 118, 32);
-                leaderboardLabel.setBounds(rightX + 24, contentY + 106,
-                                           rightW - 48, 20);
-                leaderboardTable.setBounds(rightX + 24, contentY + 130,
-                                           rightW - 48,
-                                           juce::jmax(100, contentH - 154));
-            }
 
             progressionSummaryLabel.setBounds(contentX, 78, contentW, 22);
             accountStatusLabel.setBounds(contentX + 8, footerY + 7,
@@ -4433,6 +4156,8 @@ public:
         std::function<void()> onSessionExpired;
         // id, display name, server-relative spritesheet URL
         std::function<void(int, juce::String, juce::String)> onCharacterSelected;
+        // Origin-relative avatar URL after an upload, empty after a removal.
+        std::function<void(const juce::String& avatarUrl)> onAvatarChanged;
     };
 
     AccountWindow(ApiClient& apiToUse, const juce::String& accessToken,
@@ -4681,7 +4406,7 @@ public:
         const int historyRowCount = juce::jmax (1, static_cast<int> (historyRows.size()));
         const int historyH = 150 + historyRowCount * 32;
 
-        return 8 + 238 + 14 + 260 + 14 + 136 + 14 + 172 + 14 + 190 + 14
+        return 8 + 282 + 14 + 260 + 14 + 136 + 14 + 172 + 14 + 190 + 14
                + achievementsH + 14 + historyH + 8;
     }
 
@@ -4695,7 +4420,7 @@ public:
         const int cardW = juce::jmax (360, width - margin * 2);
 
         int y = 8;
-        accountCard = { margin, y, cardW, 238 };
+        accountCard = { margin, y, cardW, 282 };
         y += accountCard.getHeight() + gap;
         characterCard = { margin, y, cardW, 260 };
         y += characterCard.getHeight() + gap;
@@ -4731,9 +4456,23 @@ public:
             saveProfileButtonArea = { inner.getRight() - 180,
                                       inner.getBottom() - 36, 180, 30 };
 
+            // Avatar pair sits on the same line as SAVE PROFILE, on the left.
+            uploadAvatarButtonArea = { inner.getX(),
+                                       inner.getBottom() - 36, 170, 30 };
+            removeAvatarButtonArea = { uploadAvatarButtonArea.getRight() + 8,
+                                       inner.getBottom() - 36, 170, 30 };
+            avatarStatusArea = { removeAvatarButtonArea.getRight() + 16,
+                                 inner.getBottom() - 36,
+                                 juce::jmax (0, saveProfileButtonArea.getX() - 16
+                                                    - (removeAvatarButtonArea.getRight() + 16)),
+                                 30 };
+
             usernameEditor.setBounds (usernameEditorArea);
             displayNameEditor.setBounds (displayNameEditorArea);
             saveProfileButton.setBounds (saveProfileButtonArea);
+            uploadAvatarButton.setBounds (uploadAvatarButtonArea);
+            removeAvatarButton.setBounds (removeAvatarButtonArea);
+            avatarStatusLabel.setBounds (avatarStatusArea);
         }
 
         // CHARACTER: eyebrow, one framed sprite and the picker button.
@@ -5516,6 +5255,24 @@ private:
 
         contentHolder->addAndMakeVisible(saveProfileButton);
         contentHolder->addAndMakeVisible(changePasswordButton);
+
+        // Avatar controls reuse the secondary TextButton style of REFRESH/LOG
+        // OUT. The image itself is drawn by the client shell (hub chip and
+        // rows); here we only show the upload state.
+        AccountWindowDetail::styleButton (uploadAvatarButton, false);
+        AccountWindowDetail::styleButton (removeAvatarButton, false);
+        uploadAvatarButton.onClick = [this] { chooseAvatarFile(); };
+        removeAvatarButton.onClick = [this] { removeAvatar(); };
+        contentHolder->addAndMakeVisible (uploadAvatarButton);
+        contentHolder->addAndMakeVisible (removeAvatarButton);
+
+        avatarStatusLabel.setFont (GameUi::font (11.0f));
+        avatarStatusLabel.setColour (juce::Label::textColourId, UiColors::muted);
+        avatarStatusLabel.setJustificationType (juce::Justification::centredLeft);
+        avatarStatusLabel.setText ("No avatar uploaded.", juce::dontSendNotification);
+        contentHolder->addAndMakeVisible (avatarStatusLabel);
+        removeAvatarButton.setEnabled (false);
+
         addAndMakeVisible(refreshButton);
         addAndMakeVisible(logoutButton);
         contentHolder->addAndMakeVisible(showMoreButton);
@@ -6059,6 +5816,10 @@ private:
                 self->meEmail = me.getProperty("email", juce::var()).toString();
                 self->meCreatedAt = me.getProperty("created_at", juce::var()).toString();
                 self->meCharacterId = static_cast<int> (me.getProperty ("character_id", 0));
+                // Additive avatar field: an older server never sends it.
+                self->meAvatarImageUrl = me.getProperty ("avatar_image_url",
+                                                         juce::var()).toString();
+                self->refreshAvatarStatus();
 
                 if (!self->profileDirty)
                 {
@@ -6514,6 +6275,178 @@ private:
             });
     }
 
+    //==========================================================================
+    // Avatar: asynchronous file picker, upload and removal.
+    //==========================================================================
+    static juce::String avatarMimeType (const juce::File& file)
+    {
+        const auto extension = file.getFileExtension().toLowerCase();
+
+        if (extension == ".jpg" || extension == ".jpeg")
+            return "image/jpeg";
+
+        if (extension == ".webp")
+            return "image/webp";
+
+        return "image/png";
+    }
+
+    void setAvatarStatus (const juce::String& text, juce::Colour colour)
+    {
+        avatarStatusLabel.setColour (juce::Label::textColourId, colour);
+        avatarStatusLabel.setText (text, juce::dontSendNotification);
+    }
+
+    // Called after ``GET /auth/me``: shows whether the player has a picture.
+    void refreshAvatarStatus()
+    {
+        if (meAvatarImageUrl.isNotEmpty())
+        {
+            setAvatarStatus ("Avatar uploaded.", UiColors::muted);
+            removeAvatarButton.setEnabled (true);
+        }
+        else
+        {
+            setAvatarStatus ("No avatar uploaded.", UiColors::muted);
+            removeAvatarButton.setEnabled (false);
+        }
+    }
+
+    void chooseAvatarFile()
+    {
+        if (sessionExpired)
+            return;
+
+        // Async picker: the message thread is never blocked by file browsing.
+        avatarFileChooser = std::make_unique<juce::FileChooser> (
+            "Choose an avatar image",
+            juce::File::getSpecialLocation (juce::File::userPicturesDirectory),
+            "*.png;*.jpg;*.jpeg;*.webp");
+
+        juce::Component::SafePointer<AccountWindow> safeThis (this);
+
+        avatarFileChooser->launchAsync (
+            juce::FileBrowserComponent::openMode
+                | juce::FileBrowserComponent::canSelectFiles,
+            [safeThis] (const juce::FileChooser& chooser)
+            {
+                auto* self = safeThis.getComponent();
+
+                if (self == nullptr)
+                    return;
+
+                const auto file = chooser.getResult();
+
+                if (! file.existsAsFile())
+                    return;
+
+                self->uploadAvatar (file);
+            });
+    }
+
+    void uploadAvatar (const juce::File& file)
+    {
+        if (sessionExpired)
+            return;
+
+        // The server accepts PNG/JPEG/WebP up to 2 MB; reject early so a huge
+        // file is not read and uploaded only to be refused.
+        constexpr juce::int64 maxAvatarBytes = 2 * 1024 * 1024;
+
+        if (file.getSize() > maxAvatarBytes)
+        {
+            showAlert ("The avatar must be smaller than 2 MB.", UiColors::red);
+            return;
+        }
+
+        uploadAvatarButton.setEnabled (false);
+        removeAvatarButton.setEnabled (false);
+        setAvatarStatus ("Uploading avatar...", UiColors::muted);
+
+        juce::Component::SafePointer<AccountWindow> safeThis (this);
+
+        // Multipart POST on ApiClient's metadata pool; the callback runs on the
+        // message thread.
+        api.postFileAsync ("/profile/avatar", file, "file", avatarMimeType (file),
+                           token, 20000,
+            [safeThis] (ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+
+                if (self == nullptr)
+                    return;
+
+                self->uploadAvatarButton.setEnabled (true);
+
+                if (self->handleAuthFailure (response))
+                    return;
+
+                if (! self->responseIsSuccess (response)
+                    || ! response.json.isObject())
+                {
+                    self->setAvatarStatus ("Upload failed.", UiColors::red);
+                    self->removeAvatarButton.setEnabled (
+                        self->meAvatarImageUrl.isNotEmpty());
+                    self->showAlert (AccountWindowDetail::apiErrorMessage (response),
+                                     UiColors::red);
+                    return;
+                }
+
+                self->meAvatarImageUrl = response.json
+                                             .getProperty ("avatar_image_url",
+                                                           juce::var())
+                                             .toString();
+                self->refreshAvatarStatus();
+
+                if (self->callbacks.onAvatarChanged)
+                    self->callbacks.onAvatarChanged (self->meAvatarImageUrl);
+            });
+    }
+
+    void removeAvatar()
+    {
+        if (sessionExpired)
+            return;
+
+        if (meAvatarImageUrl.isEmpty())
+            return;
+
+        uploadAvatarButton.setEnabled (false);
+        removeAvatarButton.setEnabled (false);
+        setAvatarStatus ("Removing avatar...", UiColors::muted);
+
+        juce::Component::SafePointer<AccountWindow> safeThis (this);
+
+        api.deleteJson ("/profile/avatar", token, 8000,
+            [safeThis] (ApiClient::Response response)
+            {
+                auto* self = safeThis.getComponent();
+
+                if (self == nullptr)
+                    return;
+
+                self->uploadAvatarButton.setEnabled (true);
+
+                if (self->handleAuthFailure (response))
+                    return;
+
+                if (! self->responseIsSuccess (response))
+                {
+                    self->setAvatarStatus ("Removal failed.", UiColors::red);
+                    self->removeAvatarButton.setEnabled (true);
+                    self->showAlert (AccountWindowDetail::apiErrorMessage (response),
+                                     UiColors::red);
+                    return;
+                }
+
+                self->meAvatarImageUrl.clear();
+                self->refreshAvatarStatus();
+
+                if (self->callbacks.onAvatarChanged)
+                    self->callbacks.onAvatarChanged (juce::String());
+            });
+    }
+
     void logout()
     {
         if (callbacks.onLogout)
@@ -6704,6 +6637,17 @@ private:
     juce::TextButton showMoreButton { "SHOW MORE" };
     juce::TextButton refreshButton { "REFRESH" };
     juce::TextButton logoutButton { "LOG OUT" };
+
+    // Profile picture: the same TextButton style as the account card. The file
+    // picker is asynchronous, the upload itself runs on ApiClient's pool.
+    juce::TextButton uploadAvatarButton { "UPLOAD AVATAR" };
+    juce::TextButton removeAvatarButton { "REMOVE AVATAR" };
+    juce::Label avatarStatusLabel;
+    std::unique_ptr<juce::FileChooser> avatarFileChooser;
+    juce::String meAvatarImageUrl;
+    juce::Rectangle<int> uploadAvatarButtonArea;
+    juce::Rectangle<int> removeAvatarButtonArea;
+    juce::Rectangle<int> avatarStatusArea;
     juce::Label alertLabel;
     juce::Label ratingEmptyLabel;
     juce::Label historyEmptyLabel;
@@ -7562,6 +7506,10 @@ namespace
 
 void MainComponent::initialiseUi()
 {
+    // Resolve the interface language before any widget is built: the stored
+    // choice wins, the first launch asks the server about the caller's IP.
+    initialiseLanguage();
+
     //==========================================================================
     // Tuner UI
 
@@ -8529,9 +8477,9 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(leaderboardTitleLabel);
 
     leaderboardLabel.setText({}, juce::dontSendNotification);
-    leaderboardLabel.setFont(GameUi::font(11.0f));
-    leaderboardLabel.setColour(juce::Label::textColourId, UiColors::muted);
-    leaderboardLabel.setJustificationType(juce::Justification::topLeft);
+    leaderboardLabel.setFont(Ui::font(10.5f));
+    leaderboardLabel.setColour(juce::Label::textColourId, Ui::Colours::textMuted);
+    leaderboardLabel.setJustificationType(juce::Justification::centredLeft);
     leaderboardLabel.setMinimumHorizontalScale(0.8f);
     addAndMakeVisible(leaderboardLabel);
 
@@ -8546,20 +8494,20 @@ void MainComponent::initialiseUi()
     leaderboardTable.setColour(juce::ListBox::outlineColourId,
                                juce::Colours::transparentBlack);
     leaderboardTable.setOutlineThickness(0);
-    leaderboardTable.setRowHeight(32);
-    leaderboardTable.setHeaderHeight(28);
+    leaderboardTable.setRowHeight(30);
+    leaderboardTable.setHeaderHeight(24);
     leaderboardTable.getViewport()->setScrollBarsShown(true, false);
 
     auto& leaderboardHeader = leaderboardTable.getHeader();
     leaderboardHeader.setColour(juce::TableHeaderComponent::backgroundColourId,
-                                UiColors::surface2);
+                                juce::Colours::transparentBlack);
     leaderboardHeader.setColour(juce::TableHeaderComponent::textColourId,
-                                UiColors::muted);
+                                Ui::Colours::textMuted);
     leaderboardHeader.setColour(juce::TableHeaderComponent::outlineColourId,
-                                UiColors::border);
+                                Ui::Colours::border);
     leaderboardHeader.setColour(juce::TableHeaderComponent::highlightColourId,
-                                UiColors::accent.withAlpha(0.25f));
-    leaderboardHeader.setStretchToFitActive(true);
+                                Ui::Colours::accent.withAlpha(0.25f));
+    leaderboardHeader.setStretchToFitActive(false);
 
     leaderboardTable.getHeader().addColumn(
         "#", 1, 42, 36, 70, juce::TableHeaderComponent::notSortable);
@@ -8573,6 +8521,8 @@ void MainComponent::initialiseUi()
         "DUELS", 5, 118, 96, 170, juce::TableHeaderComponent::notSortable);
     leaderboardTable.getHeader().addColumn(
         "STATUS", 6, 78, 66, 110, juce::TableHeaderComponent::notSortable);
+
+    updateLeaderboardHeaderText();
 
     leaderboardModel->onRowClicked = [this](const juce::String& userId)
     {
@@ -8589,10 +8539,10 @@ void MainComponent::initialiseUi()
     addAndMakeVisible(progressionSummaryLabel);
     progressionSummaryLabel.setVisible(false);
 
-    refreshLeaderboardButton.setColour(juce::TextButton::buttonColourId, UiColors::surface2);
-    refreshLeaderboardButton.setColour(juce::TextButton::buttonOnColourId, UiColors::accent);
-    refreshLeaderboardButton.setColour(juce::TextButton::textColourOffId, UiColors::text);
-    refreshLeaderboardButton.setColour(juce::TextButton::textColourOnId, UiColors::onAccent);
+    refreshLeaderboardButton.setColour(juce::TextButton::buttonColourId, Ui::Colours::surfaceRaised);
+    refreshLeaderboardButton.setColour(juce::TextButton::buttonOnColourId, Ui::Colours::accent);
+    refreshLeaderboardButton.setColour(juce::TextButton::textColourOffId, Ui::Colours::textSecondary);
+    refreshLeaderboardButton.setColour(juce::TextButton::textColourOnId, Ui::Colours::onAccent);
     refreshLeaderboardButton.onClick = [this] { refreshGlobalLeaderboard(); };
     refreshLeaderboardButton.setButtonText("REFRESH");
     addAndMakeVisible(refreshLeaderboardButton);
@@ -9207,12 +9157,238 @@ void MainComponent::initialiseUi()
     {
         setSection (section);
     };
-    sectionSidebar->onNotificationsSelected = [this] { openNotifications(); };
+    sectionSidebar->onLanguageSelected = [this] (I18n::Language chosen)
+    {
+        applyLanguage (chosen, true);
+    };
+    sectionSidebar->setLanguage (I18n::language());
     sectionSidebar->setUser (currentUsername, progressionLevel);
     addAndMakeVisible (*sectionSidebar);
     sectionSidebar->toFront (false);
 
+    initialiseHubShell();
+
     resized();
+}
+
+void MainComponent::updateLeaderboardHeaderText()
+{
+    auto& header = leaderboardTable.getHeader();
+
+    header.setColumnName (1, "#");
+    header.setColumnName (2, I18n::tr ("PLAYER"));
+    header.setColumnName (3, I18n::tr ("LEVEL"));
+    header.setColumnName (4, I18n::tr ("SKILLS"));
+    header.setColumnName (5, I18n::tr ("DUELS"));
+    header.setColumnName (6, I18n::tr ("STATUS"));
+
+    // The "ranked by" hint is the label's default text; translate it in place
+    // when it is not showing a loading/error status.
+    const juce::String hint = "Ranked by Guitar Skills. PROV = provisional. "
+                              "Click a player to open their card.";
+
+    if (leaderboardLabel.getText().contains ("Guitar Skills"))
+        leaderboardLabel.setText (I18n::tr (hint), juce::dontSendNotification);
+}
+
+void MainComponent::initialiseLanguage()
+{
+    auto* settings = appProperties.getUserSettings();
+    const auto stored = settings != nullptr ? settings->getValue ("ui.language")
+                                            : juce::String();
+
+    if (stored.isNotEmpty())
+    {
+        I18n::setLanguage (I18n::fromCode (stored));
+        return;
+    }
+
+    // First launch: the server maps the caller's IP to a language
+    // (GET /site/geo -> "ru" | "en"). The answer is stored right away, so the
+    // app never asks twice.
+    juce::Component::SafePointer<MainComponent> safeThis (this);
+
+    apiClient.getJson ("/site/geo", {}, 4000,
+        [safeThis] (ApiClient::Response reply)
+        {
+            auto* self = safeThis.getComponent();
+
+            if (self == nullptr || ! reply.transportOk || ! reply.isJsonObject())
+                return;
+
+            const auto tag = reply.json.getProperty ("language", juce::var()).toString();
+
+            if (tag.isEmpty())
+                return;
+
+            self->applyLanguage (I18n::fromCode (tag), true);
+        });
+}
+
+void MainComponent::applyLanguage (I18n::Language language, bool persist)
+{
+    I18n::setLanguage (language);
+
+    if (sectionSidebar != nullptr)
+        sectionSidebar->setLanguage (language);
+
+    updateLeaderboardHeaderText();
+    leaderboardTable.repaint();
+
+    if (persist)
+    {
+        if (auto* settings = appProperties.getUserSettings())
+        {
+            settings->setValue ("ui.language", I18n::code (language));
+            settings->saveIfNeeded();
+        }
+    }
+
+    // Every visible string is resolved at paint time, so a full repaint is all
+    // that is needed to swap the language.
+    repaint();
+}
+
+void MainComponent::initialiseHubShell()
+{
+    hubHeader = std::make_unique<HubHeader>();
+    hubHeader->onMessages = [this] { setSection (AppSection::Messages); };
+    hubHeader->onNotifications = [this] { openNotifications(); };
+    hubHeader->onSettings = [this] { setSection (AppSection::Settings); };
+    hubHeader->onProfile = [this] { setSection (AppSection::Profile); };
+    hubHeader->onFeedback = [this] { feedbackButton.triggerClick(); };
+    hubHeader->onDonation = [this] { supportButton.triggerClick(); };
+    hubHeader->onLogout = [this] { logoutButton.triggerClick(); };
+    hubHeader->onExit = [this] { quitButton.triggerClick(); };
+    hubHeader->onPlayerMenu = [this] (juce::Rectangle<int> anchor)
+    {
+        openPlayerMenu (anchor);
+    };
+    hubHeader->setUser (currentUsername, progressionLevel);
+    addAndMakeVisible (*hubHeader);
+
+    homeView = std::make_unique<HomeView>();
+    homeView->onBattle = [this] { setSection (AppSection::Campaign); };
+    homeView->onOnline = [this] { setSection (AppSection::OnlineDuel); };
+    homeView->onRefresh = [this] { refreshGlobalLeaderboard(); };
+    homeView->onOpenProfile = [this] (const juce::String& userId)
+    {
+        openPublicProfile (userId);
+    };
+
+    // The table and its status label stay owned here; HomeView only lays them
+    // out inside the leaderboard card.
+    homeView->setLeaderboardComponents (leaderboardTable, leaderboardLabel);
+    addAndMakeVisible (*homeView);
+
+    syncHomeView();
+}
+
+void MainComponent::openPlayerMenu (juce::Rectangle<int> anchorInHeader)
+{
+    closePlayerMenu();
+
+    if (hubHeader == nullptr)
+        return;
+
+    const bool signedIn = currentUsername.isNotEmpty();
+
+    auto title = signedIn
+                     ? I18n::tr ("SIGNED IN AS") + " " + currentUsername.toUpperCase()
+                           + "   |   LVL " + juce::String (juce::jmax (1, progressionLevel))
+                     : I18n::tr ("NOT SIGNED IN");
+
+    playerMenu = std::make_unique<PlayerMenuOverlay> (title, signedIn);
+    playerMenu->onProfile = [this] { setSection (AppSection::Profile); };
+    playerMenu->onFeedback = [this] { feedbackButton.triggerClick(); };
+    playerMenu->onDonation = [this] { supportButton.triggerClick(); };
+    playerMenu->onLogout = [this] { logoutButton.triggerClick(); };
+    playerMenu->onDismiss = [safeThis = juce::Component::SafePointer<MainComponent> (this)]
+    {
+        if (auto* self = safeThis.getComponent())
+            self->closePlayerMenu();
+    };
+
+    addAndMakeVisible (*playerMenu);
+    playerMenu->setBounds (getLocalBounds());
+    playerMenu->setAnchor (anchorInHeader + hubHeader->getPosition());
+    playerMenu->toFront (true);
+    playerMenu->grabKeyboardFocus();
+}
+
+void MainComponent::closePlayerMenu()
+{
+    playerMenu.reset();
+}
+
+void MainComponent::syncHomeView()
+{
+    if (homeView == nullptr)
+        return;
+
+    HomeView::Stats stats;
+    stats.username = currentUsername;
+    stats.level = juce::jmax (1, progressionLevel);
+    stats.xpForNext = juce::jmax (0, progressionXpForNext);
+    stats.xpRemaining = juce::jmax (0, progressionXpRemaining);
+    stats.xpIntoLevel = juce::jmax (0, stats.xpForNext - stats.xpRemaining);
+    stats.levelRatio = juce::jlimit (0.0f, 1.0f, levelBarShown);
+
+    // Total experience: the account summary carries the server-formatted
+    // number; fall back to the raw progression value before it is loaded.
+    stats.totalXpText = (accountXpText.isNotEmpty() && accountXpText != "-")
+                            ? accountXpText
+                            : juce::String (juce::jmax (0, progressionXp));
+
+    std::vector<HomeView::TopPlayer> top;
+
+    if (leaderboardModel != nullptr)
+    {
+        const auto& rows = leaderboardModel->getRows();
+        const int topCount = juce::jmin (3, static_cast<int> (rows.size()));
+
+        for (int i = 0; i < topCount; ++i)
+        {
+            const auto& row = rows[static_cast<size_t> (i)];
+
+            HomeView::TopPlayer player;
+            player.userId = row.userId;
+            player.name = row.displayName.isNotEmpty() ? row.displayName : row.username;
+            player.rank = row.rank;
+            player.level = row.level;
+            player.skillsText = row.guitarSkills >= 0.0
+                                    ? juce::String (row.guitarSkills, 1)
+                                    : juce::String (row.rating);
+            player.positionChange = row.positionChange;
+            player.hasPositionChange = row.hasPositionChange;
+            top.push_back (std::move (player));
+        }
+
+        // The player strip reads the signed-in user's own row: Guitar Skills
+        // and the duel record already come from the same leaderboard payload.
+        if (currentUsername.isNotEmpty())
+        {
+            for (const auto& row : rows)
+            {
+                if (row.username != currentUsername)
+                    continue;
+
+                stats.ownRank = row.rank;
+
+                if (row.guitarSkills >= 0.0)
+                    stats.skillsText = juce::String (row.guitarSkills, 1);
+
+                if (row.duelWins + row.duelLosses + row.duelDraws > 0)
+                    stats.duelsText = juce::String (row.duelWins) + " - "
+                                      + juce::String (row.duelLosses);
+
+                break;
+            }
+        }
+    }
+
+    homeView->setStats (stats);
+    homeView->setTopPlayers (std::move (top));
 }
 
 void MainComponent::mouseUp (const juce::MouseEvent& event)
@@ -9240,17 +9416,7 @@ void MainComponent::mouseUp (const juce::MouseEvent& event)
         }
     }
 
-    // Podium cards on HOME are painted, not components; paint() records their
-    // bounds so a click opens the same profile page as a leaderboard row.
-    for (size_t i = 0; i < podiumHitBounds.size(); ++i)
-    {
-        if (podiumUserIds[i].isNotEmpty()
-            && podiumHitBounds[i].contains (event.getPosition()))
-        {
-            openPublicProfile (podiumUserIds[i]);
-            return;
-        }
-    }
+    // The podium tiles are hit-tested by HomeView itself; nothing to do here.
 }
 
 //==============================================================================
@@ -9379,6 +9545,13 @@ void MainComponent::ensureProfileSection()
             if (auto* self = safeThis.getComponent())
                 self->setSelectedCharacter (id, name, sheetUrl, false);
         };
+    callbacks.onAvatarChanged =
+        [safeThis = juce::Component::SafePointer<MainComponent> (this)]
+        (const juce::String& avatarUrl)
+        {
+            if (auto* self = safeThis.getComponent())
+                self->setOwnAvatarUrl (avatarUrl);
+        };
 
     profileContent = std::make_unique<AccountWindow> (
         apiClient, onlineAccessToken, std::move (callbacks));
@@ -9438,8 +9611,8 @@ void MainComponent::ensureMessagesSection()
             [safeThis = juce::Component::SafePointer<MainComponent> (this)] (int unread)
             {
                 if (auto* self = safeThis.getComponent())
-                    if (self->sectionSidebar != nullptr)
-                        self->sectionSidebar->setUnreadMessages (unread);
+                    if (self->hubHeader != nullptr)
+                        self->hubHeader->setUnreadMessages (unread);
             };
         messagesContent = std::move (panel);
 

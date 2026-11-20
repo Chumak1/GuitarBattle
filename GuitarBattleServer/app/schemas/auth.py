@@ -103,6 +103,9 @@ class UserResponse(BaseModel):
     email: EmailStr
     display_name: str
     avatar_key: str | None
+    #: Additive: origin-relative URL of the player-uploaded avatar, ``null``
+    #: when the account still uses the placeholder.
+    avatar_image_url: str | None = None
     email_verified: bool
     created_at: datetime
     # Additive: NULL for accounts created before the consent requirement.

@@ -471,6 +471,8 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             juce::String characterName;
             juce::String characterSheetUrl;
             juce::String email;
+            juce::String userId;
+            juce::String avatarImageUrl;
             if (response.transportOk)
             {
                 const auto profile = response.json;
@@ -496,6 +498,10 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
                     "character_sheet_url", juce::var()).toString();
                 // Shown in the HOME account summary line.
                 email = profile.getProperty("email", juce::var()).toString();
+                // Additive avatar fields: an older server never sends them, so
+                // the chip keeps the initial letter.
+                userId = profile.getProperty("id", juce::var()).toString();
+                avatarImageUrl = profile.getProperty("avatar_image_url", juce::var()).toString();
             }
 
             // The ADMIN toggle is restored only for an administrator. The
@@ -512,6 +518,10 @@ void MainComponent::finishOnlineSignIn(bool createAccount,
             self->currentUsername = username;
             self->currentUserLabel.setText(self->currentUsername, juce::dontSendNotification);
             self->accountEmail = email;            self->showAuthScreen = false;
+            self->onlineUserId = userId;
+            self->setOwnAvatarUrl (avatarImageUrl);
+            // Admin artwork: two HOME hero backgrounds and the default avatar.
+            self->refreshSiteArtwork();
             self->currentSection = AppSection::Home;
             self->matchOriginSection = AppSection::Home;
 
@@ -747,8 +757,8 @@ void MainComponent::logoutCurrentUser()
     if (notificationToasts != nullptr)
         notificationToasts->dismissAll();
 
-    if (sectionSidebar != nullptr)
-        sectionSidebar->setUnreadNotifications (0);
+    if (hubHeader != nullptr)
+        hubHeader->setUnreadNotifications (0);
     // The admin tools belong to the account, not to the machine: hide them and
     // drop the preview mode. The saved preference stays in the settings so the
     // next admin sign-in restores it.
@@ -764,6 +774,15 @@ void MainComponent::logoutCurrentUser()
     currentUsername.clear();
     currentUserLabel.setText(juce::String(), juce::dontSendNotification);
     accountStatusLabel.setText(juce::String(), juce::dontSendNotification);
+
+    // The face belongs to the account: drop it together with the cached
+    // per-player avatars. The administrator artwork stays (it is public).
+    onlineUserId.clear();
+    ownAvatarUrl.clear();
+    avatarUrlByUser.clear();
+
+    if (hubHeader != nullptr)
+        hubHeader->setAvatarImage (defaultAvatarImage);
 
     // The hub falls back to the signed-out landing screen. The embedded
     // profile is destroyed asynchronously: logout can be triggered from inside
@@ -1190,6 +1209,14 @@ void MainComponent::refreshGlobalLeaderboard()
                 }
 
                 rows.push_back(row);
+
+                // Avatars of the listed players (additive field). The image is
+                // downloaded once per URL and exposed through avatarFor().
+                const auto avatarUrl = item.getProperty("avatar_image_url",
+                                                        juce::var()).toString();
+
+                if (avatarUrl.isNotEmpty() && row.userId.isNotEmpty())
+                    self->registerAvatarUrl (row.userId, avatarUrl);
             }
 
             if (self->leaderboardModel != nullptr)
@@ -1207,7 +1234,8 @@ void MainComponent::refreshGlobalLeaderboard()
             self->leaderboardTable.updateContent();
             self->leaderboardTable.repaint();
             self->leaderboardLabel.setText(
-                "Ranked by Guitar Skills. PROV = provisional. Click a player to open their card.",
+                I18n::tr ("Ranked by Guitar Skills. PROV = provisional. "
+                          "Click a player to open their card."),
                 juce::dontSendNotification);
         });
 }
@@ -1873,10 +1901,13 @@ void MainComponent::openNotifications()
 
     closeNotificationPopup();
 
-    if (sectionSidebar == nullptr)
+    if (hubHeader == nullptr)
         return;
 
-    const auto anchor = sectionSidebar->getNotificationsBounds();
+    // The popup is positioned in MainComponent coordinates, so shift the bell
+    // rectangle out of the header's local space.
+    auto anchor = hubHeader->getNotificationsBounds();
+    anchor.translate (hubHeader->getX(), hubHeader->getY());
 
     auto popup = std::make_unique<NotificationPopup> (apiClient, onlineAccessToken,
                                                       anchor);
@@ -1907,8 +1938,8 @@ void MainComponent::openNotifications()
         {
             self->socialUnreadNotifications = juce::jmax (0, unread);
 
-            if (self->sectionSidebar != nullptr)
-                self->sectionSidebar->setUnreadNotifications (
+            if (self->hubHeader != nullptr)
+                self->hubHeader->setUnreadNotifications (
                     self->socialUnreadNotifications);
         }
     };
@@ -1932,8 +1963,8 @@ void MainComponent::refreshSocialNotifications()
         seenNotificationIds.clear();
         notificationsPrimed = false;
 
-        if (sectionSidebar != nullptr)
-            sectionSidebar->setUnreadNotifications(0);
+        if (hubHeader != nullptr)
+            hubHeader->setUnreadNotifications(0);
 
         return;
     }
@@ -1951,8 +1982,8 @@ void MainComponent::refreshSocialNotifications()
             self->socialUnreadNotifications =
                 static_cast<int>(reply.json.getProperty("unread", 0));
 
-            if (self->sectionSidebar != nullptr)
-                self->sectionSidebar->setUnreadNotifications(
+            if (self->hubHeader != nullptr)
+                self->hubHeader->setUnreadNotifications(
                     self->socialUnreadNotifications);
 
             const auto* items =
@@ -2012,8 +2043,8 @@ void MainComponent::refreshMessageUnread()
 {
     if (onlineAccessToken.isEmpty())
     {
-        if (sectionSidebar != nullptr)
-            sectionSidebar->setUnreadMessages(0);
+        if (hubHeader != nullptr)
+            hubHeader->setUnreadMessages(0);
 
         return;
     }
@@ -2028,8 +2059,8 @@ void MainComponent::refreshMessageUnread()
             if (self == nullptr || ! reply.transportOk)
                 return;
 
-            if (self->sectionSidebar != nullptr)
-                self->sectionSidebar->setUnreadMessages(
+            if (self->hubHeader != nullptr)
+                self->hubHeader->setUnreadMessages(
                     static_cast<int>(reply.json.getProperty("unread_total", 0)));
         });
 }

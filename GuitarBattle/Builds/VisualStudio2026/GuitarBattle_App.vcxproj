@@ -166,6 +166,10 @@
     <ClCompile Include="..\..\Source\UI\BrandAssets.cpp"/>
     <ClCompile Include="..\..\Source\UI\DuelStageComponent.cpp"/>
     <ClCompile Include="..\..\Source\UI\SectionSidebar.cpp"/>
+    <ClCompile Include="..\..\Source\UI\UiKit.cpp"/>
+    <ClCompile Include="..\..\Source\UI\HubHeader.cpp"/>
+    <ClCompile Include="..\..\Source\UI\PlayerMenu.cpp"/>
+    <ClCompile Include="..\..\Source\UI\HomeView.cpp"/>
     <ClCompile Include="..\..\Source\UI\CampaignPanel.cpp"/>
     <ClCompile Include="..\..\Source\UI\PlayerCard.cpp"/>
     <ClCompile Include="..\..\Source\UI\FriendsPanel.cpp"/>
@@ -186,6 +190,7 @@
     <ClCompile Include="..\..\Source\Network\SessionStore.cpp"/>
     <ClCompile Include="..\..\Source\Network\MainComponentNetwork.cpp"/>
     <ClCompile Include="..\..\Source\Network\MainComponentAssets.cpp"/>
+    <ClCompile Include="..\..\Source\Network\MainComponentArtwork.cpp"/>
     <ClCompile Include="..\..\Source\Network\DuelClient.cpp"/>
     <ClCompile Include="..\..\Source\Main.cpp"/>
     <ClCompile Include="..\..\Source\MainComponent.cpp"/>
@@ -3256,6 +3261,10 @@
     <ClInclude Include="..\..\Source\UI\BrandAssets.h"/>
     <ClInclude Include="..\..\Source\UI\DuelStageComponent.h"/>
     <ClInclude Include="..\..\Source\UI\SectionSidebar.h"/>
+    <ClInclude Include="..\..\Source\UI\UiKit.h"/>
+    <ClInclude Include="..\..\Source\UI\HubHeader.h"/>
+    <ClInclude Include="..\..\Source\UI\PlayerMenu.h"/>
+    <ClInclude Include="..\..\Source\UI\HomeView.h"/>
     <ClInclude Include="..\..\Source\UI\CampaignPanel.h"/>
     <ClInclude Include="..\..\Source\UI\PlayerCard.h"/>
     <ClInclude Include="..\..\Source\UI\FriendsPanel.h"/>

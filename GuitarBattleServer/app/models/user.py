@@ -38,6 +38,10 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     display_name: Mapped[str] = mapped_column(String(64), nullable=False, default="")
     avatar_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    #: Origin-relative URL of the player-uploaded avatar
+    #: (``/media/avatars/avatar-<uuid>.<ext>``). ``NULL`` keeps the
+    #: initial-letter placeholder (or the administrator default avatar).
+    avatar_image_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)

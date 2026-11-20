@@ -1,4 +1,5 @@
 from app.models.user import User
+from app.models.artwork import ArtworkAsset
 from app.models.email_auth_code import EmailAuthCode
 from app.models.refresh_session import RefreshSession
 from app.models.song import Song, SongFile
@@ -54,7 +55,7 @@ from app.models.guitar_skills import (
 )
 
 __all__ = [
-    "User", "EmailAuthCode", "RefreshSession", "Song", "SongFile", "GameSession", "Score",
+    "User", "EmailAuthCode", "RefreshSession", "Song", "SongFile", "ArtworkAsset", "GameSession", "Score",
     "UiCharacter", "StageLevel",
     "UserCharacter", "UserCampaignProgress",
     "SongMidiAnalysis", "SongMidiNote", "SongMidiTempoChange",

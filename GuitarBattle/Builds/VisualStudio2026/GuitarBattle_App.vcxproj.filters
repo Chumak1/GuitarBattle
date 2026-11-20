@@ -931,6 +931,18 @@
     <ClCompile Include="..\..\Source\UI\SectionSidebar.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
+    <ClCompile Include="..\..\Source\UI\UiKit.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\HubHeader.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\PlayerMenu.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\UI\HomeView.cpp">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClCompile>
     <ClCompile Include="..\..\Source\UI\CampaignPanel.cpp">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClCompile>
@@ -989,6 +1001,9 @@
       <Filter>GuitarBattle\Source\Network</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Network\MainComponentAssets.cpp">
+      <Filter>GuitarBattle\Source\Network</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\Source\Network\MainComponentArtwork.cpp">
       <Filter>GuitarBattle\Source\Network</Filter>
     </ClCompile>
     <ClCompile Include="..\..\Source\Network\DuelClient.cpp">
@@ -4306,6 +4321,18 @@
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\SectionSidebar.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\UiKit.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\HubHeader.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\PlayerMenu.h">
+      <Filter>GuitarBattle\Source\UI</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Source\UI\HomeView.h">
       <Filter>GuitarBattle\Source\UI</Filter>
     </ClInclude>
     <ClInclude Include="..\..\Source\UI\CampaignPanel.h">

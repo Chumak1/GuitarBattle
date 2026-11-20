@@ -41,6 +41,15 @@ class Settings(BaseSettings):
     # so the existing landing_media_data volume backs it without a new mount.
     campaign_media_dir: Path = Path("/data/landing_media/campaigns")
     max_campaign_cover_bytes: int = 2 * 1024 * 1024
+    # Administrator artwork slots (HOME hero backgrounds and the default
+    # avatar), served at /media/artwork/<name>. The default lives inside the
+    # landing media root, so the existing volume backs it.
+    artwork_media_dir: Path = Path("/data/landing_media/artwork")
+    max_artwork_bytes: int = 8 * 1024 * 1024
+    # Per-player avatars uploaded from the desktop client, served at
+    # /media/avatars/<name>.
+    avatar_media_dir: Path = Path("/data/landing_media/avatars")
+    max_avatar_bytes: int = 2 * 1024 * 1024
     # Desktop game installers offered at /api/v1/downloads/game.
     game_builds_dir: Path = Path("/data/game_builds")
     # Global non-gameplay audio (background music), served at

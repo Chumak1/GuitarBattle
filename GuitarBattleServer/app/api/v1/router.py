@@ -15,6 +15,8 @@ from app.api.v1.admin_statistics import router as admin_statistics_router
 from app.api.v1.admin_users import router as admin_users_router
 from app.api.v1.admin_daily import router as admin_daily_router
 from app.api.v1.admin_guitar_skills import router as admin_guitar_skills_router
+from app.api.v1.admin_artwork import router as admin_artwork_router
+from app.api.v1.profile_avatar import router as profile_avatar_router
 from app.api.v1.progression import router as progression_router
 from app.api.v1.duels import router as duels_router
 from app.api.v1.duel_lobbies import router as duel_lobbies_router
@@ -62,3 +64,5 @@ router.include_router(admin_statistics_router)
 router.include_router(admin_users_router)
 router.include_router(admin_daily_router)
 router.include_router(admin_guitar_skills_router)
+router.include_router(admin_artwork_router)
+router.include_router(profile_avatar_router)

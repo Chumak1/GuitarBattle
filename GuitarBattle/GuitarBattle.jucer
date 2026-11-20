@@ -69,6 +69,14 @@
               file="Source/UI/SectionSidebar.cpp"/>
         <FILE id="SecSb2" name="SectionSidebar.h" compile="0" resource="0"
               file="Source/UI/SectionSidebar.h"/>
+        <FILE id="UiKt1" name="UiKit.cpp" compile="1" resource="0" file="Source/UI/UiKit.cpp"/>
+        <FILE id="UiKt2" name="UiKit.h" compile="0" resource="0" file="Source/UI/UiKit.h"/>
+        <FILE id="HubHd1" name="HubHeader.cpp" compile="1" resource="0" file="Source/UI/HubHeader.cpp"/>
+        <FILE id="HubHd2" name="HubHeader.h" compile="0" resource="0" file="Source/UI/HubHeader.h"/>
+        <FILE id="PlrM01" name="PlayerMenu.cpp" compile="1" resource="0" file="Source/UI/PlayerMenu.cpp"/>
+        <FILE id="PlrM02" name="PlayerMenu.h" compile="0" resource="0" file="Source/UI/PlayerMenu.h"/>
+        <FILE id="HomeV1" name="HomeView.cpp" compile="1" resource="0" file="Source/UI/HomeView.cpp"/>
+        <FILE id="HomeV2" name="HomeView.h" compile="0" resource="0" file="Source/UI/HomeView.h"/>
         <FILE id="CmpP01" name="CampaignPanel.cpp" compile="1" resource="0"
               file="Source/UI/CampaignPanel.cpp"/>
         <FILE id="CmpP02" name="CampaignPanel.h" compile="0" resource="0" file="Source/UI/CampaignPanel.h"/>
@@ -136,6 +144,8 @@
               file="Source/Network/MainComponentNetwork.cpp"/>
         <FILE id="McAst1" name="MainComponentAssets.cpp" compile="1" resource="0"
               file="Source/Network/MainComponentAssets.cpp"/>
+        <FILE id="McArt1" name="MainComponentArtwork.cpp" compile="1" resource="0"
+              file="Source/Network/MainComponentArtwork.cpp"/>
         <FILE id="McApiH1" name="ApiClient.h" compile="0" resource="0" file="Source/Network/ApiClient.h"/>
         <FILE id="DuelClH1" name="DuelClient.h" compile="0" resource="0" file="Source/Network/DuelClient.h"/>
         <FILE id="DuelClC1" name="DuelClient.cpp" compile="1" resource="0"

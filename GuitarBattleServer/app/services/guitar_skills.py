@@ -1537,6 +1537,7 @@ def _leaderboard_item(
         "user_id": user.id,
         "username": user.username,
         "display_name": user.display_name or user.username,
+        "avatar_image_url": user.avatar_image_url or None,
         "level": int(user.level or 1),
         "xp_total": int(user.xp_total or 0),
         "guitar_skills": round1(float(row.guitar_skills)),

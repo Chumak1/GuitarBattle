@@ -47,6 +47,12 @@ class LandingResponse(BaseModel):
     #: Portable ZIPs used by the installed client to update itself. Additive:
     #: ``download``/``downloads`` keep pointing at the installers.
     updates: LandingDownloads = Field(default_factory=LandingDownloads)
+    #: Additive: administrator artwork slots also exposed by ``/site/config``
+    #: (``/media/artwork/<name>`` or ``null``). The desktop client reads the
+    #: dedicated endpoint; the landing page ignores these fields.
+    hero_battle_url: str | None = None
+    hero_duel_url: str | None = None
+    default_avatar_url: str | None = None
 
 
 class GeoResponse(BaseModel):

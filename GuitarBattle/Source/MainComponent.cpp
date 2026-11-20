@@ -453,13 +453,30 @@ void MainComponent::timerCallback()
         if (std::abs(target - levelBarShown) > 0.0005f)
         {
             levelBarShown += (target - levelBarShown) * 0.16f;
-            overlayComponent.repaint();
+
+            // HOME draws its own bar: syncHomeView() repaints the dashboard
+            // when the ratio actually moves, so skip the full-window repaint.
+            if (homeView == nullptr || ! homeView->isVisible())
+                overlayComponent.repaint();
         }
         else if (! juce::approximatelyEqual(levelBarShown, target))
         {
             levelBarShown = target;
-            overlayComponent.repaint();
+
+            if (homeView == nullptr || ! homeView->isVisible())
+                overlayComponent.repaint();
         }
+    }
+
+    // HOME dashboard: feed it the account, progression and leaderboard data.
+    // setStats()/setTopPlayers() ignore unchanged data, so this is cheap and
+    // the level strip follows the animation instead of jumping at the end.
+    if (homeView != nullptr
+        && currentSection == AppSection::Home
+        && ! showAuthScreen
+        && gameState.load (std::memory_order_relaxed) == GameState::SongSelect)
+    {
+        syncHomeView();
     }
 
     if (gameState != GameState::Playing)

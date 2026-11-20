@@ -139,6 +139,11 @@
           </button>
         </li>
         <li class="nav-item" role="presentation">
+          <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="artwork">
+            <i class="bi bi-image me-1"></i>Artwork
+          </button>
+        </li>
+        <li class="nav-item" role="presentation">
           <button class="nav-link" type="button" role="tab" aria-selected="false" data-admin-section="support">
             <i class="bi bi-heart me-1"></i>Страница поддержки
           </button>
@@ -861,6 +866,108 @@
             </div>
           </div>
         </section>
+      </div>
+
+      <div id="sectionArtwork" data-admin-panel="artwork" hidden>
+        <div class="page-heading d-flex flex-column flex-md-row justify-content-between gap-3 align-items-md-end">
+          <div>
+            <div class="eyebrow">Медиа клиента</div>
+            <h1 class="page-title">ARTWORK</h1>
+            <p class="page-subtitle">
+              Фоны карточек BATTLE и ONLINE на главном экране клиента и аватар
+              игроков по умолчанию. Без изображения клиент показывает
+              процедурный рисунок и первую букву имени.
+            </p>
+          </div>
+          <button id="artworkReload" class="btn btn-outline-light" type="button">
+            <i class="bi bi-arrow-clockwise me-1"></i>Обновить
+          </button>
+        </div>
+
+        <div id="artworkAlert" class="alert alert-danger" role="alert" hidden></div>
+
+        <div class="row g-4">
+          <div class="col-12 col-lg-4">
+            <section class="card content-card h-100">
+              <div class="card-body">
+                <h2 class="h5 mb-1">Battle background</h2>
+                <p class="page-subtitle mb-3">
+                  Фон карточки BATTLE на главном экране клиента.
+                  PNG/JPEG/WebP, до 8 МБ.
+                </p>
+                <div class="artwork-preview mb-3">
+                  <img id="artworkPreview-hero-battle" alt="Battle background" hidden>
+                  <span id="artworkEmpty-hero-battle" class="artwork-empty">Нет изображения</span>
+                </div>
+                <input id="artworkFile-hero-battle" class="form-control mb-2" type="file"
+                       accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+                <div class="d-flex gap-2">
+                  <button id="artworkUpload-hero-battle" class="btn btn-warning fw-semibold flex-grow-1" type="button">
+                    <i class="bi bi-cloud-arrow-up me-1"></i>Upload
+                  </button>
+                  <button id="artworkRemove-hero-battle" class="btn btn-outline-light" type="button">
+                    <i class="bi bi-trash me-1"></i>Remove
+                  </button>
+                </div>
+                <div id="artworkStatus-hero-battle" class="form-hint mt-2">Файл не загружен.</div>
+              </div>
+            </section>
+          </div>
+
+          <div class="col-12 col-lg-4">
+            <section class="card content-card h-100">
+              <div class="card-body">
+                <h2 class="h5 mb-1">Duel background</h2>
+                <p class="page-subtitle mb-3">
+                  Фон карточки ONLINE на главном экране клиента.
+                  PNG/JPEG/WebP, до 8 МБ.
+                </p>
+                <div class="artwork-preview mb-3">
+                  <img id="artworkPreview-hero-duel" alt="Duel background" hidden>
+                  <span id="artworkEmpty-hero-duel" class="artwork-empty">Нет изображения</span>
+                </div>
+                <input id="artworkFile-hero-duel" class="form-control mb-2" type="file"
+                       accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+                <div class="d-flex gap-2">
+                  <button id="artworkUpload-hero-duel" class="btn btn-warning fw-semibold flex-grow-1" type="button">
+                    <i class="bi bi-cloud-arrow-up me-1"></i>Upload
+                  </button>
+                  <button id="artworkRemove-hero-duel" class="btn btn-outline-light" type="button">
+                    <i class="bi bi-trash me-1"></i>Remove
+                  </button>
+                </div>
+                <div id="artworkStatus-hero-duel" class="form-hint mt-2">Файл не загружен.</div>
+              </div>
+            </section>
+          </div>
+
+          <div class="col-12 col-lg-4">
+            <section class="card content-card h-100">
+              <div class="card-body">
+                <h2 class="h5 mb-1">Default avatar</h2>
+                <p class="page-subtitle mb-3">
+                  Аватар игроков без собственной картинки. PNG/JPEG/WebP,
+                  до 2 МБ.
+                </p>
+                <div class="artwork-preview artwork-preview-round mb-3">
+                  <img id="artworkPreview-default-avatar" alt="Default avatar" hidden>
+                  <span id="artworkEmpty-default-avatar" class="artwork-empty">Нет изображения</span>
+                </div>
+                <input id="artworkFile-default-avatar" class="form-control mb-2" type="file"
+                       accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp">
+                <div class="d-flex gap-2">
+                  <button id="artworkUpload-default-avatar" class="btn btn-warning fw-semibold flex-grow-1" type="button">
+                    <i class="bi bi-cloud-arrow-up me-1"></i>Upload
+                  </button>
+                  <button id="artworkRemove-default-avatar" class="btn btn-outline-light" type="button">
+                    <i class="bi bi-trash me-1"></i>Remove
+                  </button>
+                </div>
+                <div id="artworkStatus-default-avatar" class="form-hint mt-2">Файл не загружен.</div>
+              </div>
+            </section>
+          </div>
+        </div>
       </div>
 
       <div id="sectionSupport" data-admin-panel="support" hidden>
@@ -2048,6 +2155,7 @@
   <script src="./admin-daily.js?v=20261027-1"></script>
   <script src="./admin-campaigns.js?v=20261114-1"></script>
   <script src="./admin-site.js?v=20261115-1"></script>
+  <script src="./admin-artwork.js?v=20261120-1"></script>
   <script src="./admin-gameplay.js?v=20261110-1"></script>
   <script src="./admin-ui-sounds.js?v=20261111-1"></script>
   <script src="./admin-guitar-skills.js?v=20261115-1"></script>

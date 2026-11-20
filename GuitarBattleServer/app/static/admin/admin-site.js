@@ -1127,6 +1127,11 @@
       if (campaigns) campaigns.show();
     }
     if (name === "builds" && !state.buildsLoaded) loadBuilds();
+    if (name === "artwork") {
+      // Lazy first load; the module keeps its own state.
+      const artwork = window.FFAdminArtwork;
+      if (artwork) artwork.show();
+    }
     if (name === "support") {
       const support = window.FFAdminSupport;
       if (support) support.show();
@@ -1163,6 +1168,10 @@
       const campaigns = window.FFAdminCampaigns;
       if (campaigns) campaigns.refresh();
     } else if (state.section === "builds") loadBuilds();
+    else if (state.section === "artwork") {
+      const artwork = window.FFAdminArtwork;
+      if (artwork) artwork.refresh();
+    }
     else if (state.section === "support") {
       const support = window.FFAdminSupport;
       if (support) support.refresh();

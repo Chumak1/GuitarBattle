@@ -38,13 +38,9 @@ int MainComponent::sectionSidebarWidth() const
 
     const int width = getWidth();
 
-    if (width >= 1400)
-        return 240;
-
-    if (width >= 1100)
-        return 210;
-
-    return 180;
+    // Proportional like the design reference (~13.5% of the window), with hard
+    // limits so the labels never look lost and the content keeps its room.
+    return juce::jlimit (176, 224, juce::roundToInt (static_cast<float> (width) * 0.135f));
 }
 
 int MainComponent::campaignStageCount() const noexcept
@@ -959,6 +955,12 @@ void MainComponent::setSection (AppSection section)
             duelLobbyRefreshTicks = 0;
             refreshDuelLobby();
         }
+
+        // HOME shows the administrator hero artwork and the player avatar, so
+        // re-read the public config when the player returns to the dashboard
+        // (images are cached by URL, only the small JSON is re-fetched).
+        if (section == AppSection::Home)
+            refreshSiteArtwork();
     }
 
     if (sectionSidebar != nullptr)

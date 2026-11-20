@@ -40,6 +40,8 @@ class CompactPlayer(BaseModel):
     user_id: UUID
     username: str
     display_name: str
+    #: Additive: origin-relative avatar URL of the player, ``null`` when unset.
+    avatar_image_url: str | None = None
     level: int = 1
     rating: int = 1000
     presence: Presence = "offline"
@@ -52,6 +54,8 @@ class PublicPlayerCard(BaseModel):
     user_id: UUID
     username: str
     display_name: str
+    #: Additive: origin-relative avatar URL, ``null`` when unset.
+    avatar_image_url: str | None = None
     level: int = 1
     xp_total: int = 0
     rating: int = 1000

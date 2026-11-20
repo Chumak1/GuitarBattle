@@ -223,6 +223,46 @@ public:
         return totalBytes;
     }
 
+    /** POST a file as a multipart form field (avatar upload).
+        Runs on the calling thread: call it from a background thread only.
+    */
+    static Response postFile (const juce::String& apiPath,
+                              const juce::File& file,
+                              const juce::String& fieldName,
+                              const juce::String& mimeType,
+                              const juce::String& bearerToken,
+                              int timeoutMs)
+    {
+        // Never run a blocking upload on the message thread.
+        jassert (! juce::MessageManager::existsAndIsCurrentThread());
+
+        Response response;
+
+        juce::URL url (resolveApiUrl (apiPath));
+        url = url.withFileToUpload (fieldName, file, mimeType);
+
+        juce::String headers;
+
+        if (bearerToken.isNotEmpty())
+            headers << "Authorization: Bearer " << bearerToken << "\r\n";
+
+        auto options = streamOptions()
+                           .withHttpRequestCmd ("POST")
+                           .withConnectionTimeoutMs (timeoutMs)
+                           .withExtraHeaders (headers)
+                           .withStatusCode (&response.statusCode);
+
+        auto stream = url.createInputStream (options);
+
+        if (stream == nullptr)
+            return response;
+
+        response.transportOk = true;
+        response.json = juce::JSON::parse (stream->readEntireStreamAsString());
+
+        return response;
+    }
+
     //==========================================================================
     // Asynchronous helpers - safe to call from the message thread.
 
@@ -261,6 +301,25 @@ public:
         enqueueMetadata ([apiPath, jsonBody, bearerToken, timeoutMs, onResult]
         {
             deliver (onResult, patch (apiPath, jsonBody, bearerToken, timeoutMs));
+        });
+    }
+
+    /** Upload @p file as multipart field @p fieldName on the metadata pool;
+        @p onResult runs on the message thread. Used by the avatar upload.
+    */
+    void postFileAsync (const juce::String& apiPath,
+                        const juce::File& file,
+                        const juce::String& fieldName,
+                        const juce::String& mimeType,
+                        const juce::String& bearerToken,
+                        int timeoutMs,
+                        ResponseCallback onResult)
+    {
+        enqueueMetadata ([apiPath, file, fieldName, mimeType, bearerToken,
+                          timeoutMs, onResult]
+        {
+            deliver (onResult, postFile (apiPath, file, fieldName, mimeType,
+                                         bearerToken, timeoutMs));
         });
     }
 
