@@ -9208,7 +9208,7 @@ void MainComponent::initialiseLanguage()
     // app never asks twice.
     juce::Component::SafePointer<MainComponent> safeThis (this);
 
-    apiClient.getJson ("/site/geo", {}, 4000,
+    apiClient.getJson ("/geo", {}, 4000,
         [safeThis] (ApiClient::Response reply)
         {
             auto* self = safeThis.getComponent();
