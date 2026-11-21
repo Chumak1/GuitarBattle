@@ -9281,6 +9281,10 @@ void MainComponent::initialiseHubShell()
     homeView->setLeaderboardComponents (leaderboardTable, leaderboardLabel);
     addAndMakeVisible (*homeView);
 
+    // Admin artwork is public: fetch it right away so the first HOME paint
+    // already has the uploaded backgrounds and the default avatar.
+    refreshSiteArtwork();
+
     syncHomeView();
 }
 

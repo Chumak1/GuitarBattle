@@ -477,6 +477,17 @@ void MainComponent::timerCallback()
         && gameState.load (std::memory_order_relaxed) == GameState::SongSelect)
     {
         syncHomeView();
+
+        // Pick up artwork uploaded in the admin panel without a restart.
+        if (--artworkRefreshTicks <= 0)
+        {
+            artworkRefreshTicks = 1800;
+            refreshSiteArtwork();
+        }
+    }
+    else
+    {
+        artworkRefreshTicks = 1800;
     }
 
     if (gameState != GameState::Playing)

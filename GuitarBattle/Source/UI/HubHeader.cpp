@@ -243,7 +243,7 @@ void HubHeader::paint (juce::Graphics& g)
 
         g.setColour (juce::Colours::white);
         g.drawImage (avatarImage, avatar,
-                     juce::RectanglePlacement::fillDestination, true);
+                     juce::RectanglePlacement::fillDestination);
 
         g.setColour (Ui::Colours::accent.withAlpha (0.5f));
         g.drawEllipse (avatar.reduced (0.5f), 1.2f);

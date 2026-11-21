@@ -480,22 +480,28 @@ void HomeView::paintHero (juce::Graphics& g, juce::Rectangle<float> area, bool o
 
         if (artwork.isValid())
         {
-            // Admin artwork: cover-cropped to the card, then darkened so the
-            // text column keeps its contrast.
+            // Admin artwork covers the whole card; a left-to-right shade keeps
+            // the text column readable and blends into the panel colour.
             g.setColour (juce::Colours::white);
-            g.drawImage (artwork, art,
-                         juce::RectanglePlacement::fillDestination, true);
+            g.drawImage (artwork, area,
+                         juce::RectanglePlacement::fillDestination);
 
-            g.setColour (juce::Colours::black.withAlpha (0.24f));
-            g.fillRect (art);
+            juce::ColourGradient shade (Ui::Colours::surface.withAlpha (0.95f),
+                                        area.getX(), 0.0f,
+                                        Ui::Colours::surface.withAlpha (0.0f),
+                                        area.getX() + area.getWidth() * 0.74f,
+                                        0.0f, false);
+            shade.addColour (0.42, Ui::Colours::surface.withAlpha (0.62f));
+            g.setGradientFill (shade);
+            g.fillRect (area);
 
             juce::ColourGradient vignette (juce::Colours::transparentBlack,
-                                           art.getCentreX(), art.getY(),
-                                           juce::Colours::black.withAlpha (0.4f),
-                                           art.getCentreX(), art.getBottom(),
+                                           area.getCentreX(), area.getY(),
+                                           juce::Colours::black.withAlpha (0.32f),
+                                           area.getCentreX(), area.getBottom(),
                                            false);
             g.setGradientFill (vignette);
-            g.fillRect (art);
+            g.fillRect (area);
         }
         else if (online)
         {
@@ -506,13 +512,16 @@ void HomeView::paintHero (juce::Graphics& g, juce::Rectangle<float> area, bool o
             paintTowerArt (g, art);
         }
 
-        // Blend the artwork into the text side of the card.
-        juce::ColourGradient fade (Ui::Colours::surface,
-                                   art.getX(), 0.0f,
-                                   Ui::Colours::surface.withAlpha (0.0f),
-                                   art.getX() + 96.0f, 0.0f, false);
-        g.setGradientFill (fade);
-        g.fillRect (art.withWidth (96.0f));
+        if (! artwork.isValid())
+        {
+            // Blend the procedural artwork into the text side of the card.
+            juce::ColourGradient fade (Ui::Colours::surface,
+                                       art.getX(), 0.0f,
+                                       Ui::Colours::surface.withAlpha (0.0f),
+                                       art.getX() + 96.0f, 0.0f, false);
+            g.setGradientFill (fade);
+            g.fillRect (art.withWidth (96.0f));
+        }
     }
 
     const juce::Rectangle<float> textColumn (area.getX() + 22.0f, area.getY(),
@@ -760,16 +769,6 @@ void HomeView::paintPodiumTile (juce::Graphics& g, int slot)
     const juce::Rectangle<float> avatar (tile.getCentreX() - avatarSize * 0.5f, y,
                                          avatarSize, avatarSize);
 
-    // Rank badge on the avatar.
-    const juce::Rectangle<float> badge (avatar.getX() - 4.0f, avatar.getY() - 4.0f,
-                                        22.0f, 22.0f);
-    g.setColour (Ui::Colours::surfaceSunken);
-    g.fillEllipse (badge);
-    g.setColour (medal.withAlpha (0.7f));
-    g.drawEllipse (badge, 1.0f);
-    Ui::label (g, juce::String (player.rank > 0 ? player.rank : index + 1), badge,
-               Ui::semibold (10.0f), medal, juce::Justification::centred);
-
     g.setColour (medal.withAlpha (0.14f));
     g.fillEllipse (avatar);
     g.setColour (medal.withAlpha (0.55f));
@@ -788,7 +787,7 @@ void HomeView::paintPodiumTile (juce::Graphics& g, int slot)
         g.reduceClipRegion (faceClip);
 
         g.setColour (juce::Colours::white);
-        g.drawImage (face, avatar, juce::RectanglePlacement::fillDestination, true);
+        g.drawImage (face, avatar, juce::RectanglePlacement::fillDestination);
     }
     else
     {

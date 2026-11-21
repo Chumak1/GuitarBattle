@@ -68,3 +68,4 @@
     void applyLanguage (I18n::Language language, bool persist);
     void updateLeaderboardHeaderText();
     int homeSyncTicks = 0;
+    int artworkRefreshTicks = 1800;
