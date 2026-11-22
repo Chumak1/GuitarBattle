@@ -1004,3 +1004,234 @@ def test_users_statistics_exposes_level_and_xp(db_client, db_session, admin_user
     assert items[0]["user_id"] == high["id"]
     assert items[0]["level"] == 12
     assert items[0]["xp_total"] == 5000
+
+
+# ---------------------------------------------------------------------------
+# Statistics exclusion ("do not count this profile")
+# ---------------------------------------------------------------------------
+def _exclusion_url(user_id: str) -> str:
+    return f"{helpers.API}/admin/statistics/users/{user_id}"
+
+
+def _set_excluded(client, headers, user_id: str, value: bool):
+    return client.patch(
+        _exclusion_url(user_id),
+        json={"statistics_excluded": value},
+        headers=headers,
+    )
+
+
+def _user_rows(client, headers, **params) -> dict:
+    response = client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"limit": 200, **params},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _overview(client, headers, days: int = 30) -> dict:
+    response = client.get(
+        f"{helpers.API}/admin/statistics/overview",
+        params={"days": days},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def _games(client, headers, days: int = 30) -> dict:
+    response = client.get(
+        f"{helpers.API}/admin/statistics/games",
+        params={"days": days, "limit": 100},
+        headers=headers,
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+def test_new_account_is_counted_by_default(db_client, db_session, admin_user):
+    """The flag defaults to false, both in the API and in the database."""
+    account = helpers.register_user(db_client)
+
+    rows = _user_rows(db_client, admin_user["headers"], search=account["username"])
+    assert rows["total"] == 1
+    assert rows["items"][0]["user_id"] == account["id"]
+    assert rows["items"][0]["statistics_excluded"] is False
+
+    db_session.expire_all()
+    stored = db_session.get(User, uuid.UUID(account["id"]))
+    assert stored.statistics_excluded is False
+
+
+def test_patch_statistics_exclusion_toggles_and_is_idempotent(
+    db_client, db_session, admin_user, user_account
+):
+    user_id = user_account["id"]
+
+    enabled = _set_excluded(db_client, admin_user["headers"], user_id, True)
+    assert enabled.status_code == 200, enabled.text
+    assert enabled.json() == {"user_id": user_id, "statistics_excluded": True}
+
+    db_session.expire_all()
+    assert db_session.get(User, uuid.UUID(user_id)).statistics_excluded is True
+
+    # Sending the stored value again changes nothing and still answers 200.
+    repeated = _set_excluded(db_client, admin_user["headers"], user_id, True)
+    assert repeated.status_code == 200, repeated.text
+    assert repeated.json()["statistics_excluded"] is True
+
+    disabled = _set_excluded(db_client, admin_user["headers"], user_id, False)
+    assert disabled.status_code == 200, disabled.text
+    assert disabled.json() == {"user_id": user_id, "statistics_excluded": False}
+
+    db_session.expire_all()
+    assert db_session.get(User, uuid.UUID(user_id)).statistics_excluded is False
+
+
+def test_patch_statistics_exclusion_requires_admin_and_known_user(
+    db_client, db_session, admin_user, user_account
+):
+    user_id = user_account["id"]
+
+    forbidden = _set_excluded(db_client, user_account["headers"], user_id, True)
+    assert forbidden.status_code == 403
+
+    anonymous = db_client.patch(
+        _exclusion_url(user_id), json={"statistics_excluded": True}
+    )
+    assert anonymous.status_code == 401
+
+    missing = _set_excluded(
+        db_client, admin_user["headers"], str(uuid.uuid4()), True
+    )
+    assert missing.status_code == 404
+
+    # A body without the flag is rejected, not silently treated as false.
+    malformed = db_client.patch(
+        _exclusion_url(user_id), json={}, headers=admin_user["headers"]
+    )
+    assert malformed.status_code == 422
+
+    # None of the rejected calls may flip the flag.
+    db_session.expire_all()
+    assert db_session.get(User, uuid.UUID(user_id)).statistics_excluded is False
+
+
+def test_excluded_accounts_leave_the_overview_and_game_counters(
+    db_client, db_session, admin_user
+):
+    player = helpers.register_user(db_client)
+    friend = helpers.register_user(db_client)
+    _seed_user_activity(db_session, player["id"])
+    _seed_user_activity(db_session, friend["id"])
+
+    # Two players with two sessions each (40 + 60 min), two launches each, plus
+    # the admin account with no telemetry at all.
+    before = _overview(db_client, admin_user["headers"])
+    assert before["users_total"] == 3
+    assert before["users_active_24h"] == 2
+    assert before["users_active_7d"] == 2
+    assert before["sessions_total"] == 4
+    assert before["app_seconds_total"] == 200 * 60
+    assert before["launches_total"] == 4
+    assert before["launches_24h"] == 4
+
+    before_games = {item["game_key"]: item for item in _games(
+        db_client, admin_user["headers"]
+    )["items"]}
+    assert before_games["song"]["launches"] == 2
+    assert before_games["song"]["unique_users"] == 2
+    assert before_games["practice"]["launches"] == 2
+
+    excluded = _set_excluded(db_client, admin_user["headers"], friend["id"], True)
+    assert excluded.status_code == 200, excluded.text
+
+    after = _overview(db_client, admin_user["headers"])
+    assert after["users_total"] == 2
+    assert after["users_active_24h"] == 1
+    assert after["users_active_7d"] == 1
+    assert after["sessions_total"] == 2
+    assert after["app_seconds_total"] == 100 * 60
+    assert after["avg_session_seconds"] == 50 * 60
+    assert after["launches_total"] == 2
+    assert after["launches_24h"] == 2
+
+    after_games = {item["game_key"]: item for item in _games(
+        db_client, admin_user["headers"]
+    )["items"]}
+    assert after_games["song"]["launches"] == 1
+    assert after_games["song"]["unique_users"] == 1
+    assert after_games["practice"]["launches"] == 1
+
+    # The row itself stays listed so the flag can be switched back off.
+    rows = _user_rows(db_client, admin_user["headers"], search=friend["username"])
+    assert rows["total"] == 1
+    assert rows["items"][0]["statistics_excluded"] is True
+
+    restored = _set_excluded(db_client, admin_user["headers"], friend["id"], False)
+    assert restored.status_code == 200, restored.text
+    assert _overview(db_client, admin_user["headers"])["users_total"] == 3
+
+
+def test_users_include_filter_selects_by_the_flag(db_client, admin_user):
+    counted = helpers.register_user(db_client)
+    excluded = helpers.register_user(db_client)
+    assert _set_excluded(
+        db_client, admin_user["headers"], excluded["id"], True
+    ).status_code == 200
+
+    everyone = _user_rows(db_client, admin_user["headers"])
+    assert everyone["total"] == 3
+    assert {item["user_id"] for item in everyone["items"]} == {
+        admin_user["id"],
+        counted["id"],
+        excluded["id"],
+    }
+
+    included = _user_rows(db_client, admin_user["headers"], include="included")
+    assert included["total"] == 2
+    assert {item["user_id"] for item in included["items"]} == {
+        admin_user["id"],
+        counted["id"],
+    }
+    assert all(item["statistics_excluded"] is False for item in included["items"])
+
+    only_excluded = _user_rows(db_client, admin_user["headers"], include="excluded")
+    assert only_excluded["total"] == 1
+    assert [item["user_id"] for item in only_excluded["items"]] == [excluded["id"]]
+    assert only_excluded["items"][0]["statistics_excluded"] is True
+
+    # Paging and the search filter are applied on top of the flag filter.
+    page = _user_rows(
+        db_client,
+        admin_user["headers"],
+        include="included",
+        limit=1,
+        offset=1,
+        sort="username",
+        order="asc",
+    )
+    assert page["total"] == 2
+    assert page["limit"] == 1
+    assert page["offset"] == 1
+    assert len(page["items"]) == 1
+    assert page["items"][0]["user_id"] in {admin_user["id"], counted["id"]}
+
+    searched = _user_rows(
+        db_client,
+        admin_user["headers"],
+        include="excluded",
+        search=counted["username"],
+    )
+    assert searched["total"] == 0
+    assert searched["items"] == []
+
+    invalid = db_client.get(
+        f"{helpers.API}/admin/statistics/users",
+        params={"include": "maybe"},
+        headers=admin_user["headers"],
+    )
+    assert invalid.status_code == 422
+

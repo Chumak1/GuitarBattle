@@ -1621,6 +1621,38 @@ code {
   outline-offset: -2px;
 }
 
+/* Accounts flagged "excluded from statistics": dimmed so it is obvious why the
+ * cards above add up to fewer players than the table lists. The checkbox stays
+ * interactive; the badge next to the login names the state explicitly. */
+.stats-user-row.is-excluded > * {
+  opacity: 0.62;
+}
+
+.stats-user-row.is-excluded .stats-login {
+  color: #b6c2cd;
+}
+
+.stats-excluded-badge {
+  display: inline-block;
+  margin-top: 0.18rem;
+  padding: 0.02rem 0.4rem;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  color: #9fb0c0;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.stats-include-check {
+  width: 1rem;
+  height: 1rem;
+  margin: 0;
+  cursor: pointer;
+  vertical-align: middle;
+}
+
 .stats-mode {
   display: flex;
   flex-direction: column;

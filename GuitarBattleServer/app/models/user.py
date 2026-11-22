@@ -45,6 +45,14 @@ class User(Base):
     email_verified: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    #: Internal statistics opt-out. ``True`` keeps the account and every row it
+    #: produced (app sessions, game launches) out of the admin overview and the
+    #: per-game aggregates, so friends, admin and test accounts do not inflate
+    #: the numbers. The account itself and its public leaderboard place are
+    #: untouched; the flag is toggled from the statistics tab only.
+    statistics_excluded: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
+    )
     # Set once, at registration, when the user accepts the privacy policy.
     # Accounts created before the consent requirement keep NULL: the existing
     # data is never touched.

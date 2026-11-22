@@ -161,6 +161,10 @@ class StatisticsUserItem(BaseModel):
     online_losses: int = 0
     battle_towers_completed: int = 0
     battle_stages_cleared: int = 0
+    # ``True`` when the account is left out of the overview and per-game
+    # counters (friends, admin and test accounts). The row is still listed here
+    # so the flag can be switched back off.
+    statistics_excluded: bool = False
 
 
 class StatisticsUserList(BaseModel):
@@ -168,6 +172,25 @@ class StatisticsUserList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class StatisticsUserExclusionUpdate(BaseModel):
+    """Body of ``PATCH /admin/statistics/users/{user_id}``.
+
+    ``true`` excludes the account from every statistics aggregate, ``false``
+    counts it again. Sending the current value is an idempotent no-op.
+    """
+
+    statistics_excluded: bool = Field(
+        description="True keeps the account out of the internal statistics"
+    )
+
+
+class StatisticsUserExclusion(BaseModel):
+    """The flag as stored after a successful update."""
+
+    user_id: UUID
+    statistics_excluded: bool
 
 
 class StatisticsGameItem(BaseModel):

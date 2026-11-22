@@ -5,10 +5,11 @@ subqueries joined once), so the page stays fast as telemetry grows and the
 database never issues an N+1 query per user.
 """
 from datetime import datetime, timedelta, timezone
+import logging
 from typing import Literal
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import Session
 
@@ -23,6 +24,8 @@ from app.schemas.statistics import (
     StatisticsGameItem,
     StatisticsGameList,
     StatisticsOverview,
+    StatisticsUserExclusion,
+    StatisticsUserExclusionUpdate,
     StatisticsUserItem,
     StatisticsUserList,
     UserPlatform,
@@ -33,6 +36,8 @@ from app.services.admin_user_stats import (
     battle_summary_by_user,
     online_summary_by_user,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin/statistics", tags=["admin: statistics"])
 
@@ -50,6 +55,17 @@ SESSION_SECONDS = func.greatest(
 
 def _window_start(days: int) -> datetime:
     return datetime.now(timezone.utc) - timedelta(days=days)
+
+
+def _included_user_ids():
+    """Ids of the accounts that count towards the internal statistics.
+
+    One scalar subquery, reused by every aggregate: ``IN (SELECT id ...)`` on
+    the primary key keeps the excluded accounts (friends, admin and test
+    players) out of the numbers without a query per row and without a join that
+    could multiply the counts.
+    """
+    return select(User.id).where(User.statistics_excluded.is_(False))
 
 
 def _active_users_since(since: datetime):
@@ -134,40 +150,67 @@ def statistics_overview(
     since = _window_start(days)
     since_24h = now - timedelta(hours=24)
     since_7d = now - timedelta(days=7)
+    # Accounts flagged "excluded" are friends, admin and test players: they are
+    # left out of every counter below so the numbers describe real users.
+    included = _included_user_ids()
 
-    users_total = db.scalar(select(func.count(User.id))) or 0
-    users_active_24h = (
+    users_total = (
         db.scalar(
-            select(func.count()).select_from(_active_users_since(since_24h))
+            select(func.count(User.id)).where(User.statistics_excluded.is_(False))
         )
         or 0
     )
+    active_24h = _active_users_since(since_24h)
+    users_active_24h = (
+        db.scalar(
+            select(func.count())
+            .select_from(active_24h)
+            .where(active_24h.c.user_id.in_(included))
+        )
+        or 0
+    )
+    active_7d = _active_users_since(since_7d)
     users_active_7d = (
-        db.scalar(select(func.count()).select_from(_active_users_since(since_7d))) or 0
+        db.scalar(
+            select(func.count())
+            .select_from(active_7d)
+            .where(active_7d.c.user_id.in_(included))
+        )
+        or 0
     )
     sessions_total = (
         db.scalar(
-            select(func.count(AppSession.id)).where(AppSession.started_at >= since)
+            select(func.count(AppSession.id)).where(
+                AppSession.started_at >= since,
+                AppSession.user_id.in_(included),
+            )
         )
         or 0
     )
     app_seconds_total = int(
         db.scalar(
             select(func.coalesce(func.sum(SESSION_SECONDS), 0)).where(
-                AppSession.started_at >= since
+                AppSession.started_at >= since,
+                AppSession.user_id.in_(included),
             )
         )
         or 0
     )
     launches_total = (
         db.scalar(
-            select(func.count(GameLaunch.id)).where(GameLaunch.started_at >= since)
+            select(func.count(GameLaunch.id)).where(
+                GameLaunch.started_at >= since,
+                GameLaunch.user_id.in_(included),
+            )
         )
         or 0
     )
     launches_24h = (
         db.scalar(
-            select(func.count(GameLaunch.id)).where(GameLaunch.started_at >= since_24h)
+            select(func.count(GameLaunch.id)).where(
+                GameLaunch.started_at >= since_24h,
+                GameLaunch.user_id.in_(included),
+            )
         )
         or 0
     )
@@ -182,7 +225,10 @@ def statistics_overview(
             func.max(User.country_name).label("country_name"),
             country_count,
         )
-        .where(User.country_code.is_not(None))
+        .where(
+            User.country_code.is_not(None),
+            User.statistics_excluded.is_(False),
+        )
         .group_by(User.country_code)
         .order_by(country_count.desc(), User.country_code.asc())
         .limit(10)
@@ -240,6 +286,13 @@ def statistics_users(
         pattern=r"^[A-Za-z]{2}$",
         description="ISO 3166-1 alpha-2 country code of the registration (RU)",
     ),
+    include: Literal["all", "included", "excluded"] = Query(
+        default="all",
+        description=(
+            "Filter by the statistics flag: every account, only the ones counted "
+            "in the aggregates, or only the excluded ones"
+        ),
+    ),
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> StatisticsUserList:
@@ -254,6 +307,11 @@ def statistics_users(
     page (see :func:`_platforms_by_user`), so it adds a single round trip no
     matter how many rows are returned. ``country`` filters on the country of
     registration and is a plain equality on the indexed ``country_code``.
+
+    ``include`` filters on ``users.statistics_excluded``: ``all`` (default)
+    lists every account so the flag can always be switched back, ``included``
+    only the accounts that feed the aggregates, ``excluded`` only the ones that
+    are left out. The filter is part of ``total``, sorting and paging.
 
     The six compact game-mode fields (``online_*``/``battle_*``) are additive:
     they are filled for the current page by one grouped query per mode group
@@ -335,6 +393,10 @@ def statistics_users(
     if country:
         # Stored upper-case; accept lower-case input from the admin URL.
         conditions.append(User.country_code == country.strip().upper())
+    if include == "included":
+        conditions.append(User.statistics_excluded.is_(False))
+    elif include == "excluded":
+        conditions.append(User.statistics_excluded.is_(True))
 
     stmt = (
         select(
@@ -350,6 +412,7 @@ def statistics_users(
             User.last_login_ip,
             User.level,
             User.xp_total,
+            User.statistics_excluded,
             app_seconds.label("app_seconds_total"),
             sessions.label("sessions_count"),
             session_agg.c.last_seen_at,
@@ -416,9 +479,49 @@ def statistics_users(
                 online_losses=int(online.get("online_losses", 0)),
                 battle_towers_completed=int(battle.get("battle_towers_completed", 0)),
                 battle_stages_cleared=int(battle.get("battle_stages_cleared", 0)),
+                statistics_excluded=bool(row.statistics_excluded),
             )
         )
     return StatisticsUserList(items=items, total=int(total), limit=limit, offset=offset)
+
+
+@router.patch(
+    "/users/{user_id}",
+    response_model=StatisticsUserExclusion,
+    summary="Include or exclude an account from the statistics",
+)
+def update_user_statistics_exclusion(
+    user_id: UUID,
+    payload: StatisticsUserExclusionUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_admin),
+) -> StatisticsUserExclusion:
+    """Switch ``users.statistics_excluded`` for one account.
+
+    Idempotent: sending the current value writes nothing and answers with the
+    stored flag, so a double click or a retried request is harmless. The
+    account, its telemetry and its public leaderboard place are untouched; only
+    the aggregates of this tab skip it from now on.
+    """
+    user = db.get(User, user_id)
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="user_not_found"
+        )
+
+    if user.statistics_excluded != payload.statistics_excluded:
+        user.statistics_excluded = payload.statistics_excluded
+        db.commit()
+        logger.info(
+            "admin %s set statistics_excluded=%s for user %s",
+            current_user.id,
+            payload.statistics_excluded,
+            user.id,
+        )
+
+    return StatisticsUserExclusion(
+        user_id=user.id, statistics_excluded=bool(user.statistics_excluded)
+    )
 
 
 @router.get("/games", response_model=StatisticsGameList, summary="Per-game launch statistics")
@@ -433,8 +536,13 @@ def statistics_games(
     A launch may point at a song; the title of the newest launch that has one
     names the group. Keys without a song (``daily_challenge``, ``practice``,
     ``local:<slug>``) keep the key itself as the title.
+
+    Launches of accounts flagged ``statistics_excluded`` are skipped everywhere
+    — the counters, the distinct players, the newest-song title and ``total`` —
+    so the tab reports real players only.
     """
     since = _window_start(days)
+    included = _included_user_ids()
 
     newest_song_launch = (
         select(
@@ -447,7 +555,11 @@ def statistics_games(
             )
             .label("row_number"),
         )
-        .where(GameLaunch.started_at >= since, GameLaunch.song_id.is_not(None))
+        .where(
+            GameLaunch.started_at >= since,
+            GameLaunch.song_id.is_not(None),
+            GameLaunch.user_id.in_(included),
+        )
         .subquery()
     )
 
@@ -469,7 +581,10 @@ def statistics_games(
             ),
         )
         .outerjoin(Song, Song.id == newest_song_launch.c.song_id)
-        .where(GameLaunch.started_at >= since)
+        .where(
+            GameLaunch.started_at >= since,
+            GameLaunch.user_id.in_(included),
+        )
         .group_by(GameLaunch.game_key, Song.title)
         .order_by(launch_count.desc(), GameLaunch.game_key.asc())
         .limit(limit)
@@ -479,7 +594,8 @@ def statistics_games(
     total = (
         db.scalar(
             select(func.count(func.distinct(GameLaunch.game_key))).where(
-                GameLaunch.started_at >= since
+                GameLaunch.started_at >= since,
+                GameLaunch.user_id.in_(included),
             )
         )
         or 0

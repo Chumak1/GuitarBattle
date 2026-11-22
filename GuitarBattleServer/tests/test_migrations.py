@@ -317,6 +317,70 @@ def test_migration_round_trip_keeps_users_and_clears_only_new_column(db_engine, 
         command.upgrade(config, "head")
 
 
+def test_statistics_excluded_column_round_trip(db_engine, clean_db):
+    """0037 adds a NOT NULL boolean that defaults to "counted" for old rows."""
+    config = _alembic_config()
+    assert "statistics_excluded" in _columns(db_engine, "users")
+
+    user_id = uuid.uuid4()
+    with db_engine.begin() as connection:
+        connection.execute(
+            text(
+                """
+                INSERT INTO users (
+                    id, username, email, password_hash, display_name,
+                    email_verified, is_admin, is_active, token_version,
+                    xp_total, level
+                )
+                VALUES (
+                    :id, :username, :email, 'x', 'Stats User',
+                    true, false, true, 0, 0, 1
+                )
+                """
+            ),
+            {
+                "id": user_id,
+                "username": f"stats_{user_id.hex[:12]}",
+                "email": f"stats_{user_id.hex[:12]}@example.com",
+            },
+        )
+        # The server default counts the account without an explicit value.
+        assert (
+            connection.scalar(
+                text("SELECT statistics_excluded FROM users WHERE id = :id"),
+                {"id": user_id},
+            )
+            is False
+        )
+
+    try:
+        command.downgrade(config, "0036_artwork_avatars")
+        assert "statistics_excluded" not in _columns(db_engine, "users")
+        with db_engine.connect() as connection:
+            assert (
+                connection.scalar(
+                    text("SELECT count(*) FROM users WHERE id = :id"),
+                    {"id": user_id},
+                )
+                == 1
+            )
+
+        command.upgrade(config, "head")
+        assert "statistics_excluded" in _columns(db_engine, "users")
+        with db_engine.connect() as connection:
+            # The flag cannot be restored by the downgrade; every account is
+            # counted again, which is the safe default.
+            assert (
+                connection.scalar(
+                    text("SELECT statistics_excluded FROM users WHERE id = :id"),
+                    {"id": user_id},
+                )
+                is False
+            )
+    finally:
+        command.upgrade(config, "head")
+
+
 def test_character_unlocks_backfill_keeps_starters_and_selection(
     db_engine, clean_db
 ):

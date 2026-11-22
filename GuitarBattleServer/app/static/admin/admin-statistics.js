@@ -38,6 +38,10 @@
     days: 30,
     search: "",
     country: "",
+    // "all" | "included" | "excluded": filters the table by the statistics
+    // flag. The aggregates ignore excluded accounts, so this filter explains
+    // why the overview is smaller than the account list.
+    include: "all",
     sort: "last_seen",
     order: "desc",
     offset: 0,
@@ -103,10 +107,13 @@
   async function api(path, options = {}) {
     const token = sessionStorage.getItem(TOKEN_KEY) || "";
     const headers = token ? { Authorization: "Bearer " + token } : {};
+    // PATCH requests carry a JSON body; GET/DELETE keep the plain headers.
+    if (options.body !== undefined) headers["Content-Type"] = "application/json";
 
     const response = await fetch(API_BASE + path, {
       method: options.method || "GET",
       headers,
+      body: options.body,
       credentials: "omit",
     });
     const text = await response.text();
@@ -460,6 +467,7 @@
       ? escapeHtml(user.display_name)
       : '<span class="text-secondary">—</span>';
     const isSelf = currentAdminId() === String(user.user_id);
+    const excluded = Boolean(user.statistics_excluded);
     const bestScore =
       user.best_score == null
         ? ""
@@ -473,12 +481,14 @@
         '<i class="bi bi-trash3"></i></button>';
 
     return (
-      '<tr class="stats-user-row" data-stats-user="' + escapeHtml(user.user_id) +
+      '<tr class="stats-user-row' + (excluded ? " is-excluded" : "") +
+      '" data-stats-user="' + escapeHtml(user.user_id) +
       '" tabindex="0" title="Открыть карточку игрока">' +
       "<td>" +
       '<div class="stats-login">' + escapeHtml(user.username) + "</div>" +
       '<div class="stats-mono">' + escapeHtml(user.user_id) + "</div>" +
       (isSelf ? '<div class="stats-mono stats-self">это вы</div>' : "") +
+      (excluded ? '<div class="stats-excluded-badge">исключён</div>' : "") +
       "</td>" +
       "<td>" + nick + "</td>" +
       '<td class="d-none d-md-table-cell">' + countryCell(user) + "</td>" +
@@ -509,6 +519,12 @@
       escapeHtml(stateLabel) + "</span>" +
       "</div>" +
       "</td>" +
+      '<td class="text-center">' +
+      '<input class="form-check-input stats-include-check" type="checkbox" ' +
+      'data-stats-include="' + escapeHtml(user.user_id) + '"' +
+      (excluded ? "" : " checked") +
+      ' title="Учитывать в статистике" aria-label="Учитывать в статистике">' +
+      "</td>" +
       '<td class="text-end"><div class="action-group">' + deleteButton + "</div></td>" +
       "</tr>"
     );
@@ -522,9 +538,13 @@
         ? "Никого не нашли по этому запросу."
         : state.country
           ? "В этой стране пока нет игроков."
-          : "Пока нет ни одного игрока.";
+          : state.include === "excluded"
+            ? "Исключённых аккаунтов нет."
+            : state.include === "included"
+              ? "Все аккаунты исключены из статистики."
+              : "Пока нет ни одного игрока.";
       body.innerHTML =
-        '<tr><td colspan="15" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
+        '<tr><td colspan="16" class="stats-table-empty">' + escapeHtml(message) + "</td></tr>";
     } else {
       body.innerHTML = state.users.map(userRow).join("");
     }
@@ -544,7 +564,7 @@
     });
     if (loading) {
       el("statsUsersBody").innerHTML =
-        '<tr><td colspan="15" class="table-loading">' +
+        '<tr><td colspan="16" class="table-loading">' +
         '<span class="spinner-border spinner-border-sm me-2"></span>Загрузка…</td></tr>';
     }
   }
@@ -561,6 +581,7 @@
       });
       if (state.search) params.set("search", state.search);
       if (state.country) params.set("country", state.country);
+      if (state.include && state.include !== "all") params.set("include", state.include);
       const data = await api("/admin/statistics/users?" + params.toString());
       if (requestId !== state.usersRequestId) return;
       state.users = data.items || [];
@@ -620,8 +641,49 @@
     }
   }
 
-  /* ---------- one account card ---------- */
+  /* Optimistic toggle of the "count in statistics" flag. The checkbox flips
+   * immediately; a failed PATCH restores the previous value and reports through
+   * the page toast (the alert box is the fallback when the toast helper is not
+   * loaded). The whole tab is reloaded afterwards because the overview, the
+   * per-game counters and the include filter all depend on the flag. */
+  async function setStatisticsExcluded(userId, excluded) {
+    const user = state.users.find((item) => String(item.user_id) === String(userId));
+    if (!user) return;
+    const previous = Boolean(user.statistics_excluded);
+    if (previous === excluded) return;
 
+    user.statistics_excluded = excluded;
+    renderUsers();
+    showAlert("");
+
+    try {
+      const result = await api(
+        "/admin/statistics/users/" + encodeURIComponent(userId),
+        {
+          method: "PATCH",
+          body: JSON.stringify({ statistics_excluded: excluded }),
+        },
+      );
+      user.statistics_excluded = Boolean(result.statistics_excluded);
+      renderUsers();
+      notify(
+        user.statistics_excluded
+          ? "Аккаунт " + user.username + " исключён из статистики."
+          : "Аккаунт " + user.username + " снова учитывается в статистике.",
+      );
+      await Promise.all([loadUsers(), loadOverview(), loadGames()]);
+    } catch (error) {
+      user.statistics_excluded = previous;
+      renderUsers();
+      if (error.status !== 401 && error.status !== 403) {
+        const message = errorText(error);
+        showAlert(message);
+        notify(message, "danger");
+      }
+    }
+  }
+
+  /* ---------- one account card ---------- */
   /* The API answers these English codes for the character endpoints; the panel
    * shows a Russian sentence instead of the raw code. */
   const CHARACTER_ERRORS = {
@@ -1036,6 +1098,16 @@
     });
 
     el("statsUsersBody")?.addEventListener("click", (event) => {
+      const toggle = event.target.closest("[data-stats-include]");
+      if (toggle) {
+        // The checkbox lives inside a clickable row: toggle the flag instead of
+        // opening the account card.
+        setStatisticsExcluded(
+          toggle.getAttribute("data-stats-include"),
+          toggle.checked,
+        );
+        return;
+      }
       const remove = event.target.closest("[data-stats-delete]");
       if (remove) {
         deleteUser(remove.getAttribute("data-stats-delete"));
@@ -1048,7 +1120,7 @@
     /* Rows are focusable so the card is reachable from the keyboard. */
     el("statsUsersBody")?.addEventListener("keydown", (event) => {
       if (event.key !== "Enter" && event.key !== " ") return;
-      if (event.target.closest("button")) return;
+      if (event.target.closest("button, input")) return;
       const row = event.target.closest("tr[data-stats-user]");
       if (!row) return;
       event.preventDefault();
@@ -1072,6 +1144,12 @@
 
     el("statsCountry")?.addEventListener("change", (event) => {
       state.country = event.target.value || "";
+      state.offset = 0;
+      loadUsers();
+    });
+
+    el("statsInclude")?.addEventListener("change", (event) => {
+      state.include = event.target.value || "all";
       state.offset = 0;
       loadUsers();
     });

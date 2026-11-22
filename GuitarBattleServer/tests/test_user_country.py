@@ -603,7 +603,7 @@ def test_admin_users_table_has_a_country_column():
     html = (ADMIN_STATIC / "index.html").read_text(encoding="utf-8")
     assert "Страна" in html
     # The loading row must span every column of the users table.
-    assert 'colspan="13"' in html
+    assert 'colspan="16"' in html
 
 
 def test_admin_statistics_has_a_country_filter():
@@ -616,10 +616,10 @@ def test_admin_statistics_has_a_country_filter():
     assert "renderCountryOptions" in script
     assert "countryCell" in script
     assert 'params.set("country", state.country)' in script
-    assert 'colspan="13"' in script
+    assert 'colspan="16"' in script
 
 
 def test_admin_assets_are_cache_busted():
     html = (ADMIN_STATIC / "index.html").read_text(encoding="utf-8")
-    assert "admin-statistics.js?v=20261110-1" in html
-    assert "admin.css?v=20261115-1" in html
+    assert "admin-statistics.js?v=20261122-1" in html
+    assert "admin.css?v=20261122-1" in html
