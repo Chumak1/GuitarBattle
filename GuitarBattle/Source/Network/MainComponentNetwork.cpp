@@ -2977,6 +2977,25 @@ void MainComponent::showUpdateFailurePrompt (const juce::String& version)
     const auto currentVersion = juce::String (ProjectInfo::versionString).trim();
     const auto logPath = updateLogFile().getFullPathName();
 
+    // The helper writes exactly one line per step, so the tail of the log names
+    // the step that failed ("move old failed", "ditto failed", ...). Showing it
+    // here means the player can send the reason together with the screenshot
+    // instead of digging in ~/Library.
+    juce::String tail;
+
+    if (auto log = updateLogFile(); log.existsAsFile())
+    {
+        auto lines = juce::StringArray::fromLines (log.loadFileAsString()
+                                                       .trimEnd());
+        lines.removeEmptyStrings();
+
+        while (lines.size() > 8)
+            lines.remove (0);
+
+        if (! lines.isEmpty())
+            tail = "\n\nWhat the updater logged:\n" + lines.joinIntoString ("\n");
+    }
+
     juce::String message;
     message << "FretFight " << version << " could not be installed automatically, so the game "
             << "is still on " << currentVersion << ".\n\n"
@@ -2984,7 +3003,8 @@ void MainComponent::showUpdateFailurePrompt (const juce::String& version)
             << "1. Open https://fretfight.online in your browser.\n"
             << "2. Download the macOS version.\n"
             << "3. Quit FretFight, drag FretFight.app into Applications and choose Replace.\n\n"
-            << "Diagnostics: " << logPath;
+            << "Diagnostics: " << logPath
+            << tail;
 
     logUpdate ("update problem: automatic install did not finish for " + version);
 
@@ -3420,30 +3440,72 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
     // next to the old one, swaps them with mv (so a failure never leaves the
     // player without an app), clears the quarantine flag and starts the new
     // build. Each step is logged for the case where it still fails.
+    //
+    // Two failure modes are handled explicitly:
+    //  * macOS may refuse to move a bundle in /Applications when the app has
+    //    no App Management permission. The rule shows up as EPERM, so the move
+    //    is retried once through osascript with administrator privileges; the
+    //    player sees the system password prompt instead of a silent no-op.
+    //  * the swap is verified by reading the bundle version back. A bundle
+    //    that did not become the advertised build is rolled back, so the app
+    //    never starts the same old version and offers the update again.
     juce::String script;
     script << "#!/bin/sh\n"
            << "LOG=\"" << logPath << "\"\n"
            << "APP=\"" << appPath << "\"\n"
            << "STAGED=\"" << stagedApp.getFullPathName() << "\"\n"
            << "ATTEMPT=\"" << attemptPath << "\"\n"
+           << "TARGET=\"" << targetVersion << "\"\n"
            << "log() { printf '%s %s\\n' \"$(date '+%Y-%m-%d %H:%M:%S')\" \"$1\" >> \"$LOG\"; }\n"
-           << "log \"helper start pid=" << appPid << "\"\n"
+           << "log \"helper start pid=" << appPid << " user=$(id -un) macos=$(sw_vers -productVersion 2>/dev/null)\"\n"
            << "i=0\n"
            << "while kill -0 " << appPid << " 2>/dev/null; do sleep 0.5; i=$((i+1)); "
               "if [ \"$i\" -gt 240 ]; then break; fi; done\n"
            << "log \"app stopped\"\n"
            << "PARENT=$(dirname \"$APP\")\n"
+           << "log \"parent $(ls -ld \"$PARENT\" 2>&1)\"\n"
            << "NEW=\"$PARENT/.FretFight-new.$$\"\n"
            << "OLD=\"$PARENT/.FretFight-old.$$\"\n"
            << "rm -rf \"$NEW\"\n"
            << "if /usr/bin/ditto \"$STAGED\" \"$NEW\" >> \"$LOG\" 2>&1; then\n"
            << "  log \"copy ready\"\n"
+           << "  moved=0\n"
            << "  if mv \"$APP\" \"$OLD\" >> \"$LOG\" 2>&1; then\n"
+           << "    moved=1\n"
+           << "  else\n"
+           << "    log \"move old failed, retrying with administrator privileges\"\n"
+           << "    if /usr/bin/osascript -e \"do shell script \\\"mv '$APP' '$OLD'\\\" "
+              "with administrator privileges\" >> \"$LOG\" 2>&1; then\n"
+           << "      moved=1\n"
+           << "      log \"move old done with privileges\"\n"
+           << "    fi\n"
+           << "  fi\n"
+           << "  if [ \"$moved\" -eq 1 ]; then\n"
+           << "    installed=0\n"
            << "    if mv \"$NEW\" \"$APP\" >> \"$LOG\" 2>&1; then\n"
-           << "      log \"installed\"\n"
+           << "      installed=1\n"
+           << "    else\n"
+           << "      log \"move new failed, retrying with administrator privileges\"\n"
+           << "      if /usr/bin/osascript -e \"do shell script \\\"mv '$NEW' '$APP'\\\" "
+              "with administrator privileges\" >> \"$LOG\" 2>&1; then\n"
+           << "        installed=1\n"
+           << "        log \"move new done with privileges\"\n"
+           << "      fi\n"
+           << "    fi\n"
+           << "    if [ \"$installed\" -eq 1 ]; then\n"
            << "      /usr/bin/xattr -dr com.apple.quarantine \"$APP\" >> \"$LOG\" 2>&1\n"
-           << "      rm -rf \"$OLD\"\n"
-           << "      rm -f \"$ATTEMPT\"\n"
+           << "      GOT=$(/usr/libexec/PlistBuddy -c \"Print :CFBundleShortVersionString\" "
+              "\"$APP/Contents/Info.plist\" 2>/dev/null | tr -d '\\n')\n"
+           << "      log \"installed version=$GOT target=$TARGET\"\n"
+           << "      if [ -z \"$GOT\" ] || [ \"$GOT\" = \"$TARGET\" ]; then\n"
+           << "        rm -rf \"$OLD\"\n"
+           << "        rm -f \"$ATTEMPT\"\n"
+           << "        log \"installed\"\n"
+           << "      else\n"
+           << "        log \"version mismatch after install, restoring\"\n"
+           << "        rm -rf \"$APP\"\n"
+           << "        mv \"$OLD\" \"$APP\" >> \"$LOG\" 2>&1\n"
+           << "      fi\n"
            << "    else\n"
            << "      log \"move new failed, restoring\"\n"
            << "      mv \"$OLD\" \"$APP\" >> \"$LOG\" 2>&1\n"
@@ -3470,8 +3532,22 @@ void MainComponent::applyDownloadedUpdate (const juce::File& downloadedFile,
     // Record the attempt before starting anything. The helper deletes this
     // marker once the new bundle is in place, so a marker that is still here
     // on the next launch means the swap never happened and the player must be
-    // offered the installer instead of the same prompt in a loop.
-    updateAttemptFile().replaceWithText (targetVersion + "\n");
+    // offered the installer instead of the same prompt in a loop. The state
+    // directory is created first: File::replaceWithText does not create missing
+    // parents, and a missing marker would hide exactly that failure.
+    if (! updateStateDirectory().createDirectory())
+    {
+        showUpdateProblem ("The updater cannot write to:\n"
+                           + updateStateDirectory().getFullPathName());
+        return;
+    }
+
+    if (! updateAttemptFile().replaceWithText (targetVersion + "\n"))
+    {
+        showUpdateProblem ("The updater cannot write its state file to:\n"
+                           + updateStateDirectory().getFullPathName());
+        return;
+    }
 
     int helperPid = 0;
     bool started = startDetachedProcess ({ "/bin/sh", helper.getFullPathName() },
