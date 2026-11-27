@@ -622,4 +622,4 @@ def test_admin_statistics_has_a_country_filter():
 def test_admin_assets_are_cache_busted():
     html = (ADMIN_STATIC / "index.html").read_text(encoding="utf-8")
     assert "admin-statistics.js?v=20261122-1" in html
-    assert "admin.css?v=20261122-1" in html
+    assert "admin.css?v=20261124-1" in html

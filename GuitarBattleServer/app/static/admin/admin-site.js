@@ -9,6 +9,14 @@
   const API_BASE = "/api/v1";
   const TOKEN_KEY = "guitarbattle.admin.token";
   const I18N = window.FFI18N;
+  // Mirrors MAX_SCREENSHOTS in app/schemas/site.py; the server rejects extras.
+  const MAX_SHOTS = 12;
+  // The official trailers, also used as defaults when a saved CMS document has
+  // no link yet. RU runs on /, EN on /en.
+  const TRAILER_URLS = {
+    ru: "https://www.youtube.com/watch?v=FhE07g-8Jm0",
+    en: "https://www.youtube.com/watch?v=HJaP-HcZO5o",
+  };
 
   const SCHEMA = [
     {
@@ -24,6 +32,25 @@
       key: "facts",
       title: "Коротко о проекте",
       rows: [{ kind: "pairs", key: "items", label: "Факты — заголовок | текст" }],
+    },
+    {
+      key: "modes",
+      title: "Режимы игры",
+      rows: [
+        { kind: "field", key: "kicker", label: "Надзаголовок" },
+        { kind: "field", key: "title", label: "Заголовок" },
+        { kind: "text", key: "text", label: "Описание" },
+        { kind: "pairs", key: "cards", label: "Карточки — заголовок | текст" },
+      ],
+    },
+    {
+      key: "screens",
+      title: "Скриншоты",
+      rows: [
+        { kind: "field", key: "kicker", label: "Надзаголовок" },
+        { kind: "field", key: "title", label: "Заголовок" },
+        { kind: "text", key: "text", label: "Описание" },
+      ],
     },
     {
       key: "about",
@@ -53,6 +80,24 @@
         { kind: "field", key: "kicker", label: "Надзаголовок" },
         { kind: "field", key: "title", label: "Заголовок" },
         { kind: "pairs", key: "cards", label: "Карточки — заголовок | текст" },
+      ],
+    },
+    {
+      key: "trailer",
+      title: "Трейлер",
+      hint:
+        "Ссылки: youtube.com/watch?v=…, youtu.be/… или youtube.com/shorts/…. " +
+        "Сохраняется нормализованная ссылка https://www.youtube.com/watch?v=<id>. " +
+        "Пустое поле скрывает трейлер для этого языка.",
+      rows: [
+        { kind: "field", key: "kicker", label: "Надзаголовок" },
+        { kind: "field", key: "title", label: "Заголовок" },
+        { kind: "text", key: "text", label: "Описание" },
+        {
+          kind: "field",
+          key: "url",
+          label: "Ссылка на YouTube — RU | EN (пустое поле скрывает трейлер)",
+        },
       ],
     },
     {
@@ -89,6 +134,7 @@
   const state = {
     content: null,
     loaded: false,
+    screenshots: [],
     builds: [],
     buildsLoaded: false,
     buildsPlatform: "",
@@ -288,6 +334,20 @@
       facts: {
         items: [1, 2, 3, 4].map(fact),
       },
+      modes: {
+        kicker: r("landing.modes.kicker"),
+        title: r("landing.modes.title"),
+        text: r("landing.modes.text"),
+        cards: [1, 2, 3].map((index) => ({
+          title: r("landing.modes.card" + index + ".title"),
+          text: r("landing.modes.card" + index + ".text"),
+        })),
+      },
+      screens: {
+        kicker: r("landing.screens.kicker"),
+        title: r("landing.screens.title"),
+        text: r("landing.screens.text"),
+      },
       about: {
         kicker: r("landing.about.kicker"),
         title: r("landing.about.title"),
@@ -319,6 +379,12 @@
           title: r("landing.features.card" + index + ".title"),
           text: r("landing.features.card" + index + ".text"),
         })),
+      },
+      trailer: {
+        kicker: r("landing.trailer.kicker"),
+        title: r("landing.trailer.title"),
+        text: r("landing.trailer.text"),
+        url: TRAILER_URLS[lang],
       },
       requirements: {
         kicker: r("landing.req.kicker"),
@@ -548,6 +614,13 @@
       meta.rows.forEach((row) => renderRow(rows, block, row));
       body.appendChild(rows);
 
+      if (meta.hint) {
+        const hint = document.createElement("p");
+        hint.className = "form-hint mt-2 mb-0";
+        hint.textContent = meta.hint;
+        body.appendChild(hint);
+      }
+
       card.appendChild(body);
       container.appendChild(card);
     });
@@ -679,6 +752,215 @@
     }
   }
 
+  /* ---------- screenshots ---------- */
+
+  function shotButton(label, title, action, index, disabled, danger) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "btn btn-sm " + (danger ? "btn-outline-danger" : "btn-outline-light");
+    button.textContent = label;
+    button.title = title;
+    button.disabled = disabled;
+    button.dataset.shotAction = action;
+    button.dataset.index = String(index);
+    return button;
+  }
+
+  function shotCaption(label, lang, value, url) {
+    const wrapper = document.createElement("label");
+    wrapper.className = "landing-shot__caption";
+
+    const caption = document.createElement("span");
+    caption.className = "landing-lang-label";
+    caption.textContent = label;
+
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "form-control";
+    input.maxLength = 200;
+    input.value = value || "";
+    input.placeholder = lang === "ru" ? "Подпись (RU)" : "Caption (EN)";
+    input.dataset.shotCaption = lang;
+    input.dataset.url = url;
+
+    wrapper.appendChild(caption);
+    wrapper.appendChild(input);
+    return wrapper;
+  }
+
+  function renderScreenshots() {
+    const grid = el("landingShotsGrid");
+    const empty = el("landingShotsEmpty");
+    const counter = el("landingShotsCount");
+    const upload = el("landingShotsUpload");
+    if (!grid) return;
+
+    const items = Array.isArray(state.screenshots) ? state.screenshots : [];
+    grid.textContent = "";
+    if (counter) counter.textContent = items.length + " из " + MAX_SHOTS;
+    if (empty) empty.hidden = items.length > 0;
+    if (upload) upload.disabled = items.length >= MAX_SHOTS;
+
+    items.forEach((item, index) => {
+      const card = document.createElement("article");
+      card.className = "landing-shot";
+      card.dataset.url = item.url;
+
+      const preview = document.createElement("a");
+      preview.className = "landing-shot__preview";
+      preview.href = item.url;
+      preview.target = "_blank";
+      preview.rel = "noopener noreferrer";
+      const image = document.createElement("img");
+      image.src = item.url;
+      image.alt = item.caption_ru || item.caption_en || "Скриншот";
+      image.loading = "lazy";
+      preview.appendChild(image);
+      card.appendChild(preview);
+
+      const body = document.createElement("div");
+      body.className = "landing-shot__body";
+
+      const head = document.createElement("div");
+      head.className = "d-flex justify-content-between align-items-center gap-2";
+
+      const order = document.createElement("span");
+      order.className = "landing-shot__index";
+      order.textContent = String(index + 1).padStart(2, "0");
+
+      const actions = document.createElement("div");
+      actions.className = "landing-shot__actions";
+      actions.appendChild(shotButton("↑", "Выше", "up", index, index === 0, false));
+      actions.appendChild(
+        shotButton("↓", "Ниже", "down", index, index === items.length - 1, false)
+      );
+      actions.appendChild(shotButton("✕", "Удалить", "remove", index, false, true));
+
+      head.appendChild(order);
+      head.appendChild(actions);
+      body.appendChild(head);
+
+      body.appendChild(shotCaption("RU", "ru", item.caption_ru, item.url));
+      body.appendChild(shotCaption("EN", "en", item.caption_en, item.url));
+
+      card.appendChild(body);
+      grid.appendChild(card);
+    });
+  }
+
+  async function patchScreenshots(successMessage) {
+    showAlert("landingShotsAlert", "");
+    try {
+      const data = await api("/admin/site/landing/screenshots", {
+        method: "PATCH",
+        body: { screenshots: state.screenshots },
+      });
+      state.screenshots = (data && data.screenshots) || [];
+      renderScreenshots();
+      if (successMessage) {
+        showAlert("landingShotsAlert", successMessage, "success");
+      }
+    } catch (error) {
+      showAlert("landingShotsAlert", errorText(error));
+      // The server keeps the previous list; reload so the grid shows the truth.
+      loadScreenshots();
+    }
+  }
+
+  async function loadScreenshots() {
+    try {
+      const data = await api("/admin/site/landing");
+      state.screenshots = (data && data.screenshots) || [];
+      renderScreenshots();
+    } catch (error) {
+      showAlert("landingShotsAlert", errorText(error));
+    }
+  }
+
+  function moveScreenshot(index, delta) {
+    const items = (state.screenshots || []).slice();
+    const target = index + delta;
+    if (target < 0 || target >= items.length) return;
+    const moved = items.splice(index, 1)[0];
+    items.splice(target, 0, moved);
+    state.screenshots = items;
+    renderScreenshots();
+    patchScreenshots("Порядок сохранён.");
+  }
+
+  async function removeScreenshot(url) {
+    if (!window.confirm("Удалить скриншот? Файл будет удалён с сервера.")) return;
+    showAlert("landingShotsAlert", "");
+    try {
+      const data = await api(
+        "/admin/site/landing/screenshots?url=" + encodeURIComponent(url),
+        { method: "DELETE" }
+      );
+      state.screenshots = (data && data.screenshots) || [];
+      renderScreenshots();
+      showAlert("landingShotsAlert", "Скриншот удалён.", "success");
+    } catch (error) {
+      showAlert("landingShotsAlert", errorText(error));
+    }
+  }
+
+  async function saveShotCaption(input) {
+    const url = input.getAttribute("data-url");
+    const lang = input.getAttribute("data-shot-caption");
+    const item = (state.screenshots || []).find((shot) => shot.url === url);
+    if (!item) return;
+
+    const value = input.value.trim().slice(0, 200);
+    const field = lang === "en" ? "caption_en" : "caption_ru";
+    if ((item[field] || "") === value) return;
+    item[field] = value;
+    patchScreenshots("Подписи сохранены.");
+  }
+
+  async function uploadScreenshots() {
+    const input = el("landingShotsFile");
+    const files = input && input.files ? Array.prototype.slice.call(input.files) : [];
+    if (!files.length) {
+      showAlert("landingShotsAlert", "Выберите файлы изображений.");
+      return;
+    }
+
+    const button = el("landingShotsUpload");
+    const spinner = el("landingShotsSpinner");
+    if (button) button.disabled = true;
+    if (spinner) spinner.hidden = false;
+    showAlert("landingShotsAlert", "");
+
+    let uploaded = 0;
+    try {
+      for (const file of files) {
+        if ((state.screenshots || []).length >= MAX_SHOTS) {
+          throw new Error("Достигнут лимит " + MAX_SHOTS + " скриншотов.");
+        }
+        const form = new FormData();
+        form.append("file", file);
+        const data = await api("/admin/site/landing/screenshots", {
+          method: "POST",
+          body: form,
+        });
+        state.screenshots = (data && data.screenshots) || [];
+        uploaded += 1;
+        renderScreenshots();
+      }
+      if (input) input.value = "";
+      showAlert(
+        "landingShotsAlert",
+        "Загружено скриншотов: " + uploaded + ".",
+        "success"
+      );
+    } catch (error) {
+      showAlert("landingShotsAlert", errorText(error));
+    } finally {
+      if (spinner) spinner.hidden = true;
+      renderScreenshots();
+    }
+  }
+
   /* ---------- landing load/save ---------- */
 
   async function loadLanding() {
@@ -696,8 +978,10 @@
         blocks: mergeSaved(baseBlocks(), data.blocks),
         hero_background: data.hero_background || { type: "none", url: null, poster_url: null },
       };
+      state.screenshots = data.screenshots || [];
       renderEditor();
       renderBackground();
+      renderScreenshots();
     } catch (error) {
       state.loaded = false;
       showAlert("landingAlert", errorText(error));
@@ -723,8 +1007,10 @@
         blocks: mergeSaved(baseBlocks(), data.blocks),
         hero_background: data.hero_background || { type: "none", url: null, poster_url: null },
       };
+      state.screenshots = data.screenshots || [];
       renderEditor();
       renderBackground();
+      renderScreenshots();
       showAlert("landingAlert", "Сохранено. Изменения уже на сайте.", "success");
     } catch (error) {
       showAlert("landingAlert", errorText(error));
@@ -1206,6 +1492,23 @@
     el("contactsSave")?.addEventListener("click", saveContacts);
     el("landingBgUpload")?.addEventListener("click", uploadBackground);
     el("landingBgRemove")?.addEventListener("click", removeBackground);
+    el("landingShotsUpload")?.addEventListener("click", uploadScreenshots);
+    el("landingShotsGrid")?.addEventListener("click", (event) => {
+      const button = event.target.closest("[data-shot-action]");
+      if (!button) return;
+      const index = Number(button.getAttribute("data-index"));
+      const action = button.getAttribute("data-shot-action");
+      if (action === "up") moveScreenshot(index, -1);
+      else if (action === "down") moveScreenshot(index, 1);
+      else if (action === "remove") {
+        const card = button.closest("[data-url]");
+        if (card) removeScreenshot(card.getAttribute("data-url"));
+      }
+    });
+    el("landingShotsGrid")?.addEventListener("change", (event) => {
+      const input = event.target.closest("[data-shot-caption]");
+      if (input) saveShotCaption(input);
+    });
     el("buildsReload")?.addEventListener("click", loadBuilds);
     el("buildForm")?.addEventListener("submit", uploadBuild);
     el("buildPlatform")?.addEventListener("change", syncBuildHints);

@@ -1,7 +1,15 @@
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+#: Hard cap of the landing screenshot gallery. The whole CMS document travels
+#: to the browser on every visit, so the gallery cannot grow without a bound.
+MAX_SCREENSHOTS = 12
+#: Uploads of the gallery live next to the hero background and are served by the
+#: same ``/media/landing`` mount.
+SCREENSHOT_URL_PREFIX = "/media/landing/"
+MAX_SCREENSHOT_CAPTION = 200
 
 
 class HeroBackground(BaseModel):
@@ -39,9 +47,73 @@ class LandingDownloads(BaseModel):
     macos: DownloadInfo | None = None
 
 
+class LandingScreenshot(BaseModel):
+    """One administrator-uploaded screenshot of the game.
+
+    ``url`` is always a file inside the landing media directory: the editor
+    never types a URL by hand, it only reorders and captions uploaded files.
+    The validators keep a hand-edited CMS document from turning the field into
+    an arbitrary link or a path escape.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    url: str = Field(..., max_length=512)
+    caption_ru: str = ""
+    caption_en: str = ""
+
+    @field_validator("url")
+    @classmethod
+    def _check_url(cls, value: str) -> str:
+        value = value.strip()
+        if not value.startswith(SCREENSHOT_URL_PREFIX):
+            raise ValueError(
+                f"screenshot url must start with {SCREENSHOT_URL_PREFIX}"
+            )
+        name = value[len(SCREENSHOT_URL_PREFIX):]
+        if (
+            not name
+            or name in {".", ".."}
+            or "/" in name
+            or "\\" in name
+            or ".." in name
+            or "?" in name
+            or "#" in name
+        ):
+            raise ValueError(
+                "screenshot url must name a file inside /media/landing/"
+            )
+        return value
+
+    @field_validator("caption_ru", "caption_en")
+    @classmethod
+    def _clean_caption(cls, value: str) -> str:
+        value = value.strip()
+        if len(value) > MAX_SCREENSHOT_CAPTION:
+            raise ValueError(
+                f"screenshot caption is longer than {MAX_SCREENSHOT_CAPTION} characters"
+            )
+        return value
+
+
+def _check_screenshot_list(
+    value: list[LandingScreenshot] | None,
+) -> list[LandingScreenshot] | None:
+    """Shared limit/duplicate checks of the editable gallery."""
+    if value is None:
+        return None
+    if len(value) > MAX_SCREENSHOTS:
+        raise ValueError(f"at most {MAX_SCREENSHOTS} screenshots are allowed")
+    urls = [item.url for item in value]
+    if len(set(urls)) != len(urls):
+        raise ValueError("screenshot urls must be unique")
+    return value
+
+
 class LandingResponse(BaseModel):
     blocks: dict[str, Any] = Field(default_factory=dict)
     hero_background: HeroBackground = Field(default_factory=HeroBackground)
+    screenshots: list[LandingScreenshot] = Field(default_factory=list)
     download: DownloadInfo = Field(default_factory=DownloadInfo)
     downloads: LandingDownloads = Field(default_factory=LandingDownloads)
     #: Portable ZIPs used by the installed client to update itself. Additive:
@@ -63,11 +135,40 @@ class GeoResponse(BaseModel):
 class AdminLandingUpdate(BaseModel):
     blocks: dict[str, Any] = Field(default_factory=dict)
     hero_background: HeroBackground | None = None
+    #: ``None`` keeps the gallery that is already stored; a list replaces it.
+    screenshots: list[LandingScreenshot] | None = None
+
+    @field_validator("screenshots")
+    @classmethod
+    def _check_screenshots(
+        cls, value: list[LandingScreenshot] | None
+    ) -> list[LandingScreenshot] | None:
+        return _check_screenshot_list(value)
 
 
 class AdminLandingResponse(BaseModel):
     blocks: dict[str, Any] = Field(default_factory=dict)
     hero_background: HeroBackground = Field(default_factory=HeroBackground)
+    screenshots: list[LandingScreenshot] = Field(default_factory=list)
+
+
+class ScreenshotsUpdate(BaseModel):
+    """Replace the gallery: order and captions of the uploaded screenshots."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    screenshots: list[LandingScreenshot] = Field(default_factory=list)
+
+    @field_validator("screenshots")
+    @classmethod
+    def _check_screenshots(
+        cls, value: list[LandingScreenshot]
+    ) -> list[LandingScreenshot]:
+        return _check_screenshot_list(value) or []
+
+
+class ScreenshotsResponse(BaseModel):
+    screenshots: list[LandingScreenshot] = Field(default_factory=list)
 
 
 class HeroBackgroundResponse(BaseModel):

@@ -17,11 +17,16 @@
   }
 
   function block(key) {
-    if (!state.data || !state.data.blocks) return null;
-    var raw = state.data.blocks[key];
-    if (!raw || typeof raw !== 'object') return null;
+    var raw = rawBlock(key);
+    if (!raw) return null;
     var localized = raw[lang()] || null;
     return { visible: raw.visible !== false, data: localized };
+  }
+
+  function rawBlock(key) {
+    if (!state.data || !state.data.blocks) return null;
+    var raw = state.data.blocks[key];
+    return raw && typeof raw === 'object' ? raw : null;
   }
 
   function setVisible(selector, visible) {
@@ -116,6 +121,206 @@
       fact.appendChild(title);
       fact.appendChild(value);
       wrap.appendChild(fact);
+    });
+  }
+
+  /* ---------- screenshot gallery ---------- */
+
+  // Only origin-relative uploads of this server are rendered: the API validates
+  // them too, but the page does not trust a hand-edited CMS document.
+  var SCREEN_PREFIX = '/media/landing/';
+
+  function captionFor(item) {
+    var ru = typeof item.caption_ru === 'string' ? item.caption_ru : '';
+    var en = typeof item.caption_en === 'string' ? item.caption_en : '';
+    return lang() === 'en' ? (en || ru) : (ru || en);
+  }
+
+  function renderScreens() {
+    var section = document.getElementById('screens');
+    var grid = document.getElementById('screensGallery');
+    if (!section || !grid) return;
+
+    var b = block('screens');
+    if (b && b.data) {
+      text(document.querySelector('#screens .kicker'), b.data.kicker);
+      text(document.getElementById('screens-title'), b.data.title);
+      text(document.querySelector('#screens .section-head > p:last-child'), b.data.text);
+    }
+
+    var items = state.data && Array.isArray(state.data.screenshots)
+      ? state.data.screenshots
+      : [];
+    var shown = 0;
+    grid.textContent = '';
+
+    items.forEach(function (item) {
+      if (!item || typeof item.url !== 'string' || item.url.indexOf(SCREEN_PREFIX) !== 0) return;
+      var caption = captionFor(item);
+
+      var figure = document.createElement('figure');
+      figure.className = 'screen';
+
+      var link = document.createElement('a');
+      link.className = 'screen__link';
+      link.href = item.url;
+      link.target = '_blank';
+      link.rel = 'noopener noreferrer';
+
+      var image = document.createElement('img');
+      image.src = item.url;
+      image.alt = caption || (I18N ? I18N.t('landing.screens.title') : 'fretfight');
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      link.appendChild(image);
+      figure.appendChild(link);
+
+      if (caption) {
+        var label = document.createElement('figcaption');
+        label.textContent = caption;
+        figure.appendChild(label);
+      }
+
+      grid.appendChild(figure);
+      shown += 1;
+    });
+
+    var visible = shown > 0 && (!b || b.visible);
+    section.hidden = !visible;
+  }
+
+  /* ---------- trailer ---------- */
+
+  // Accepts a bare 11-character id or a YouTube link; everything else is
+  // rejected so an arbitrary URL can never reach the iframe. Only the id is
+  // ever injected into the embed URL.
+  function youtubeId(value) {
+    var raw = String(value == null ? '' : value).trim();
+    if (/^[A-Za-z0-9_-]{11}$/.test(raw)) return raw;
+    var url;
+    try {
+      url = new URL(raw);
+    } catch (error) {
+      return '';
+    }
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return '';
+    var host = url.hostname.toLowerCase().replace(/^(www|m)\./, '');
+    var id = '';
+    if (host === 'youtu.be') {
+      id = url.pathname.slice(1).split('/')[0];
+    } else if (host === 'youtube.com') {
+      if (url.pathname === '/watch') id = url.searchParams.get('v') || '';
+      else if (url.pathname.indexOf('/shorts/') === 0) id = url.pathname.slice(8).split('/')[0];
+      else if (url.pathname.indexOf('/embed/') === 0) id = url.pathname.slice(7).split('/')[0];
+    }
+    return /^[A-Za-z0-9_-]{11}$/.test(id) ? id : '';
+  }
+
+  function trailerId() {
+    var holder = document.querySelector('[data-trailer]');
+    var fallback = holder ? holder.getAttribute('data-video-id') || '' : '';
+    var raw = rawBlock('trailer');
+    if (!raw) return youtubeId(fallback);
+
+    // The language of the page wins; an empty field falls back to the other
+    // language before the built-in default.
+    var order = [lang(), lang() === 'en' ? 'ru' : 'en'];
+    for (var index = 0; index < order.length; index += 1) {
+      var part = raw[order[index]];
+      if (part && typeof part === 'object') {
+        var id = youtubeId(part.url);
+        if (id) return id;
+      }
+    }
+    return youtubeId(fallback);
+  }
+
+  // YouTube's image CDN is unreachable in some regions. Walk the quality
+  // chain and hide the image entirely when none of them loads: the gradient
+  // card behind it then looks intentional instead of a black rectangle.
+  var TRAILER_POSTERS = ['maxresdefault', 'sddefault', 'hqdefault'];
+
+  function loadTrailerPoster(poster, id) {
+    var attempt = 0;
+    poster.hidden = false;
+    poster.onerror = function () {
+      attempt += 1;
+      if (attempt >= TRAILER_POSTERS.length) {
+        poster.hidden = true;
+        return;
+      }
+      poster.src = 'https://i.ytimg.com/vi/' + id + '/' + TRAILER_POSTERS[attempt] + '.jpg';
+    };
+    poster.onload = function () { poster.hidden = false; };
+    poster.removeAttribute('src');
+    poster.src = 'https://i.ytimg.com/vi/' + id + '/' + TRAILER_POSTERS[0] + '.jpg';
+  }
+
+  function renderTrailer() {
+    var holder = document.querySelector('[data-trailer]');
+    var section = document.getElementById('trailer');
+    if (!holder || !section) return;
+
+    var b = block('trailer');
+    if (b && b.data) {
+      text(document.querySelector('#trailer .kicker'), b.data.kicker);
+      text(document.getElementById('trailer-title'), b.data.title);
+      text(document.querySelector('#trailer .section-head > p:last-child'), b.data.text);
+    }
+    var id = b && b.visible === false ? '' : trailerId();
+    section.hidden = !id;
+    if (!id) return;
+
+    // The open link always points at the canonical watch page; it stays
+    // visible under the player, so the trailer is reachable without the
+    // facade click (and when the embed itself is blocked).
+    var openLink = document.querySelector('[data-trailer-open]');
+    if (openLink) openLink.href = 'https://www.youtube.com/watch?v=' + id;
+
+    var existing = holder.querySelector('iframe');
+    if (existing) holder.removeChild(existing);
+
+    holder.dataset.videoId = id;
+    var poster = holder.querySelector('[data-trailer-poster]');
+    if (poster) loadTrailerPoster(poster, id);
+
+    var link = holder.querySelector('[data-trailer-play]');
+    if (link) {
+      link.hidden = false;
+      link.href = 'https://www.youtube.com/watch?v=' + id;
+    }
+  }
+
+  // A click swaps the facade for the privacy-enhanced embed. Without
+  // JavaScript the facade is a plain link to YouTube.
+  function bindTrailer() {
+    var holder = document.querySelector('[data-trailer]');
+    var link = holder && holder.querySelector('[data-trailer-play]');
+    if (!holder || !link) return;
+
+    link.addEventListener('click', function (event) {
+      var id = youtubeId(holder.getAttribute('data-video-id'));
+      if (!id) return;
+      event.preventDefault();
+
+      var frame = document.createElement('iframe');
+      frame.src = 'https://www.youtube-nocookie.com/embed/' + id + '?autoplay=1&rel=0';
+      frame.title = link.getAttribute('aria-label') || 'YouTube';
+      frame.setAttribute(
+        'allow',
+        'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share'
+      );
+      frame.allowFullscreen = true;
+      frame.setAttribute('referrerpolicy', 'strict-origin-when-cross-origin');
+      holder.appendChild(frame);
+      link.hidden = true;
+      var poster = holder.querySelector('[data-trailer-poster]');
+      if (poster) {
+        // A late load must not bring the poster back under the iframe.
+        poster.onload = null;
+        poster.onerror = null;
+        poster.hidden = true;
+      }
     });
   }
 
@@ -247,6 +452,19 @@
       if (b.data) fillFacts(b.data.items);
     }
 
+    b = block('modes');
+    if (b) {
+      setVisible('#modes', b.visible);
+      if (b.data) {
+        text(document.querySelector('#modes .kicker'), b.data.kicker);
+        text(document.getElementById('modes-title'), b.data.title);
+        text(document.querySelector('#modes .section-head > p:last-child'), b.data.text);
+        fillCards(document.querySelector('#modes .cards'), b.data.cards, 'card', false);
+      }
+    }
+
+    renderScreens();
+
     b = block('about');
     if (b) {
       setVisible('#about', b.visible);
@@ -319,6 +537,7 @@
     applyHeroBackground();
     applyDownload();
     applyDownloads();
+    renderTrailer();
   }
 
   fetch('/api/v1/landing', { credentials: 'omit', cache: 'no-store' })
@@ -337,4 +556,5 @@
 
   if (I18N) I18N.onChange(apply);
   bindMacDownload();
+  bindTrailer();
 })();

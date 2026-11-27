@@ -7,10 +7,13 @@ a path on disk.
 """
 from __future__ import annotations
 
+import copy
 import json
+import re
 import uuid
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs, urlparse
 
 from fastapi import (
     APIRouter,
@@ -37,6 +40,7 @@ from app.api.v1.site import (
     get_landing_row,
     hero_background_from_content,
     landing_content,
+    screenshots_from_content,
     serialize_build,
 )
 from app.config import settings
@@ -44,6 +48,7 @@ from app.database import get_db
 from app.models.site_content import GameBuild, LandingSettings
 from app.models.user import User
 from app.schemas.site import (
+    MAX_SCREENSHOTS,
     AdminLandingResponse,
     AdminLandingUpdate,
     GameBuildItem,
@@ -51,6 +56,9 @@ from app.schemas.site import (
     GameBuildUpdate,
     HeroBackground,
     HeroBackgroundResponse,
+    LandingScreenshot,
+    ScreenshotsResponse,
+    ScreenshotsUpdate,
     SiteContactsUpdate,
 )
 from app.services.contacts import (
@@ -94,6 +102,21 @@ IMAGE_SIGNATURES = {
     ".mp4": ("video", "video/mp4", lambda head: head[4:8] == b"ftyp"),
     ".webm": ("video", "video/webm", lambda head: head.startswith(b"\x1a\x45\xdf\xa3")),
 }
+
+# The screenshot gallery is still images only: video belongs to the hero slot.
+SCREENSHOT_SIGNATURES = {
+    suffix: media for suffix, media in IMAGE_SIGNATURES.items() if media[0] == "image"
+}
+
+# Trailer links are stored as a canonical YouTube watch URL. Only the video id
+# is ever handed to the page (it builds the embed itself), so a stored URL
+# cannot smuggle an arbitrary origin into the iframe.
+YOUTUBE_ID_RE = re.compile(r"^[A-Za-z0-9_-]{11}$")
+YOUTUBE_WATCH_URL = "https://www.youtube.com/watch?v={video_id}"
+# Hosts the URL parser accepts; ``www.``/``m.`` are stripped before the match.
+YOUTUBE_HOSTS = {"youtube.com", "youtu.be", "music.youtube.com"}
+YOUTUBE_SHORTS_PREFIX = "/shorts/"
+YOUTUBE_EMBED_PREFIX = "/embed/"
 
 # Extension/content-type rules live in app.services.game_builds: they depend on
 # the (platform, artifact) pair of the build (Windows/macOS installers vs the
@@ -146,6 +169,73 @@ def _check_string_lengths(value: Any) -> None:
     elif isinstance(value, list):
         for item in value:
             _check_string_lengths(item)
+
+
+def youtube_video_id(value: str) -> str | None:
+    """Extract the 11-character id of a YouTube link (or a bare id)."""
+    raw = (value or "").strip()
+    if not raw:
+        return None
+    if YOUTUBE_ID_RE.match(raw):
+        return raw
+    try:
+        parsed = urlparse(raw)
+    except ValueError:
+        return None
+    if parsed.scheme not in ("http", "https"):
+        return None
+    host = (parsed.hostname or "").lower()
+    for prefix in ("www.", "m."):
+        if host.startswith(prefix):
+            host = host[len(prefix):]
+    video_id = ""
+    if host == "youtu.be":
+        video_id = parsed.path.lstrip("/").split("/")[0]
+    elif host in YOUTUBE_HOSTS:
+        if parsed.path == "/watch":
+            video_id = (parse_qs(parsed.query).get("v") or [""])[0]
+        elif parsed.path.startswith(YOUTUBE_SHORTS_PREFIX):
+            video_id = parsed.path[len(YOUTUBE_SHORTS_PREFIX):].split("/")[0]
+        elif parsed.path.startswith(YOUTUBE_EMBED_PREFIX):
+            video_id = parsed.path[len(YOUTUBE_EMBED_PREFIX):].split("/")[0]
+    video_id = video_id.strip()
+    return video_id if YOUTUBE_ID_RE.match(video_id) else None
+
+
+def _normalize_trailer_block(blocks: dict[str, Any]) -> dict[str, Any]:
+    """Canonicalise the trailer URLs and reject anything that is not YouTube.
+
+    The editor accepts ``youtube.com/watch?v=``, ``youtu.be/``,
+    ``youtube.com/shorts/`` and ``youtube.com/embed/`` links (or a bare id) and
+    the stored value is always the canonical
+    ``https://www.youtube.com/watch?v=<id>`` URL. An empty string clears the
+    trailer of that language.
+    """
+    trailer = blocks.get("trailer")
+    if not isinstance(trailer, dict):
+        return blocks
+
+    normalized = copy.deepcopy(blocks)
+    trailer = normalized["trailer"]
+    for lang in ("ru", "en"):
+        data = trailer.get(lang)
+        if not isinstance(data, dict):
+            continue
+        url = data.get("url")
+        if not isinstance(url, str) or not url.strip():
+            data["url"] = ""
+            continue
+        video_id = youtube_video_id(url)
+        if video_id is None:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=(
+                    f"trailer.{lang}.url must be a YouTube link "
+                    "(youtube.com/watch?v=, youtu.be/, youtube.com/shorts/)"
+                ),
+            )
+        data["url"] = YOUTUBE_WATCH_URL.format(video_id=video_id)
+    return normalized
 
 
 def _local_media_path(url: str | None) -> Path | None:
@@ -239,12 +329,49 @@ def _save_landing_background(
     return HeroBackground.model_validate(content["hero_background"])
 
 
+def _save_landing_screenshots(
+    db: Session,
+    content: dict[str, Any],
+    screenshots: list[LandingScreenshot],
+) -> dict[str, Any]:
+    """Store the gallery in the single CMS row and return the fresh document."""
+    row = get_landing_row(db)
+    if row is None:
+        row = LandingSettings(id=LANDING_SETTINGS_ID, content={})
+        db.add(row)
+    updated = dict(content)
+    updated["screenshots"] = [item.model_dump() for item in screenshots]
+    row.content = updated
+    db.commit()
+    db.refresh(row)
+    return landing_content(row)
+
+
+def _prune_screenshot_files(
+    previous: list[LandingScreenshot],
+    current: list[LandingScreenshot],
+    content: dict[str, Any],
+) -> None:
+    """Delete uploaded files the gallery no longer references.
+
+    The hero background of the same document is never touched, even if a
+    hand-edited gallery pointed at it: both live in the same directory.
+    """
+    keep = {item.url for item in current}
+    hero_url = hero_background_from_content(content).url
+    for item in previous:
+        if item.url in keep or item.url == hero_url:
+            continue
+        _remove_media_file(_local_media_path(item.url))
+
+
 @router.get("/landing", response_model=AdminLandingResponse, summary="Read landing CMS content")
 def get_admin_landing(db: Session = Depends(get_db), _: User = Depends(require_admin)) -> AdminLandingResponse:
     content = landing_content(get_landing_row(db))
     return AdminLandingResponse(
         blocks=blocks_from_content(content),
         hero_background=hero_background_from_content(content),
+        screenshots=screenshots_from_content(content),
     )
 
 
@@ -254,24 +381,33 @@ def update_admin_landing(
     db: Session = Depends(get_db),
     _: User = Depends(require_admin),
 ) -> AdminLandingResponse:
-    _validate_blocks(payload.blocks)
+    blocks = _normalize_trailer_block(payload.blocks)
+    _validate_blocks(blocks)
 
     row = get_landing_row(db)
     if row is None:
         row = LandingSettings(id=LANDING_SETTINGS_ID, content={})
         db.add(row)
     content = dict(landing_content(row))
-    content["blocks"] = payload.blocks
+    # The gallery has its own endpoints, so ``screenshots=None`` means "leave
+    # the current gallery alone" instead of "delete everything".
+    previous_screenshots = screenshots_from_content(content)
+    content["blocks"] = blocks
     if payload.hero_background is not None:
         content["hero_background"] = payload.hero_background.model_dump()
+    if payload.screenshots is not None:
+        content["screenshots"] = [item.model_dump() for item in payload.screenshots]
     row.content = content
     db.commit()
     db.refresh(row)
 
     content = landing_content(row)
+    if payload.screenshots is not None:
+        _prune_screenshot_files(previous_screenshots, payload.screenshots, content)
     return AdminLandingResponse(
         blocks=blocks_from_content(content),
         hero_background=hero_background_from_content(content),
+        screenshots=screenshots_from_content(content),
     )
 
 
@@ -344,6 +480,104 @@ def delete_landing_background(
     saved = _save_landing_background(db, HeroBackground())
     _remove_media_file(_local_media_path(previous.url))
     return HeroBackgroundResponse(hero_background=saved)
+
+
+@router.post(
+    "/landing/screenshots",
+    response_model=ScreenshotsResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload a landing screenshot",
+)
+async def upload_landing_screenshot(
+    file: UploadFile = File(..., description="Screenshot image"),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> ScreenshotsResponse:
+    suffix = Path(file.filename or "").suffix.lower()
+    media = SCREENSHOT_SIGNATURES.get(suffix)
+    if media is None:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Screenshot must be JPEG, PNG, WebP or GIF",
+        )
+    _, _, matches_signature = media
+
+    content = dict(landing_content(get_landing_row(db)))
+    current = screenshots_from_content(content)
+    if len(current) >= MAX_SCREENSHOTS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"At most {MAX_SCREENSHOTS} screenshots are allowed",
+        )
+
+    try:
+        head = await file.read(64)
+        if not matches_signature(head):
+            raise HTTPException(
+                status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+                detail="File content does not match its extension",
+            )
+
+        stored_name = f"shot-{uuid.uuid4()}{suffix}"
+        target = _safe_upload_path(settings.landing_media_dir, stored_name)
+        await _write_upload(
+            file,
+            target,
+            settings.max_landing_media_bytes,
+            prefix=head,
+        )
+
+        screenshot = LandingScreenshot(url=f"{LANDING_MEDIA_URL_PREFIX}{stored_name}")
+        try:
+            saved = _save_landing_screenshots(db, content, current + [screenshot])
+        except Exception:
+            _remove_media_file(target)
+            raise
+        return ScreenshotsResponse(screenshots=screenshots_from_content(saved))
+    finally:
+        await file.close()
+
+
+@router.patch(
+    "/landing/screenshots",
+    response_model=ScreenshotsResponse,
+    summary="Reorder screenshots and edit their captions",
+)
+def update_landing_screenshots(
+    payload: ScreenshotsUpdate,
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> ScreenshotsResponse:
+    content = dict(landing_content(get_landing_row(db)))
+    previous = screenshots_from_content(content)
+    saved = _save_landing_screenshots(db, content, payload.screenshots)
+    # Files that were dropped from the gallery are removed after the new list
+    # is committed; the hero background is protected inside the helper.
+    _prune_screenshot_files(previous, payload.screenshots, saved)
+    return ScreenshotsResponse(screenshots=screenshots_from_content(saved))
+
+
+@router.delete(
+    "/landing/screenshots",
+    response_model=ScreenshotsResponse,
+    summary="Delete one landing screenshot",
+)
+def delete_landing_screenshot(
+    url: str = Query(..., max_length=512, description="Screenshot URL to remove"),
+    db: Session = Depends(get_db),
+    _: User = Depends(require_admin),
+) -> ScreenshotsResponse:
+    content = dict(landing_content(get_landing_row(db)))
+    current = screenshots_from_content(content)
+    if not any(item.url == url for item in current):
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Screenshot not found",
+        )
+    remaining = [item for item in current if item.url != url]
+    saved = _save_landing_screenshots(db, content, remaining)
+    _prune_screenshot_files(current, remaining, saved)
+    return ScreenshotsResponse(screenshots=screenshots_from_content(saved))
 
 
 @router.get(

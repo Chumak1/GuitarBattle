@@ -570,12 +570,15 @@ Three extra directories are mounted into the API container:
 | `/data/game_builds` | `game_builds_data` | Desktop builds, two artifacts per platform: `installer` (Windows `.exe`/`.msi`, macOS `.dmg`, legacy `.zip`) for the download button and `portable` (`.zip` only) for automatic updates. One active build per `(platform, artifact)` pair. `GET /api/v1/downloads/game` serves the Windows installer by default (`?platform=macos` the Mac installer); `GET /api/v1/downloads/game/update?platform=...` serves the portable ZIP. Max 500 MiB (`MAX_GAME_BUILD_BYTES`). |
 | `/data/geoip` | `geoip_data` | DB-IP Lite country database for `GET /api/v1/geo`. |
 
-Both upload directories are backed by named volumes, so `docker compose up --build` keeps the files; do not replace the volumes. The landing page reads its content from `GET /api/v1/landing` (blocks, hero background, the active installer and the active portable ZIP), so text and the download links change without a redeploy.
+Both upload directories are backed by named volumes, so `docker compose up --build` keeps the files; do not replace the volumes. The landing page reads its content from `GET /api/v1/landing` (blocks, hero background, the screenshot gallery, the active installer and the active portable ZIP), so text, images and the download links change without a redeploy. The server-rendered sections are hero, facts, modes, screenshots, about, how, features, FAQ, trailer, requirements, support and the final CTA; the modes/screens/trailer copy is editable in the CMS, and the trailer block stores a canonical `https://www.youtube.com/watch?v=<id>` link per language (only YouTube `watch?v=`, `youtu.be/`, `shorts/` and `embed/` links are accepted, anything else is `422`).
 
 Administrator endpoints (`Bearer` token with `is_admin`, same as `/admin/songs`):
 
-- `GET /api/v1/admin/site/landing`, `PUT /api/v1/admin/site/landing` — read/replace the CMS blocks (max 256 KiB serialized, 5000 characters per string, nesting depth 8).
+- `GET /api/v1/admin/site/landing`, `PUT /api/v1/admin/site/landing` — read/replace the CMS blocks (max 256 KiB serialized, 5000 characters per string, nesting depth 8). `screenshots` is additive: omitted (`null`) keeps the stored gallery, a list replaces it and deletes the files it dropped.
 - `POST /api/v1/admin/site/landing/background` (multipart `file`), `DELETE /api/v1/admin/site/landing/background` — hero JPEG/PNG/WebP/GIF/MP4/WebM.
+- `POST /api/v1/admin/site/landing/screenshots` (multipart `file`) — landing screenshot, JPEG/PNG/WebP/GIF by signature, stored as `/media/landing/shot-<uuid><ext>`; returns the whole gallery. `409` when 12 screenshots are already stored (`MAX_SCREENSHOTS`).
+- `PATCH /api/v1/admin/site/landing/screenshots` (JSON `{"screenshots": [{"url", "caption_ru", "caption_en"}]}`) — replaces the list: order and captions, at most 12, unique `/media/landing/` URLs, captions up to 200 characters. Files the new list no longer references are deleted from disk (the hero background is never touched).
+- `DELETE /api/v1/admin/site/landing/screenshots?url=/media/landing/shot-...` — removes one screenshot and its file; returns the remaining gallery.
 - `GET /api/v1/admin/site/game-builds` (`?platform=windows|macos`, `?artifact=installer|portable`), `POST /api/v1/admin/site/game-builds` (multipart `file` + optional `platform` (default `windows`), `artifact` (default `installer`), `version`, `release_notes`), `POST /api/v1/admin/site/game-builds/{id}/activate` (activates within the build's `(platform, artifact)` pair), `PATCH` (release notes), `DELETE /api/v1/admin/site/game-builds/{id}`.
 
 Upload rules are enforced per pair (`app/services/game_builds.py`): an installer must be `.exe`/`.msi`/`.zip` on Windows and `.dmg`/`.zip` on macOS; a portable build must be a `.zip` on both platforms. A wrong extension **or** a wrong platform/artifact pair returns `415` with a detail naming the expected extensions; an unknown `platform`/`artifact` returns `422`. The migration `0018_game_build_artifact` added the column with `server_default='installer'`, so every pre-existing build became an installer and stayed active.
@@ -583,7 +586,7 @@ Upload rules are enforced per pair (`app/services/game_builds.py`): an installer
 Public contract (additive, older clients keep working):
 - `GET /api/v1/downloads/game?platform=windows|macos` — the active **installer**; `404` if there is none.
 - `GET /api/v1/downloads/game/update?platform=windows|macos` — the active **portable** ZIP; `404` if there is none.
-- `GET /api/v1/landing` — `download`/`downloads` stay the installers; `updates` is the portable map (`{"windows": DownloadInfo|null, "macos": DownloadInfo|null}`) whose `url` is `/api/v1/downloads/game/update?platform=...`. The installed client reads `updates`; `available=false` means no portable build is published.
+- `GET /api/v1/landing` — `download`/`downloads` stay the installers; `updates` is the portable map (`{"windows": DownloadInfo|null, "macos": DownloadInfo|null}`) whose `url` is `/api/v1/downloads/game/update?platform=...`. The installed client reads `updates`; `available=false` means no portable build is published. `screenshots` is a new additive list (`[{"url", "caption_ru", "caption_en"}]`, at most 12, empty when none are uploaded); older clients ignore it.
 
 ### Support page CMS (`/support`)
 

@@ -8,7 +8,7 @@
   <title>GuitarBattle — админ-панель</title>
   <link href="./vendor/bootstrap.min.css" rel="stylesheet">
   <link href="./vendor/bootstrap-icons.min.css" rel="stylesheet">
-  <link href="./admin.css?v=20261122-1" rel="stylesheet">
+  <link href="./admin.css?v=20261124-1" rel="stylesheet">
   <link rel="icon" type="image/svg+xml" href="/app/logo.svg">
 </head>
 <body>
@@ -795,6 +795,41 @@
 
         <div id="landingBlocks" class="vstack gap-3"></div>
         <p class="form-hint mt-3 mb-0">Пустое поле означает стандартный текст. Изменения появятся на сайте сразу после сохранения.</p>
+
+        <section class="card content-card mt-4" id="landingScreenshotsCard">
+          <div class="card-body p-4">
+            <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-start gap-3 mb-3">
+              <div>
+                <h2 class="h5 mb-1">Скриншоты игры</h2>
+                <p class="form-hint mb-0">
+                  Галерея в секции «Скриншоты» на лендинге. До 12 изображений: порядок и подписи RU/EN
+                  сохраняются сразу, без кнопки «Сохранить».
+                </p>
+              </div>
+              <span id="landingShotsCount" class="badge badge-partial align-self-md-center">0 из 12</span>
+            </div>
+
+            <div id="landingShotsAlert" class="alert alert-danger" role="alert" hidden></div>
+
+            <div class="row g-2 align-items-end mb-2">
+              <div class="col-12 col-lg">
+                <label class="form-label" for="landingShotsFile">Файлы скриншотов</label>
+                <input id="landingShotsFile" class="form-control" type="file" multiple
+                       accept="image/png,image/jpeg,image/webp,image/gif">
+              </div>
+              <div class="col-12 col-lg-auto">
+                <button id="landingShotsUpload" class="btn btn-outline-light" type="button">
+                  <span id="landingShotsSpinner" class="spinner-border spinner-border-sm me-2" aria-hidden="true" hidden></span>
+                  <i class="bi bi-upload me-1"></i>Загрузить
+                </button>
+              </div>
+            </div>
+            <p class="form-hint mt-0 mb-3">PNG, JPEG, WebP или GIF, до 50 МБ на файл. Можно выбрать несколько файлов сразу.</p>
+
+            <div id="landingShotsGrid" class="landing-shots-grid"></div>
+            <p id="landingShotsEmpty" class="form-hint mb-0">Скриншотов пока нет — секция на сайте скрыта.</p>
+          </div>
+        </section>
 
         <section class="card content-card mt-4" id="landingContactsCard">
           <div class="card-body p-4">
@@ -2162,7 +2197,7 @@
   <script src="./admin-statistics.js?v=20261122-1"></script>
   <script src="./admin-daily.js?v=20261027-1"></script>
   <script src="./admin-campaigns.js?v=20261114-1"></script>
-  <script src="./admin-site.js?v=20261115-1"></script>
+  <script src="./admin-site.js?v=20261124-1"></script>
   <script src="./admin-artwork.js?v=20261120-1"></script>
   <script src="./admin-gameplay.js?v=20261110-1"></script>
   <script src="./admin-ui-sounds.js?v=20261111-1"></script>

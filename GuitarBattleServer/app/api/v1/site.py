@@ -20,12 +20,14 @@ from app.database import get_db
 from app.models.site_content import GameBuild, LandingSettings
 from app.schemas.artwork import SiteConfigResponse
 from app.schemas.site import (
+    MAX_SCREENSHOTS,
     DownloadInfo,
     GameBuildItem,
     GeoResponse,
     HeroBackground,
     LandingDownloads,
     LandingResponse,
+    LandingScreenshot,
     SiteContacts,
 )
 from app.services.client_ip import client_ip
@@ -100,6 +102,29 @@ def hero_background_from_content(content: dict[str, Any]) -> HeroBackground:
     except ValidationError:
         # A hand-edited or legacy value must not break the public page.
         return HeroBackground()
+
+
+def screenshots_from_content(content: dict[str, Any]) -> list[LandingScreenshot]:
+    """Tolerant reader of the landing gallery.
+
+    Broken or hand-edited entries are skipped one by one and the list is cut at
+    :data:`MAX_SCREENSHOTS`, so a corrupted CMS document can never break ``/``
+    or the admin editor.
+    """
+    raw = content.get("screenshots")
+    if not isinstance(raw, list):
+        return []
+    screenshots: list[LandingScreenshot] = []
+    for item in raw:
+        if len(screenshots) >= MAX_SCREENSHOTS:
+            break
+        if not isinstance(item, dict):
+            continue
+        try:
+            screenshots.append(LandingScreenshot.model_validate(item))
+        except ValidationError:
+            continue
+    return screenshots
 
 
 def serialize_build(build: GameBuild) -> GameBuildItem:
@@ -219,6 +244,7 @@ def get_landing(db: Session = Depends(get_db)) -> LandingResponse:
     return LandingResponse(
         blocks=blocks_from_content(content),
         hero_background=hero_background_from_content(content),
+        screenshots=screenshots_from_content(content),
         download=downloads.windows or DownloadInfo(url=download_url()),
         downloads=downloads,
         updates=updates,

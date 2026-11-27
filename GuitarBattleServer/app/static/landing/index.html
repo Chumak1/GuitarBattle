@@ -122,7 +122,7 @@
 
     .nav {
       display: flex;
-      gap: 22px;
+      gap: 18px;
       margin-left: auto;
       font-size: 0.92rem;
     }
@@ -631,6 +631,159 @@
     .spec span { color: var(--muted); }
     .spec b { font-weight: 600; text-align: right; }
 
+    /* ---------- game modes ---------- */
+
+    /* Three cards next to the features grid, but numbered: the sections are
+       read in order, and the numbers make the modes feel like a sequence of
+       ways to play rather than a feature list. */
+    .modes .cards { counter-reset: mode; }
+
+    .modes .card {
+      padding-top: 30px;
+      counter-increment: mode;
+    }
+
+    .modes .card::before {
+      content: "0" counter(mode);
+      display: block;
+      margin-bottom: 12px;
+      color: var(--gold);
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.22em;
+    }
+
+    /* ---------- screenshots ---------- */
+
+    .screens-grid {
+      display: grid;
+      gap: 18px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    }
+
+    .screen {
+      margin: 0;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      background: var(--surface-2);
+    }
+
+    .screen__link {
+      display: block;
+      aspect-ratio: 16 / 9;
+      background: #05080c;
+    }
+
+    .screen__link img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      transition: transform 220ms ease;
+    }
+
+    .screen__link:hover img,
+    .screen__link:focus-visible img { transform: scale(1.02); }
+
+    .screen figcaption {
+      padding: 10px 14px 12px;
+      color: var(--muted);
+      font-size: 0.86rem;
+    }
+
+    /* ---------- trailer ---------- */
+
+    .trailer-frame {
+      position: relative;
+      max-width: 900px;
+      margin: 0 auto;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: var(--radius);
+      /* A gradient instead of flat black: when YouTube is unreachable the
+         poster never loads and the card still looks intentional. */
+      background:
+        radial-gradient(circle at 84% 16%, rgba(243, 196, 81, 0.16), transparent 48%),
+        linear-gradient(160deg, var(--surface), var(--surface-2));
+      aspect-ratio: 16 / 9;
+    }
+
+    .trailer-frame img,
+    .trailer-frame iframe {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+    }
+
+    .trailer-frame img { object-fit: cover; opacity: 0.82; }
+
+    .trailer-actions {
+      margin: 14px 0 0;
+      text-align: center;
+    }
+
+    .trailer-open {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--gold);
+      font-size: 0.86rem;
+      font-weight: 600;
+      text-decoration: none;
+      border-bottom: 1px solid rgba(243, 196, 81, 0.45);
+      transition: color 160ms ease, border-color 160ms ease;
+    }
+
+    .trailer-open::after { content: "↗"; font-size: 0.9em; }
+
+    .trailer-open:hover,
+    .trailer-open:focus-visible {
+      color: var(--gold-strong);
+      border-color: var(--gold-strong);
+    }
+
+    .trailer-play {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      color: var(--text);
+      text-align: center;
+      text-decoration: none;
+      background: rgba(7, 11, 16, 0.28);
+      transition: background 180ms ease, color 180ms ease;
+    }
+
+    .trailer-play:hover,
+    .trailer-play:focus-visible {
+      color: var(--gold);
+      background: rgba(7, 11, 16, 0.45);
+    }
+
+    .trailer-play__icon {
+      display: grid;
+      place-items: center;
+      width: 66px;
+      height: 66px;
+      border-radius: 50%;
+      background: linear-gradient(160deg, var(--gold), #e0a72c);
+      color: #17110a;
+      font-size: 1.35rem;
+      box-shadow: 0 16px 34px rgba(0, 0, 0, 0.45);
+    }
+
+    .trailer-play__label {
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+    }
+
     /* ---------- cta ---------- */
 
     .cta {
@@ -865,10 +1018,11 @@
 
     /* ---------- motion / small screens ---------- */
 
-    /* The header row cannot hold brand + nav + language switch + SUPPORT +
-       LOG IN on narrow screens; the dedicated #support-project block below
-       carries the support action instead, so hiding this link costs nothing. */
-    @media (max-width: 1100px) {
+    /* The header row cannot hold brand + six nav links + language switch +
+       SUPPORT + LOG IN on narrow screens; the dedicated #support-project block
+       below carries the support action instead, so hiding this link costs
+       nothing. */
+    @media (max-width: 1240px) {
       .header-support { display: none; }
     }
 
@@ -919,6 +1073,8 @@
   <div class="wrap">
     <a class="brand" href="#top"><img class="mark" src="/app/logo.svg" alt="" width="28" height="28">fretfight</a>
     <nav class="nav" aria-label="{{ landing.navLabel }}" data-i18n-aria-label="landing.navLabel">
+      <a href="#modes" data-i18n="landing.nav.modes">{{ landing.nav.modes }}</a>
+      <a href="#screens" data-i18n="landing.nav.screens">{{ landing.nav.screens }}</a>
       <a href="#about" data-i18n="landing.nav.about">{{ landing.nav.about }}</a>
       <a href="#how" data-i18n="landing.nav.how">{{ landing.nav.how }}</a>
       <a href="#features" data-i18n="landing.nav.features">{{ landing.nav.features }}</a>
@@ -967,6 +1123,43 @@
       <div class="fact"><b data-i18n="landing.fact4.title">{{ landing.fact4.title }}</b><span data-i18n="landing.fact4.text">{{ landing.fact4.text }}</span></div>
     </div>
   </div>
+
+  <section id="modes" class="modes" aria-labelledby="modes-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker" data-i18n="landing.modes.kicker">{{ landing.modes.kicker }}</p>
+        <h2 id="modes-title" data-i18n="landing.modes.title">{{ landing.modes.title }}</h2>
+        <p data-i18n="landing.modes.text">{{ landing.modes.text }}</p>
+      </div>
+
+      <div class="cards">
+        <article class="card">
+          <h3 data-i18n="landing.modes.card1.title">{{ landing.modes.card1.title }}</h3>
+          <p data-i18n="landing.modes.card1.text">{{ landing.modes.card1.text }}</p>
+        </article>
+        <article class="card">
+          <h3 data-i18n="landing.modes.card2.title">{{ landing.modes.card2.title }}</h3>
+          <p data-i18n="landing.modes.card2.text">{{ landing.modes.card2.text }}</p>
+        </article>
+        <article class="card">
+          <h3 data-i18n="landing.modes.card3.title">{{ landing.modes.card3.title }}</h3>
+          <p data-i18n="landing.modes.card3.text">{{ landing.modes.card3.text }}</p>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="screens" hidden aria-labelledby="screens-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker" data-i18n="landing.screens.kicker">{{ landing.screens.kicker }}</p>
+        <h2 id="screens-title" data-i18n="landing.screens.title">{{ landing.screens.title }}</h2>
+        <p data-i18n="landing.screens.text">{{ landing.screens.text }}</p>
+      </div>
+
+      <div class="screens-grid" id="screensGallery"></div>
+    </div>
+  </section>
 
   <section id="about" aria-labelledby="about-title">
     <div class="wrap split">
@@ -1077,6 +1270,35 @@
           <p data-i18n="landing.faq.a4">{{ landing.faq.a4 }}</p>
         </article>
       </div>
+    </div>
+  </section>
+
+  <section id="trailer" aria-labelledby="trailer-title">
+    <div class="wrap">
+      <div class="section-head">
+        <p class="kicker" data-i18n="landing.trailer.kicker">{{ landing.trailer.kicker }}</p>
+        <h2 id="trailer-title" data-i18n="landing.trailer.title">{{ landing.trailer.title }}</h2>
+        <p data-i18n="landing.trailer.text">{{ landing.trailer.text }}</p>
+      </div>
+
+      <div class="trailer-frame" data-trailer data-video-id="{{ landing.trailer.videoId }}">
+        <img data-trailer-poster
+             src="https://i.ytimg.com/vi/{{ landing.trailer.videoId }}/maxresdefault.jpg"
+             alt="" loading="lazy" width="1280" height="720">
+        <a class="trailer-play" data-trailer-play
+           href="https://www.youtube.com/watch?v={{ landing.trailer.videoId }}"
+           target="_blank" rel="noopener noreferrer"
+           aria-label="{{ landing.trailer.play }}" data-i18n-aria-label="landing.trailer.play">
+          <span class="trailer-play__icon" aria-hidden="true">▶</span>
+          <span class="trailer-play__label" data-i18n="landing.trailer.play">{{ landing.trailer.play }}</span>
+        </a>
+      </div>
+      <p class="trailer-actions">
+        <a class="trailer-open" data-trailer-open
+           href="https://www.youtube.com/watch?v={{ landing.trailer.videoId }}"
+           target="_blank" rel="noopener noreferrer"
+           data-i18n="landing.trailer.open">{{ landing.trailer.open }}</a>
+      </p>
     </div>
   </section>
 
